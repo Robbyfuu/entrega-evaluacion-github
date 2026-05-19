@@ -1,17 +1,25 @@
 ﻿<#
 .SYNOPSIS
-    GUI interactiva para alumnos: crear repo en GitHub y subir su evaluación.
+    GUI interactiva para alumnos: crear repositorio en GitHub y subir la evaluacion.
 
 .DESCRIPTION
     Levanta un formulario Windows Forms con:
     - Campos: Nombre completo, Forma de prueba
     - Selector de carpeta con los archivos
-    - Botones: Crear Repo, Subir Archivos, Hacer Todo
+    - Botones: Crear Repositorio, Subir Archivos, Hacer Todo
+    - Panel de cuenta: muestra usuario logueado y permite cerrar sesion
     - Log de salida en pantalla
 
 .NOTES
-    Requiere: git + gh CLI instalados, y gh autenticado (gh auth login).
+    Requiere: git + gh CLI instalados, y autenticacion de GitHub.
 #>
+
+# -- Auto-desbloqueo de archivos descargados (Zone.Identifier ADS) --
+# Evita la advertencia "Windows protegio su PC" en cada ejecucion
+try {
+    Get-ChildItem -Path $PSScriptRoot -File -ErrorAction SilentlyContinue |
+        Unblock-File -ErrorAction SilentlyContinue
+} catch {}
 
 # -- Carga de assemblies WinForms --
 Add-Type -AssemblyName System.Windows.Forms
@@ -59,16 +67,16 @@ function Install-Dependencies {
     if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
         [System.Windows.Forms.MessageBox]::Show(
             "winget no está disponible en este sistema.`n`n" +
-            "Instalá manualmente:`n" +
+            "Instala manualmente:`n" +
             "  - git:  https://git-scm.com/download/win`n" +
             "  - gh:   https://cli.github.com/`n`n" +
-            "O instalá 'App Installer' desde Microsoft Store para obtener winget.",
+            "O instala 'App Installer' desde Microsoft Store para obtener winget.",
             'winget no disponible', 'OK', 'Warning') | Out-Null
         return $false
     }
 
     $msg = "Faltan estas dependencias:`n  - $($Missing -join "`n  - ")`n`n" +
-           "¿Querés instalarlas ahora con winget? (requiere permisos de admin)"
+           "¿Quieres instalarlas ahora con winget? (requiere permisos de admin)"
     $r = [System.Windows.Forms.MessageBox]::Show($msg, 'Instalar dependencias', 'YesNo', 'Question')
     if ($r -ne 'Yes') { return $false }
 
@@ -94,7 +102,7 @@ function Install-Dependencies {
 
     Log '✓ Dependencias listas. Puede que necesites cerrar y reabrir el script.' 'Cyan'
     [System.Windows.Forms.MessageBox]::Show(
-        "Instalación completada.`n`nSi alguna acción falla, cerrá y reabrí el script para que tome el PATH actualizado.",
+        "Instalación completada.`n`nSi alguna acción falla, cierra y reabre el script para que tome el PATH actualizado.",
         'Listo', 'OK', 'Information') | Out-Null
     return $true
 }
@@ -124,7 +132,7 @@ function Start-GitHubDeviceLogin {
             -Headers @{ 'Accept' = 'application/json' }
     } catch {
         [System.Windows.Forms.MessageBox]::Show(
-            "Error contactando GitHub: $_`n`nVerificá tu conexión a internet.",
+            "Error contactando GitHub: $_`n`nVerifica tu conexión a internet.",
             'Error de red', 'OK', 'Error') | Out-Null
         return $false
     }
@@ -147,7 +155,7 @@ function Start-GitHubDeviceLogin {
 
     # Paso 1
     $lblPaso1 = New-Object System.Windows.Forms.Label
-    $lblPaso1.Text = 'PASO 1: Abrí esta URL en tu navegador o celular'
+    $lblPaso1.Text = 'PASO 1: Abre esta URL en tu navegador o celular'
     $lblPaso1.Font = New-Object System.Drawing.Font('Segoe UI', 10, [System.Drawing.FontStyle]::Bold)
     $lblPaso1.Location = New-Object System.Drawing.Point(20, 20)
     $lblPaso1.Size = New-Object System.Drawing.Size(500, 22)
@@ -173,7 +181,7 @@ function Start-GitHubDeviceLogin {
 
     # Paso 2
     $lblPaso2 = New-Object System.Windows.Forms.Label
-    $lblPaso2.Text = 'PASO 2: Ingresá este código'
+    $lblPaso2.Text = 'PASO 2: Ingresa este código'
     $lblPaso2.Font = New-Object System.Drawing.Font('Segoe UI', 10, [System.Drawing.FontStyle]::Bold)
     $lblPaso2.Location = New-Object System.Drawing.Point(20, 95)
     $lblPaso2.Size = New-Object System.Drawing.Size(500, 22)
@@ -259,7 +267,7 @@ function Start-GitHubDeviceLogin {
         $remaining = [int]($expiresIn - $elapsed.TotalSeconds)
         if ($remaining -le 0) {
             $timer.Stop()
-            $lblStatus.Text = 'Código expirado. Cerrá y volvé a intentar.'
+            $lblStatus.Text = 'Código expirado. Cierra y vuelve a intentar.'
             $lblStatus.ForeColor = [System.Drawing.Color]::Red
             $progress.Style = 'Continuous'
             $progress.Value = 0
@@ -363,15 +371,49 @@ $lblTitulo.Location = New-Object System.Drawing.Point(20, 15)
 $lblTitulo.Size = New-Object System.Drawing.Size(420, 35)
 $form.Controls.Add($lblTitulo)
 
-# -- Botón login (esquina superior derecha) --
+# -- Panel de sesión (esquina superior derecha) --
+$grpSesion = New-Object System.Windows.Forms.GroupBox
+$grpSesion.Text = 'Cuenta de GitHub'
+$grpSesion.Location = New-Object System.Drawing.Point(440, 5)
+$grpSesion.Size = New-Object System.Drawing.Size(180, 50)
+$form.Controls.Add($grpSesion)
+
+$lblSesionUser = New-Object System.Windows.Forms.Label
+$lblSesionUser.Text = 'Verificando...'
+$lblSesionUser.Font = New-Object System.Drawing.Font('Segoe UI', 8, [System.Drawing.FontStyle]::Bold)
+$lblSesionUser.Location = New-Object System.Drawing.Point(8, 18)
+$lblSesionUser.Size = New-Object System.Drawing.Size(165, 14)
+$lblSesionUser.ForeColor = [System.Drawing.Color]::Gray
+$grpSesion.Controls.Add($lblSesionUser)
+
+$lblSesionEmail = New-Object System.Windows.Forms.Label
+$lblSesionEmail.Text = ''
+$lblSesionEmail.Font = New-Object System.Drawing.Font('Segoe UI', 7)
+$lblSesionEmail.Location = New-Object System.Drawing.Point(8, 32)
+$lblSesionEmail.Size = New-Object System.Drawing.Size(165, 14)
+$lblSesionEmail.ForeColor = [System.Drawing.Color]::DimGray
+$grpSesion.Controls.Add($lblSesionEmail)
+
 $btnLogin = New-Object System.Windows.Forms.Button
 $btnLogin.Text = 'Iniciar sesión'
-$btnLogin.Location = New-Object System.Drawing.Point(450, 20)
-$btnLogin.Size = New-Object System.Drawing.Size(150, 30)
-$btnLogin.BackColor = [System.Drawing.Color]::FromArgb(96, 125, 139)
+$btnLogin.Location = New-Object System.Drawing.Point(440, 58)
+$btnLogin.Size = New-Object System.Drawing.Size(85, 28)
+$btnLogin.BackColor = [System.Drawing.Color]::FromArgb(33, 150, 243)
 $btnLogin.ForeColor = [System.Drawing.Color]::White
 $btnLogin.FlatStyle = 'Flat'
+$btnLogin.Font = New-Object System.Drawing.Font('Segoe UI', 8)
 $form.Controls.Add($btnLogin)
+
+$btnLogout = New-Object System.Windows.Forms.Button
+$btnLogout.Text = 'Cerrar sesión'
+$btnLogout.Location = New-Object System.Drawing.Point(530, 58)
+$btnLogout.Size = New-Object System.Drawing.Size(90, 28)
+$btnLogout.BackColor = [System.Drawing.Color]::FromArgb(198, 40, 40)
+$btnLogout.ForeColor = [System.Drawing.Color]::White
+$btnLogout.FlatStyle = 'Flat'
+$btnLogout.Font = New-Object System.Drawing.Font('Segoe UI', 8)
+$btnLogout.Enabled = $false
+$form.Controls.Add($btnLogout)
 
 # -- Nombre completo --
 $lblNombre = New-Object System.Windows.Forms.Label
@@ -557,7 +599,7 @@ function Validate-Inputs {
         $missing = Test-Dependencies
         if ($missing) {
             [System.Windows.Forms.MessageBox]::Show(
-                "Aún faltan: $($missing -join ', ').`n`nCerrá y reabrí el script.",
+                "Aún faltan: $($missing -join ', ').`n`nCerrá y reabre el script.",
                 'Reiniciar requerido', 'OK', 'Warning') | Out-Null
             return $false
         }
@@ -566,20 +608,21 @@ function Validate-Inputs {
     # gh auth
     if (-not (Test-GhAuth)) {
         $r = [System.Windows.Forms.MessageBox]::Show(
-            "No estás autenticado en GitHub.`n`n¿Querés iniciar sesión ahora?",
-            'Sin autenticación', 'YesNo', 'Warning')
+            "No tienes una sesión de GitHub activa.`n`n¿Quieres iniciar sesión ahora?",
+            'Sin sesión', 'YesNo', 'Warning')
         if ($r -eq 'Yes') {
-            Log '→ Iniciando login con device flow (sin abrir navegador)' 'Yellow'
+            Log '→ Iniciando sesión con código (sin abrir navegador)' 'Yellow'
             $ok = Start-GitHubDeviceLogin
             if (-not $ok) {
-                Log '✗ Login cancelado o fallido.' 'Red'
+                Log '✗ Inicio de sesión cancelado o fallido.' 'Red'
                 return $false
             }
             # Re-chequear
             if (-not (Test-GhAuth)) {
-                Log '✗ Auth aún no detectada. Intentá de nuevo.' 'Red'
+                Log '✗ Sesión aún no detectada. Intenta de nuevo.' 'Red'
                 return $false
             }
+            Update-SessionPanel
         } else {
             return $false
         }
@@ -587,17 +630,17 @@ function Validate-Inputs {
 
     # Campos requeridos
     if (-not $txtNombre.Text.Trim()) {
-        [System.Windows.Forms.MessageBox]::Show('Ingresá tu nombre completo.', 'Falta dato', 'OK', 'Warning') | Out-Null
+        [System.Windows.Forms.MessageBox]::Show('Ingresa tu nombre completo.', 'Falta dato', 'OK', 'Warning') | Out-Null
         return $false
     }
     if (-not $cmbForma.Text.Trim()) {
-        [System.Windows.Forms.MessageBox]::Show('Seleccioná o escribí la forma de la prueba.', 'Falta dato', 'OK', 'Warning') | Out-Null
+        [System.Windows.Forms.MessageBox]::Show('Selecciona o escribe la forma de la prueba.', 'Falta dato', 'OK', 'Warning') | Out-Null
         return $false
     }
 
     if ($RequireFolder) {
         if (-not $txtCarpeta.Text -or -not (Test-Path $txtCarpeta.Text)) {
-            [System.Windows.Forms.MessageBox]::Show('Seleccioná una carpeta válida con tu evaluación.', 'Falta carpeta', 'OK', 'Warning') | Out-Null
+            [System.Windows.Forms.MessageBox]::Show('Selecciona una carpeta válida con tu evaluación.', 'Falta carpeta', 'OK', 'Warning') | Out-Null
             return $false
         }
     }
@@ -738,6 +781,35 @@ function Invoke-UploadFiles {
     }
 }
 
+# -- Actualizar panel de sesión --
+function Update-SessionPanel {
+    if (Test-GhAuth) {
+        try {
+            $userInfo = gh api user 2>$null | ConvertFrom-Json
+            $login = $userInfo.login
+            $email = if ($userInfo.email) { $userInfo.email } else { "(email privado)" }
+            $lblSesionUser.Text = "@$login"
+            $lblSesionUser.ForeColor = [System.Drawing.Color]::DarkGreen
+            $lblSesionEmail.Text = $email
+            $btnLogin.Enabled = $false
+            $btnLogout.Enabled = $true
+        } catch {
+            $lblSesionUser.Text = '(error al consultar)'
+            $lblSesionUser.ForeColor = [System.Drawing.Color]::DarkOrange
+            $lblSesionEmail.Text = ''
+            $btnLogin.Enabled = $true
+            $btnLogout.Enabled = $false
+        }
+    } else {
+        $lblSesionUser.Text = 'Sin sesión'
+        $lblSesionUser.ForeColor = [System.Drawing.Color]::Gray
+        $lblSesionEmail.Text = '(no conectado a GitHub)'
+        $btnLogin.Enabled = $true
+        $btnLogout.Enabled = $false
+    }
+    [System.Windows.Forms.Application]::DoEvents()
+}
+
 # -- Wiring de eventos --
 $txtNombre.Add_TextChanged({ Update-RepoPreview })
 $cmbForma.Add_TextChanged({ Update-RepoPreview })
@@ -745,7 +817,7 @@ $cmbForma.Add_SelectedIndexChanged({ Update-RepoPreview })
 
 $btnBuscar.Add_Click({
     $dlg = New-Object System.Windows.Forms.FolderBrowserDialog
-    $dlg.Description = 'Seleccioná la carpeta con tu evaluación'
+    $dlg.Description = 'Selecciona la carpeta con tu evaluación'
     if ($dlg.ShowDialog() -eq 'OK') {
         $txtCarpeta.Text = $dlg.SelectedPath
         Log "Carpeta seleccionada: $($dlg.SelectedPath)"
@@ -753,21 +825,47 @@ $btnBuscar.Add_Click({
 })
 
 $btnLogin.Add_Click({
-    if (Test-GhAuth) {
-        $ghUser = (gh api user --jq .login 2>$null).Trim()
-        $r = [System.Windows.Forms.MessageBox]::Show(
-            "Ya estás logueado como: $ghUser`n`n¿Querés cerrar sesión y entrar con otra cuenta?",
-            'Sesión activa', 'YesNo', 'Question')
-        if ($r -eq 'Yes') {
-            Log "→ Cerrando sesión de $ghUser..."
-            gh auth logout --hostname github.com 2>&1 | Out-Null
-            Log '→ Iniciando nuevo login...'
-            [void](Start-GitHubDeviceLogin)
-        }
-    } else {
-        Log '→ Iniciando login con device flow...'
-        [void](Start-GitHubDeviceLogin)
+    Log '→ Iniciando sesión con código (sin abrir navegador)...'
+    if (Start-GitHubDeviceLogin) {
+        Update-SessionPanel
     }
+})
+
+$btnLogout.Add_Click({
+    if (-not (Test-GhAuth)) {
+        Update-SessionPanel
+        return
+    }
+    $ghUser = (gh api user --jq .login 2>$null).Trim()
+    $r = [System.Windows.Forms.MessageBox]::Show(
+        "Se cerrará la sesión de @$ghUser y se borrarán las credenciales guardadas en este equipo.`n`n¿Confirmas?",
+        'Cerrar sesión', 'YesNo', 'Warning')
+    if ($r -ne 'Yes') { return }
+
+    Log "→ Cerrando sesión de @$ghUser..."
+
+    # 1. Logout en gh CLI (limpia token guardado por gh)
+    gh auth logout --hostname github.com 2>&1 | Out-Null
+
+    # 2. Limpiar Windows Credential Manager (entradas de github.com)
+    try {
+        $targets = cmdkey /list 2>$null | Select-String -Pattern 'github\.com' | ForEach-Object {
+            ($_ -split 'Target:\s*')[1].Trim()
+        }
+        foreach ($t in $targets) {
+            cmdkey /delete:$t 2>&1 | Out-Null
+            Log "  borrada credencial: $t"
+        }
+    } catch {}
+
+    # 3. Limpiar caché del git credential helper
+    git credential-cache exit 2>$null | Out-Null
+
+    Log '✓ Sesión cerrada y credenciales borradas.' 'Green'
+    Update-SessionPanel
+    [System.Windows.Forms.MessageBox]::Show(
+        'Sesión cerrada. Ahora puedes iniciar sesión con otra cuenta usando el botón "Iniciar sesión".',
+        'Listo', 'OK', 'Information') | Out-Null
 })
 
 $btnCrearRepo.Add_Click({ [void](Invoke-CreateRepo) })
@@ -780,21 +878,24 @@ $btnTodo.Add_Click({
 })
 
 # -- Mostrar form --
-Log 'Listo. Completá los datos y elegí una acción.'
-Log 'Tip: usá "Hacer TODO" si es la primera vez.' 'Cyan'
+Log 'Listo. Completa los datos y elige una acción.'
+Log 'Tip: usa "Hacer TODO" si es la primera vez.' 'Cyan'
 
 # Chequeo proactivo de dependencias al abrir
 $initMissing = Test-Dependencies
 if ($initMissing) {
     Log "⚠ Dependencias faltantes detectadas: $($initMissing -join ', ')" 'Yellow'
-    Log '  Te ofreceré instalarlas la primera vez que uses una acción.' 'Yellow'
+    Log '  Se te ofrecerá instalarlas la primera vez que uses una acción.' 'Yellow'
 } else {
     Log '✓ git y gh detectados.'
     if (Test-GhAuth) {
-        Log '✓ gh autenticado.'
+        Log '✓ Sesión de GitHub activa.'
     } else {
-        Log '⚠ gh NO autenticado. Te pediré login al crear repo.' 'Yellow'
+        Log '⚠ Sin sesión de GitHub. Inicia sesión con el botón superior derecho.' 'Yellow'
     }
 }
+
+# Llenar panel de sesión con datos actuales
+Update-SessionPanel
 
 [void]$form.ShowDialog()

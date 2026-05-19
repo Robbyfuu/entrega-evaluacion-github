@@ -21,7 +21,7 @@ Y sube todos los archivos de tu carpeta de evaluación con un solo click.
 - Conexión a internet
 
 **No necesitas instalar nada manualmente.** El script detecta y ofrece instalar
-automáticamente `git` y `gh` (GitHub CLI) si no los tienes.
+automáticamente `git` y `gh` (GitHub CLI) si no están presentes.
 
 ---
 
@@ -29,7 +29,7 @@ automáticamente `git` y `gh` (GitHub CLI) si no los tienes.
 
 ### 1. Descomprimir
 
-Extrae el ZIP en una carpeta. Vas a ver estos archivos:
+Extrae el ZIP en una carpeta. Verás estos archivos:
 
 ```
 EntregaEvaluacion/
@@ -47,56 +47,67 @@ Si Windows muestra una advertencia de seguridad:
 - Click en **"Más información"**
 - Click en **"Ejecutar de todas formas"**
 
+El script desbloquea automáticamente los archivos al iniciar para evitar que esta
+advertencia aparezca en futuras ejecuciones.
+
 ### 3. Primera vez: instalar dependencias
 
 Si es la primera vez, el script te ofrecerá instalar `git` y `gh` con `winget`.
 
 - Click **Sí** cuando pregunte.
 - Acepta los permisos de administrador que aparezcan.
-- Cuando termine, **cerrá y reabrí el script**.
+- Cuando termine, cierra y vuelve a abrir el script.
 
-### 4. Primera vez: login en GitHub
+### 4. Primera vez: iniciar sesión en GitHub
 
-Cuando hagas click en cualquier acción, el script te pedirá autenticarte en GitHub
-con un flujo simple **sin abrir navegador automáticamente**:
+Cuando hagas click en cualquier acción, el script te pedirá iniciar sesión en
+GitHub **sin abrir un navegador automáticamente**:
 
-1. El script te muestra un **código** grande tipo `XXXX-XXXX`.
-2. Abrí en tu navegador (o **celular**): https://github.com/login/device
-3. Ingresá el código (podés copiarlo con el botón "Copiar código").
-4. Iniciá sesión en GitHub si no estás logueado.
-5. Autorizá el acceso a "GitHub CLI".
+1. El script muestra un **código** grande tipo `XXXX-XXXX`.
+2. Abre en tu navegador (o **celular**): https://github.com/login/device
+3. Ingresa el código (puedes copiarlo con el botón "Copiar código").
+4. Inicia sesión en GitHub si no estás conectado.
+5. Autoriza el acceso a "GitHub CLI".
 6. El script detecta automáticamente la autorización y continúa.
 
-**Ventaja:** podés usar tu celular para hacer el login. No necesitás navegador
+**Ventaja:** puedes usar tu celular para hacer el login. No necesitas navegador
 en la PC donde corre el script.
 
-Esto es **solo una vez**. Quedás logueado permanentemente.
+Esto es **solo una vez**. La sesión queda guardada.
 
-**Botón "Iniciar sesión"** (esquina superior derecha): te permite volver a
-loguearte o cambiar de cuenta cuando quieras.
+### 5. Panel de cuenta
 
-### 5. Subir tu evaluación
+En la esquina superior derecha verás siempre quién está conectado:
 
-1. Completá **Nombre completo** (ej: `Juan Pérez García`).
-2. Elegí o escribí **Forma de prueba** (ej: `Forma-A`).
-3. Click **Buscar...** y seleccioná la carpeta de tu evaluación.
-4. Elegí visibilidad: **Privado** (recomendado) o **Público**.
+- **Cuenta de GitHub**: `@usuario` + email
+- **Botón "Iniciar sesión"**: cuando no hay sesión activa
+- **Botón "Cerrar sesión"**: borra todas las credenciales del equipo y permite cambiar de cuenta
+
+### 6. Subir tu evaluación
+
+1. Completa **Nombre completo** (ej: `Juan Pérez García`).
+2. Elige o escribe **Forma de prueba** (ej: `Forma-A`).
+3. Click **Buscar...** y selecciona la carpeta de tu evaluación.
+4. Elige visibilidad: **Privado** (recomendado) o **Público**.
 5. Click **Hacer TODO**.
 
 El script:
-- Crea el repo en tu GitHub.
-- Hace `git init`, `git add`, `git commit`, `git push`.
+- Crea el repositorio en tu GitHub.
+- Configura tu nombre y email en el repositorio local.
+- Ejecuta `git init`, `git add`, `git commit`, `git push`.
 - Te muestra el link al final.
 
 ---
 
 ## Botones disponibles
 
-| Botón              | Qué hace                                                 |
-|--------------------|----------------------------------------------------------|
-| **1. Crear Repo**  | Solo crea el repositorio vacío en GitHub.                |
-| **2. Subir Archivos** | Sube los archivos a un repo ya existente.             |
-| **Hacer TODO**     | Hace los dos pasos. **Usá este si es la primera vez.**   |
+| Botón                 | Qué hace                                                 |
+|-----------------------|----------------------------------------------------------|
+| **1. Crear Repo**     | Solo crea el repositorio vacío en GitHub.                |
+| **2. Subir Archivos** | Sube los archivos a un repositorio ya existente.         |
+| **Hacer TODO**        | Hace los dos pasos. **Recomendado si es la primera vez.**|
+| **Iniciar sesión**    | Inicia sesión en GitHub con código (sin navegador).      |
+| **Cerrar sesión**     | Borra todas las credenciales del equipo.                 |
 
 ---
 
@@ -104,31 +115,34 @@ El script:
 
 ### "winget no se reconoce..."
 
-Tu Windows no tiene `winget`. Instalá **App Installer** desde Microsoft Store
-o descargá manualmente:
+Tu Windows no tiene `winget`. Instala **App Installer** desde Microsoft Store
+o descarga manualmente:
 - Git: https://git-scm.com/download/win
 - GitHub CLI: https://cli.github.com/
 
-### "No estás autenticado en GitHub"
+### "No tienes una sesión de GitHub activa"
 
-Click **Sí** cuando ofrezca ejecutar `gh auth login`. Seguí las instrucciones
-en la ventana que abre.
+Click **Sí** cuando el script ofrezca iniciar sesión. Sigue las instrucciones del
+diálogo con el código.
 
-### "Repo ya existe"
+### "Repositorio ya existe"
 
-El script lo detecta y reutiliza ese mismo repo. No es error.
+El script lo detecta y reutiliza ese mismo repositorio. No es un error.
 
 ### "Falló el push"
 
 Posibles causas:
-- Conexión a internet caída.
-- Token expirado → usar `Reset-GitHubAuth.ps1` para limpiar y re-loguearte.
-- El repo ya tenía commits desde otro lado → el script no sobrescribe historia.
+- Conexión a internet interrumpida.
+- Token expirado: usa el botón **Cerrar sesión** y vuelve a iniciar sesión.
+- El repositorio ya tenía commits desde otro lado: el script no sobrescribe historial.
 
 ### Quiero cambiar de cuenta de GitHub
 
-Ejecutá `Reset-GitHubAuth.ps1` (botón derecho → Ejecutar con PowerShell).
-Limpia todas las credenciales y te permite loguearte con otra cuenta.
+Opción A (recomendada): usa el botón **Cerrar sesión** dentro del script y luego
+**Iniciar sesión** con la nueva cuenta.
+
+Opción B: ejecuta `Reset-GitHubAuth.ps1` (click derecho → Ejecutar con PowerShell).
+Limpia todas las credenciales y permite iniciar sesión con otra cuenta.
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File Reset-GitHubAuth.ps1
@@ -136,17 +150,17 @@ powershell -ExecutionPolicy Bypass -File Reset-GitHubAuth.ps1
 
 ---
 
-## Cómo se genera el nombre del repo
+## Cómo se genera el nombre del repositorio
 
 El nombre se sanitiza automáticamente:
 
-- Todo minúsculas
-- Espacios → guiones (`-`)
-- Quita acentos y caracteres especiales
+- Todo en minúsculas
+- Espacios convertidos a guiones (`-`)
+- Acentos y caracteres especiales eliminados
 
 Ejemplos:
 
-| Nombre + Forma                  | Repo generado                  |
+| Nombre + Forma                  | Repositorio generado           |
 |---------------------------------|--------------------------------|
 | `Juan Pérez García` + `Forma-A` | `juan-perez-garcia-forma-a`    |
 | `María López` + `Forma B`       | `maria-lopez-forma-b`          |
@@ -159,12 +173,13 @@ Ejemplos:
 - El script **no envía tus credenciales a ningún servidor externo**.
 - Toda la autenticación pasa por `gh` (la herramienta oficial de GitHub).
 - Las credenciales se guardan en el **Credential Manager de Windows**, encriptadas.
-- Podés revisar el código abriendo `Subir-Evaluacion.ps1` con cualquier editor.
+- Puedes revisar el código fuente abriendo `Subir-Evaluacion.ps1` con cualquier editor.
+- El botón **Cerrar sesión** limpia todas las credenciales del equipo (gh CLI + Credential Manager + caché de git).
 
 ---
 
 ## Soporte
 
-Si algo no funciona, contactá a tu profesor con:
+Si algo no funciona, contacta a tu profesor con:
 - Captura de pantalla del error.
-- Contenido del log negro de la ventana (copiá y pegá).
+- Contenido del log negro de la ventana (cópialo y pégalo).

@@ -4,7 +4,7 @@ REM  Launcher para Subir-Evaluacion.ps1
 REM  Doble-click para abrir la GUI de entrega de evaluacion.
 REM ============================================================
 
-REM Forzar UTF-8 en la consola por si PowerShell hereda codepage
+REM Forzar UTF-8 en la consola
 chcp 65001 >nul 2>&1
 
 setlocal
@@ -34,6 +34,10 @@ if errorlevel 1 (
     pause
     exit /b 1
 )
+
+REM Desbloquear archivos descargados de internet (quita Zone.Identifier ADS)
+REM Esto evita la advertencia "Windows protegio su PC" en cada ejecucion
+powershell -NoProfile -ExecutionPolicy Bypass -Command "Get-ChildItem -Path '%SCRIPT_DIR%' -File | Unblock-File -ErrorAction SilentlyContinue" >nul 2>&1
 
 REM Lanzar con bypass de execution policy, sin ventana de consola visible
 powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "%PS1%"
