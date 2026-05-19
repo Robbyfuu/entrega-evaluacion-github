@@ -162,9 +162,19 @@
         Los alumnos los ven en su script y los aceptan con un click.
       </p>
       <div class="row-flex">
-        <div class="field" style="flex:0 0 220px;">
-          <label for="asgTitle">Título (ej: "Evaluación 1")</label>
+        <div class="field" style="flex:0 0 180px;">
+          <label for="asgTitle">Título</label>
           <input type="text" id="asgTitle" placeholder="Evaluación 1" />
+        </div>
+        <div class="field" style="flex:0 0 120px;">
+          <label for="asgSection">Sección</label>
+          <select id="asgSection"
+                  style="width:100%;padding:10px 14px;border:1px solid #d2d2d7;border-radius:8px;font-size:14px;">
+            <option value="001D">001D</option>
+            <option value="002D">002D</option>
+            <option value="003D">003D</option>
+            <option value="">Todas las secciones</option>
+          </select>
         </div>
         <div class="field">
           <label for="asgUrl">URL del Classroom assignment</label>
@@ -176,14 +186,15 @@
       <table style="margin-top:16px;">
         <thead>
           <tr>
-            <th style="width:25%;">Título</th>
-            <th style="width:40%;">URL</th>
-            <th style="width:15%;">Estado</th>
+            <th style="width:20%;">Título</th>
+            <th style="width:12%;">Sección</th>
+            <th style="width:35%;">URL</th>
+            <th style="width:13%;">Estado</th>
             <th style="width:20%;">Acciones</th>
           </tr>
         </thead>
         <tbody id="assignmentsBody">
-          <tr><td colspan="4" style="text-align:center;color:#8e8e93;">Cargando...</td></tr>
+          <tr><td colspan="5" style="text-align:center;color:#8e8e93;">Cargando...</td></tr>
         </tbody>
       </table>
     </div>
@@ -194,7 +205,7 @@
         <span style="font-size:12px;color:#8e8e93;">(últimos 100)</span>
       </h2>
       <div class="row-flex" style="margin-bottom:12px;">
-        <div class="field" style="flex:0 0 200px;">
+        <div class="field" style="flex:0 0 180px;">
           <label for="actionFilter">Filtrar por acción</label>
           <select id="actionFilter" onchange="loadActivity()"
                   style="width:100%;padding:10px 14px;border:1px solid #d2d2d7;border-radius:8px;font-size:14px;">
@@ -205,12 +216,23 @@
             <option value="upload">Subir archivos</option>
           </select>
         </div>
+        <div class="field" style="flex:0 0 160px;">
+          <label for="sectionFilter">Filtrar por sección</label>
+          <select id="sectionFilter" onchange="loadActivity()"
+                  style="width:100%;padding:10px 14px;border:1px solid #d2d2d7;border-radius:8px;font-size:14px;">
+            <option value="">Todas</option>
+            <option value="001D">001D</option>
+            <option value="002D">002D</option>
+            <option value="003D">003D</option>
+          </select>
+        </div>
         <button class="btn-secondary" onclick="loadActivity()">Refrescar</button>
       </div>
       <table>
         <thead>
           <tr>
             <th>Fecha</th>
+            <th>Sección</th>
             <th>Usuario GitHub</th>
             <th>Email</th>
             <th>PC</th>
@@ -219,7 +241,7 @@
           </tr>
         </thead>
         <tbody id="activityBody">
-          <tr><td colspan="6" style="text-align:center;color:#8e8e93;">Cargando...</td></tr>
+          <tr><td colspan="7" style="text-align:center;color:#8e8e93;">Cargando...</td></tr>
         </tbody>
       </table>
     </div>
@@ -456,13 +478,15 @@
     };
 
     window.loadActivity = async function() {
-      const filter = $('actionFilter').value;
+      const actionF = $('actionFilter').value;
+      const sectionF = $('sectionFilter').value;
       let q = supabase
         .from('student_activity')
         .select('*')
         .order('created_at', { ascending: false })
         .limit(100);
-      if (filter) q = q.eq('action', filter);
+      if (actionF) q = q.eq('action', actionF);
+      if (sectionF) q = q.eq('section', sectionF);
       const { data, error } = await q;
       const tbody = $('activityBody');
       while (tbody.firstChild) tbody.removeChild(tbody.firstChild);
@@ -470,7 +494,7 @@
       if (error) {
         const tr = makeEl('tr');
         const td = makeEl('td', { text: 'Error: ' + error.message, className: 'err' });
-        td.colSpan = 6;
+        td.colSpan = 7;
         tr.appendChild(td);
         tbody.appendChild(tr);
         return;
@@ -481,7 +505,7 @@
           text: 'Sin actividad registrada.',
           style: { textAlign: 'center', color: '#8e8e93' }
         });
-        td.colSpan = 6;
+        td.colSpan = 7;
         tr.appendChild(td);
         tbody.appendChild(tr);
         return;
@@ -490,6 +514,19 @@
       data.forEach(e => {
         const tr = makeEl('tr');
         tr.appendChild(makeEl('td', { text: fmt(e.created_at) }));
+
+        // Seccion con badge
+        const tdSec = makeEl('td');
+        if (e.section) {
+          const sb = makeEl('span', { text: e.section, className: 'badge' });
+          sb.style.background = '#0071e3';
+          sb.style.color = 'white';
+          tdSec.appendChild(sb);
+        } else {
+          tdSec.textContent = '-';
+        }
+        tr.appendChild(tdSec);
+
         tr.appendChild(makeEl('td', { text: '@' + (e.github_username || '?') }));
         tr.appendChild(makeEl('td', { text: e.github_email || '-' }));
         tr.appendChild(makeEl('td', { text: e.pc_name || '-' }));
@@ -550,6 +587,17 @@
         const tr = makeEl('tr');
         tr.appendChild(makeEl('td', { text: a.title }));
 
+        // Seccion con badge
+        const tdSec = makeEl('td');
+        const secBadge = makeEl('span', {
+          text: a.section || 'Todas',
+          className: 'badge'
+        });
+        secBadge.style.background = a.section ? '#0071e3' : '#673ab7';
+        secBadge.style.color = 'white';
+        tdSec.appendChild(secBadge);
+        tr.appendChild(tdSec);
+
         const tdUrl = makeEl('td');
         const link = makeEl('a', { text: a.classroom_url });
         link.href = a.classroom_url;
@@ -600,6 +648,7 @@
     window.addAssignment = async function() {
       const title = $('asgTitle').value.trim();
       const url = $('asgUrl').value.trim();
+      const section = $('asgSection').value;
       if (!title || !url) {
         $('asgMsg').textContent = 'Completa título y URL.';
         $('asgMsg').className = 'err';
@@ -607,7 +656,7 @@
       }
       const { error } = await supabase
         .from('assignments')
-        .insert({ title, classroom_url: url, active: true });
+        .insert({ title, classroom_url: url, section, active: true });
       if (error) {
         $('asgMsg').textContent = 'Error: ' + error.message;
         $('asgMsg').className = 'err';

@@ -409,17 +409,53 @@ function Update-AssignmentsBanner {
     }
 }
 
+$script:studentSectionRegPath = 'HKCU:\Software\EntregaEvaluacion'
+$script:studentSectionRegName = 'Section'
+
+function Get-StudentSection {
+    try {
+        $val = (Get-ItemProperty -Path $script:studentSectionRegPath `
+                                 -Name $script:studentSectionRegName `
+                                 -ErrorAction Stop).Section
+        return $val
+    } catch {
+        return ''
+    }
+}
+
+function Set-StudentSection {
+    param([string]$Section)
+    try {
+        if (-not (Test-Path $script:studentSectionRegPath)) {
+            New-Item -Path $script:studentSectionRegPath -Force | Out-Null
+        }
+        Set-ItemProperty -Path $script:studentSectionRegPath `
+                         -Name $script:studentSectionRegName `
+                         -Value $Section -Force
+    } catch {}
+}
+
 function Get-ClassroomAssignments {
     <#
-    Lista las tareas activas de Classroom que el profesor configuro en el panel admin.
-    Devuelve array de {id, title, classroom_url}. Array vacio si no hay.
+    Lista las tareas activas de Classroom que aplican a la seccion del alumno.
+    Devuelve array de {id, title, classroom_url, section}. Filtra por seccion
+    elegida + las marcadas como "todas" (section = '').
     #>
+    $mySection = Get-StudentSection
     try {
         $resp = Invoke-RestMethod `
             -Uri "$($script:supabaseUrl)/rest/v1/assignments?active=eq.true&select=*&order=created_at.desc" `
             -Headers (Get-SupabaseHeaders) `
             -TimeoutSec 5 -ErrorAction Stop
-        return @($resp)
+        $all = @($resp)
+        if (-not $mySection) {
+            # Sin seccion elegida: mostrar solo las "para todas las secciones"
+            return @($all | Where-Object { -not $_.section -or $_.section -eq '' })
+        }
+        # Mostrar las de mi seccion + las "todas"
+        return @($all | Where-Object {
+            -not $_.section -or $_.section -eq '' -or $_.section -eq $mySection
+        })
     } catch {
         return @()
     }
@@ -449,6 +485,8 @@ function Report-StudentActivity {
             pc_name         = $env:COMPUTERNAME
             action          = $Action
         }
+        $sec = Get-StudentSection
+        if ($sec) { $payload['section'] = $sec }
         if ($RepoName) { $payload['repo_name'] = $RepoName }
         if ($RepoUrl)  { $payload['repo_url']  = $RepoUrl }
 
@@ -1476,14 +1514,29 @@ $lblTitulo.Location = New-Object System.Drawing.Point(20, 15)
 $lblTitulo.Size = New-Object System.Drawing.Size(420, 35)
 $form.Controls.Add($lblTitulo)
 
+# -- Selector de seccion del alumno (persiste en registry) --
+$lblSeccion = New-Object System.Windows.Forms.Label
+$lblSeccion.Text = 'Tu sección:'
+$lblSeccion.Font = New-Object System.Drawing.Font('Segoe UI', 9, [System.Drawing.FontStyle]::Bold)
+$lblSeccion.Location = New-Object System.Drawing.Point(20, 58)
+$lblSeccion.Size = New-Object System.Drawing.Size(80, 20)
+$form.Controls.Add($lblSeccion)
+
+$cmbSeccion = New-Object System.Windows.Forms.ComboBox
+$cmbSeccion.DropDownStyle = 'DropDownList'
+$cmbSeccion.Items.AddRange(@('001D', '002D', '003D'))
+$cmbSeccion.Location = New-Object System.Drawing.Point(105, 56)
+$cmbSeccion.Size = New-Object System.Drawing.Size(90, 22)
+$form.Controls.Add($cmbSeccion)
+
 # -- Banner de tareas de Classroom (visible solo si hay tareas activas) --
 $lnkAssignments = New-Object System.Windows.Forms.LinkLabel
 $lnkAssignments.Text = ''
 $lnkAssignments.Visible = $false
 $lnkAssignments.Font = New-Object System.Drawing.Font('Segoe UI', 9, [System.Drawing.FontStyle]::Bold)
 $lnkAssignments.LinkColor = [System.Drawing.Color]::FromArgb(33, 150, 243)
-$lnkAssignments.Location = New-Object System.Drawing.Point(20, 55)
-$lnkAssignments.Size = New-Object System.Drawing.Size(420, 22)
+$lnkAssignments.Location = New-Object System.Drawing.Point(210, 58)
+$lnkAssignments.Size = New-Object System.Drawing.Size(230, 22)
 $form.Controls.Add($lnkAssignments)
 
 # -- Panel de sesión (esquina superior derecha) --
@@ -2210,6 +2263,12 @@ $lnkCrearCuenta.Add_LinkClicked({
 # Link banner de tareas de Classroom
 $lnkAssignments.Add_LinkClicked({ Show-AssignmentsDialog })
 
+# Selector de seccion - persiste en registry, recarga banner al cambiar
+$cmbSeccion.Add_SelectedIndexChanged({
+    Set-StudentSection -Section $cmbSeccion.SelectedItem
+    Update-AssignmentsBanner
+})
+
 # Selector de repo existente
 $cmbReposExistentes.Add_SelectedIndexChanged({ Update-RepoPreview; Update-ButtonStates })
 $btnRefreshRepos.Add_Click({ Load-UserRepos })
@@ -2354,6 +2413,59 @@ if ($initMissing) {
     } else {
         Log '⚠ Sin sesión de GitHub. Inicia sesión con el botón superior derecho.' 'Yellow'
     }
+}
+
+# Cargar seccion del alumno desde registry o pedir primera vez
+$savedSection = Get-StudentSection
+if ($savedSection -and $cmbSeccion.Items.Contains($savedSection)) {
+    $cmbSeccion.SelectedItem = $savedSection
+} else {
+    # Primera vez: dialog para elegir seccion
+    $dlg = New-Object System.Windows.Forms.Form
+    $dlg.Text = 'Selecciona tu sección'
+    $dlg.Size = New-Object System.Drawing.Size(340, 200)
+    $dlg.StartPosition = 'CenterScreen'
+    $dlg.FormBorderStyle = 'FixedDialog'
+    $dlg.ControlBox = $false
+
+    $lbl = New-Object System.Windows.Forms.Label
+    $lbl.Text = 'Elige tu sección de la asignatura:'
+    $lbl.Font = New-Object System.Drawing.Font('Segoe UI', 10, [System.Drawing.FontStyle]::Bold)
+    $lbl.Location = New-Object System.Drawing.Point(20, 20)
+    $lbl.Size = New-Object System.Drawing.Size(280, 22)
+    $dlg.Controls.Add($lbl)
+
+    $cmb = New-Object System.Windows.Forms.ComboBox
+    $cmb.DropDownStyle = 'DropDownList'
+    $cmb.Items.AddRange(@('001D', '002D', '003D'))
+    $cmb.Location = New-Object System.Drawing.Point(20, 55)
+    $cmb.Size = New-Object System.Drawing.Size(280, 25)
+    $cmb.Font = New-Object System.Drawing.Font('Segoe UI', 11)
+    $cmb.SelectedIndex = 0
+    $dlg.Controls.Add($cmb)
+
+    $lblHint = New-Object System.Windows.Forms.Label
+    $lblHint.Text = '(podrás cambiarla después en el formulario principal)'
+    $lblHint.Font = New-Object System.Drawing.Font('Segoe UI', 8, [System.Drawing.FontStyle]::Italic)
+    $lblHint.ForeColor = [System.Drawing.Color]::DimGray
+    $lblHint.Location = New-Object System.Drawing.Point(20, 85)
+    $lblHint.Size = New-Object System.Drawing.Size(280, 18)
+    $dlg.Controls.Add($lblHint)
+
+    $btnOk = New-Object System.Windows.Forms.Button
+    $btnOk.Text = 'Continuar'
+    $btnOk.Location = New-Object System.Drawing.Point(110, 120)
+    $btnOk.Size = New-Object System.Drawing.Size(110, 32)
+    $btnOk.BackColor = [System.Drawing.Color]::FromArgb(33, 150, 243)
+    $btnOk.ForeColor = [System.Drawing.Color]::White
+    $btnOk.FlatStyle = 'Flat'
+    $btnOk.DialogResult = 'OK'
+    $dlg.Controls.Add($btnOk)
+    $dlg.AcceptButton = $btnOk
+
+    [void]$dlg.ShowDialog()
+    $cmbSeccion.SelectedItem = $cmb.SelectedItem
+    Set-StudentSection -Section $cmb.SelectedItem
 }
 
 # Llenar panel de sesión con datos actuales (esto tambien llama Update-ButtonStates)
