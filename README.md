@@ -57,14 +57,23 @@ Si es la primera vez, el script te ofrecerá instalar `git` y `gh` con `winget`.
 
 ### 4. Primera vez: login en GitHub
 
-Cuando hagas click en cualquier acción, el script te pedirá autenticarte en GitHub.
+Cuando hagas click en cualquier acción, el script te pedirá autenticarte en GitHub
+con un flujo simple **sin abrir navegador automáticamente**:
 
-- Se abrirá una ventana de tu navegador.
-- Hacé login con tu cuenta de GitHub.
-- Pegá el código que muestra el script.
-- Autorizá el acceso.
+1. El script te muestra un **código** grande tipo `XXXX-XXXX`.
+2. Abrí en tu navegador (o **celular**): https://github.com/login/device
+3. Ingresá el código (podés copiarlo con el botón "Copiar código").
+4. Iniciá sesión en GitHub si no estás logueado.
+5. Autorizá el acceso a "GitHub CLI".
+6. El script detecta automáticamente la autorización y continúa.
+
+**Ventaja:** podés usar tu celular para hacer el login. No necesitás navegador
+en la PC donde corre el script.
 
 Esto es **solo una vez**. Quedás logueado permanentemente.
+
+**Botón "Iniciar sesión"** (esquina superior derecha): te permite volver a
+loguearte o cambiar de cuenta cuando quieras.
 
 ### 5. Subir tu evaluación
 

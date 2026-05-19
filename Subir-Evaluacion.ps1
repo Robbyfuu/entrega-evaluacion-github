@@ -109,6 +109,242 @@ function Test-GhAuth {
 }
 
 # ============================================================
+#         DEVICE FLOW LOGIN (sin abrir navegador local)
+# ============================================================
+
+function Start-GitHubDeviceLogin {
+    # OAuth Client ID público del GitHub CLI oficial
+    $clientId = '178c6fc778ccc68e1d6a'
+
+    # 1. Solicitar device code
+    try {
+        $resp = Invoke-RestMethod -Method Post `
+            -Uri 'https://github.com/login/device/code' `
+            -Body @{ client_id = $clientId; scope = 'repo workflow read:org gist' } `
+            -Headers @{ 'Accept' = 'application/json' }
+    } catch {
+        [System.Windows.Forms.MessageBox]::Show(
+            "Error contactando GitHub: $_`n`nVerificá tu conexión a internet.",
+            'Error de red', 'OK', 'Error') | Out-Null
+        return $false
+    }
+
+    $deviceCode = $resp.device_code
+    $userCode   = $resp.user_code        # Formato: XXXX-XXXX
+    $verifyUri  = $resp.verification_uri # https://github.com/login/device
+    $interval   = [int]$resp.interval
+    $expiresIn  = [int]$resp.expires_in
+    $startTime  = Get-Date
+
+    # 2. Construir dialog
+    $dlg = New-Object System.Windows.Forms.Form
+    $dlg.Text = 'Iniciar sesión en GitHub'
+    $dlg.Size = New-Object System.Drawing.Size(550, 480)
+    $dlg.StartPosition = 'CenterParent'
+    $dlg.FormBorderStyle = 'FixedDialog'
+    $dlg.MaximizeBox = $false
+    $dlg.MinimizeBox = $false
+
+    # Paso 1
+    $lblPaso1 = New-Object System.Windows.Forms.Label
+    $lblPaso1.Text = 'PASO 1: Abrí esta URL en tu navegador o celular'
+    $lblPaso1.Font = New-Object System.Drawing.Font('Segoe UI', 10, [System.Drawing.FontStyle]::Bold)
+    $lblPaso1.Location = New-Object System.Drawing.Point(20, 20)
+    $lblPaso1.Size = New-Object System.Drawing.Size(500, 22)
+    $dlg.Controls.Add($lblPaso1)
+
+    $txtUrl = New-Object System.Windows.Forms.TextBox
+    $txtUrl.Text = $verifyUri
+    $txtUrl.ReadOnly = $true
+    $txtUrl.Font = New-Object System.Drawing.Font('Consolas', 11)
+    $txtUrl.Location = New-Object System.Drawing.Point(20, 48)
+    $txtUrl.Size = New-Object System.Drawing.Size(380, 25)
+    $dlg.Controls.Add($txtUrl)
+
+    $btnCopyUrl = New-Object System.Windows.Forms.Button
+    $btnCopyUrl.Text = 'Copiar'
+    $btnCopyUrl.Location = New-Object System.Drawing.Point(410, 47)
+    $btnCopyUrl.Size = New-Object System.Drawing.Size(110, 27)
+    $btnCopyUrl.Add_Click({
+        [System.Windows.Forms.Clipboard]::SetText($verifyUri)
+        $btnCopyUrl.Text = 'Copiado!'
+    })
+    $dlg.Controls.Add($btnCopyUrl)
+
+    # Paso 2
+    $lblPaso2 = New-Object System.Windows.Forms.Label
+    $lblPaso2.Text = 'PASO 2: Ingresá este código'
+    $lblPaso2.Font = New-Object System.Drawing.Font('Segoe UI', 10, [System.Drawing.FontStyle]::Bold)
+    $lblPaso2.Location = New-Object System.Drawing.Point(20, 95)
+    $lblPaso2.Size = New-Object System.Drawing.Size(500, 22)
+    $dlg.Controls.Add($lblPaso2)
+
+    $lblCode = New-Object System.Windows.Forms.Label
+    $lblCode.Text = $userCode
+    $lblCode.Font = New-Object System.Drawing.Font('Consolas', 28, [System.Drawing.FontStyle]::Bold)
+    $lblCode.TextAlign = 'MiddleCenter'
+    $lblCode.BackColor = [System.Drawing.Color]::FromArgb(33, 33, 33)
+    $lblCode.ForeColor = [System.Drawing.Color]::LimeGreen
+    $lblCode.Location = New-Object System.Drawing.Point(20, 125)
+    $lblCode.Size = New-Object System.Drawing.Size(380, 60)
+    $dlg.Controls.Add($lblCode)
+
+    $btnCopyCode = New-Object System.Windows.Forms.Button
+    $btnCopyCode.Text = 'Copiar código'
+    $btnCopyCode.Location = New-Object System.Drawing.Point(410, 140)
+    $btnCopyCode.Size = New-Object System.Drawing.Size(110, 32)
+    $btnCopyCode.Add_Click({
+        [System.Windows.Forms.Clipboard]::SetText($userCode)
+        $btnCopyCode.Text = 'Copiado!'
+    })
+    $dlg.Controls.Add($btnCopyCode)
+
+    # Botón abrir browser (opcional)
+    $btnOpen = New-Object System.Windows.Forms.Button
+    $btnOpen.Text = 'Abrir URL en navegador (opcional)'
+    $btnOpen.Location = New-Object System.Drawing.Point(20, 205)
+    $btnOpen.Size = New-Object System.Drawing.Size(500, 32)
+    $btnOpen.Add_Click({
+        Start-Process $verifyUri
+    })
+    $dlg.Controls.Add($btnOpen)
+
+    # Status
+    $lblStatus = New-Object System.Windows.Forms.Label
+    $lblStatus.Text = 'Esperando que ingreses el código...'
+    $lblStatus.Font = New-Object System.Drawing.Font('Segoe UI', 9, [System.Drawing.FontStyle]::Italic)
+    $lblStatus.ForeColor = [System.Drawing.Color]::DarkOrange
+    $lblStatus.TextAlign = 'MiddleCenter'
+    $lblStatus.Location = New-Object System.Drawing.Point(20, 255)
+    $lblStatus.Size = New-Object System.Drawing.Size(500, 22)
+    $dlg.Controls.Add($lblStatus)
+
+    # Progress bar
+    $progress = New-Object System.Windows.Forms.ProgressBar
+    $progress.Style = 'Marquee'
+    $progress.MarqueeAnimationSpeed = 30
+    $progress.Location = New-Object System.Drawing.Point(20, 285)
+    $progress.Size = New-Object System.Drawing.Size(500, 12)
+    $dlg.Controls.Add($progress)
+
+    # Tiempo restante
+    $lblTime = New-Object System.Windows.Forms.Label
+    $lblTime.Text = "Código válido por: $($expiresIn / 60) minutos"
+    $lblTime.Font = New-Object System.Drawing.Font('Segoe UI', 8)
+    $lblTime.ForeColor = [System.Drawing.Color]::Gray
+    $lblTime.TextAlign = 'MiddleCenter'
+    $lblTime.Location = New-Object System.Drawing.Point(20, 310)
+    $lblTime.Size = New-Object System.Drawing.Size(500, 18)
+    $dlg.Controls.Add($lblTime)
+
+    # Botón cancelar
+    $btnCancel = New-Object System.Windows.Forms.Button
+    $btnCancel.Text = 'Cancelar'
+    $btnCancel.Location = New-Object System.Drawing.Point(210, 395)
+    $btnCancel.Size = New-Object System.Drawing.Size(120, 32)
+    $btnCancel.DialogResult = 'Cancel'
+    $dlg.Controls.Add($btnCancel)
+    $dlg.CancelButton = $btnCancel
+
+    # Estado del polling (var de cierre)
+    $script:authResult = $null
+    $script:authToken = $null
+
+    # Timer para polling
+    $timer = New-Object System.Windows.Forms.Timer
+    $timer.Interval = $interval * 1000
+    $timer.Add_Tick({
+        # Chequear expiración
+        $elapsed = (Get-Date) - $startTime
+        $remaining = [int]($expiresIn - $elapsed.TotalSeconds)
+        if ($remaining -le 0) {
+            $timer.Stop()
+            $lblStatus.Text = 'Código expirado. Cerrá y volvé a intentar.'
+            $lblStatus.ForeColor = [System.Drawing.Color]::Red
+            $progress.Style = 'Continuous'
+            $progress.Value = 0
+            return
+        }
+        $lblTime.Text = "Tiempo restante: $([int]($remaining / 60)) min $($remaining % 60) seg"
+
+        # Poll al endpoint de token
+        try {
+            $tokenResp = Invoke-RestMethod -Method Post `
+                -Uri 'https://github.com/login/oauth/access_token' `
+                -Body @{
+                    client_id   = $clientId
+                    device_code = $deviceCode
+                    grant_type  = 'urn:ietf:params:oauth:grant-type:device_code'
+                } `
+                -Headers @{ 'Accept' = 'application/json' }
+
+            if ($tokenResp.access_token) {
+                $timer.Stop()
+                $script:authToken = $tokenResp.access_token
+                $script:authResult = 'OK'
+                $lblStatus.Text = 'Autorizado! Guardando credenciales...'
+                $lblStatus.ForeColor = [System.Drawing.Color]::Green
+                $progress.Style = 'Continuous'
+                $progress.Value = 100
+                $dlg.DialogResult = 'OK'
+                Start-Sleep -Milliseconds 800
+                $dlg.Close()
+                return
+            }
+
+            switch ($tokenResp.error) {
+                'authorization_pending' { return }  # Seguir esperando
+                'slow_down' {
+                    $timer.Interval = ($interval + 5) * 1000
+                    return
+                }
+                'expired_token' {
+                    $timer.Stop()
+                    $lblStatus.Text = 'Código expirado.'
+                    $lblStatus.ForeColor = [System.Drawing.Color]::Red
+                }
+                'access_denied' {
+                    $timer.Stop()
+                    $lblStatus.Text = 'Acceso denegado por el usuario.'
+                    $lblStatus.ForeColor = [System.Drawing.Color]::Red
+                }
+                default {
+                    $lblStatus.Text = "Estado: $($tokenResp.error)"
+                }
+            }
+        } catch {
+            $lblStatus.Text = "Error de red (reintentando)..."
+        }
+    })
+    $timer.Start()
+
+    # Mostrar dialog modal
+    $result = $dlg.ShowDialog($form)
+    $timer.Stop()
+    $timer.Dispose()
+
+    if ($result -ne 'OK' -or -not $script:authToken) {
+        return $false
+    }
+
+    # Guardar token en gh CLI
+    try {
+        $script:authToken | gh auth login --hostname github.com --git-protocol https --with-token 2>&1 | Out-Null
+        if ($LASTEXITCODE -eq 0) {
+            $script:authToken = $null  # Limpiar de memoria
+            Log '✓ Sesión iniciada correctamente.' 'Green'
+            return $true
+        } else {
+            Log '✗ Falló el guardado del token en gh.' 'Red'
+            return $false
+        }
+    } catch {
+        Log "✗ Error guardando token: $_" 'Red'
+        return $false
+    }
+}
+
+# ============================================================
 #                     FORMULARIO PRINCIPAL
 # ============================================================
 
@@ -124,8 +360,18 @@ $lblTitulo = New-Object System.Windows.Forms.Label
 $lblTitulo.Text = 'Evaluación → GitHub'
 $lblTitulo.Font = New-Object System.Drawing.Font('Segoe UI', 16, [System.Drawing.FontStyle]::Bold)
 $lblTitulo.Location = New-Object System.Drawing.Point(20, 15)
-$lblTitulo.Size = New-Object System.Drawing.Size(580, 35)
+$lblTitulo.Size = New-Object System.Drawing.Size(420, 35)
 $form.Controls.Add($lblTitulo)
+
+# -- Botón login (esquina superior derecha) --
+$btnLogin = New-Object System.Windows.Forms.Button
+$btnLogin.Text = 'Iniciar sesión'
+$btnLogin.Location = New-Object System.Drawing.Point(450, 20)
+$btnLogin.Size = New-Object System.Drawing.Size(150, 30)
+$btnLogin.BackColor = [System.Drawing.Color]::FromArgb(96, 125, 139)
+$btnLogin.ForeColor = [System.Drawing.Color]::White
+$btnLogin.FlatStyle = 'Flat'
+$form.Controls.Add($btnLogin)
 
 # -- Nombre completo --
 $lblNombre = New-Object System.Windows.Forms.Label
@@ -320,13 +566,23 @@ function Validate-Inputs {
     # gh auth
     if (-not (Test-GhAuth)) {
         $r = [System.Windows.Forms.MessageBox]::Show(
-            "No estás autenticado en GitHub.`n`n¿Querés ejecutar 'gh auth login' ahora?",
+            "No estás autenticado en GitHub.`n`n¿Querés iniciar sesión ahora?",
             'Sin autenticación', 'YesNo', 'Warning')
         if ($r -eq 'Yes') {
-            Log 'Ejecutando: gh auth login (seguí instrucciones en la otra ventana)' 'Yellow'
-            Start-Process gh -ArgumentList 'auth login --web --git-protocol https' -Wait
+            Log '→ Iniciando login con device flow (sin abrir navegador)' 'Yellow'
+            $ok = Start-GitHubDeviceLogin
+            if (-not $ok) {
+                Log '✗ Login cancelado o fallido.' 'Red'
+                return $false
+            }
+            # Re-chequear
+            if (-not (Test-GhAuth)) {
+                Log '✗ Auth aún no detectada. Intentá de nuevo.' 'Red'
+                return $false
+            }
+        } else {
+            return $false
         }
-        return $false
     }
 
     # Campos requeridos
@@ -476,6 +732,24 @@ $btnBuscar.Add_Click({
     if ($dlg.ShowDialog() -eq 'OK') {
         $txtCarpeta.Text = $dlg.SelectedPath
         Log "Carpeta seleccionada: $($dlg.SelectedPath)"
+    }
+})
+
+$btnLogin.Add_Click({
+    if (Test-GhAuth) {
+        $ghUser = (gh api user --jq .login 2>$null).Trim()
+        $r = [System.Windows.Forms.MessageBox]::Show(
+            "Ya estás logueado como: $ghUser`n`n¿Querés cerrar sesión y entrar con otra cuenta?",
+            'Sesión activa', 'YesNo', 'Question')
+        if ($r -eq 'Yes') {
+            Log "→ Cerrando sesión de $ghUser..."
+            gh auth logout --hostname github.com 2>&1 | Out-Null
+            Log '→ Iniciando nuevo login...'
+            [void](Start-GitHubDeviceLogin)
+        }
+    } else {
+        Log '→ Iniciando login con device flow...'
+        [void](Start-GitHubDeviceLogin)
     }
 })
 
