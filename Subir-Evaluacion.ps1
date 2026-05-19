@@ -168,6 +168,164 @@ function Test-GitOwnership {
 # (clonar este script y leer el hash no permite recuperar el password)
 $script:cheatPasswordHash = '272a92d60e36898d05d03d50c07c9a906cc8a59fba74c4f333b7cc837d0b581d'
 
+# Marker file que persiste el estado de bloqueo entre ejecuciones del script
+$script:cheatMarkerFile = Join-Path $env:APPDATA 'GitHub CLI\.cheat-detected.json'
+
+# Path donde copiamos el script para auto-arrancar al login (sobrevive si el ZIP es eliminado)
+$script:cheatLockScriptPath = Join-Path $env:APPDATA 'GitHub CLI\EntregaEvaluacion-Lock.ps1'
+
+# Nombre del valor en HKCU\...\Run para auto-arranque del bloqueo
+$script:cheatRunRegName = 'EntregaEvaluacionLock'
+
+function Trigger-CheatLockdown {
+    <#
+    Activa el bloqueo persistente:
+    1. Crea marker file con detalles de la trampa
+    2. Copia el script a APPDATA (para que sobreviva si borran la carpeta original)
+    3. Registra auto-arranque en HKCU\Run
+    4. Deshabilita Task Manager via DisableTaskMgr=1
+    #>
+    param(
+        [string]$RepoName,
+        [int]$FilesCount,
+        [string[]]$FilesNames
+    )
+
+    # 1. Marker file con detalles
+    try {
+        $markerDir = Split-Path $script:cheatMarkerFile -Parent
+        if (-not (Test-Path $markerDir)) {
+            New-Item -ItemType Directory -Path $markerDir -Force | Out-Null
+        }
+        $data = @{
+            repo  = $RepoName
+            count = $FilesCount
+            files = $FilesNames
+            date  = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
+        } | ConvertTo-Json -Compress
+        [System.IO.File]::WriteAllText($script:cheatMarkerFile, $data)
+    } catch {}
+
+    # 2. Copiar script a APPDATA para auto-arranque persistente
+    try {
+        $currentScript = $PSCommandPath
+        if ($currentScript -and (Test-Path $currentScript)) {
+            Copy-Item -Path $currentScript -Destination $script:cheatLockScriptPath -Force
+        }
+    } catch {}
+
+    # 3. Registrar en HKCU\Run para auto-arranque al login
+    try {
+        $runReg = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
+        $launchCmd = "powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$script:cheatLockScriptPath`""
+        Set-ItemProperty -Path $runReg -Name $script:cheatRunRegName -Value $launchCmd -Force
+    } catch {}
+
+    # 4. Deshabilitar Task Manager via registry HKCU (no requiere admin)
+    try {
+        $polPath = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies\System'
+        if (-not (Test-Path $polPath)) {
+            New-Item -Path $polPath -Force | Out-Null
+        }
+        Set-ItemProperty -Path $polPath -Name 'DisableTaskMgr' -Value 1 -Type DWord -Force
+    } catch {}
+}
+
+function Release-CheatLockdown {
+    <#
+    Solo se llama tras password correcto del profesor.
+    Revierte TODO el lockdown:
+    1. Borra marker file
+    2. Quita HKCU\Run auto-arranque
+    3. Re-habilita Task Manager
+    4. (Opcional) borra el script-lock copiado a APPDATA
+    #>
+
+    try { Remove-Item $script:cheatMarkerFile -Force -ErrorAction SilentlyContinue } catch {}
+
+    try {
+        Remove-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' `
+                            -Name $script:cheatRunRegName -Force -ErrorAction SilentlyContinue
+    } catch {}
+
+    try {
+        $polPath = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies\System'
+        Remove-ItemProperty -Path $polPath -Name 'DisableTaskMgr' -Force -ErrorAction SilentlyContinue
+    } catch {}
+
+    try { Remove-Item $script:cheatLockScriptPath -Force -ErrorAction SilentlyContinue } catch {}
+}
+
+function Prompt-TeacherPassword {
+    <#
+    Dialog pequeño y simple para que el profesor ingrese la clave.
+    Devuelve $true si la clave es correcta, $false si cancela o se equivoca varias veces.
+    #>
+    $dlg = New-Object System.Windows.Forms.Form
+    $dlg.Text = 'Clave del profesor'
+    $dlg.Size = New-Object System.Drawing.Size(380, 200)
+    $dlg.StartPosition = 'CenterParent'
+    $dlg.FormBorderStyle = 'FixedDialog'
+    $dlg.ControlBox = $false
+    $dlg.TopMost = $true
+
+    $lbl = New-Object System.Windows.Forms.Label
+    $lbl.Text = 'Ingrese la clave de desbloqueo:'
+    $lbl.Font = New-Object System.Drawing.Font('Segoe UI', 10, [System.Drawing.FontStyle]::Bold)
+    $lbl.Location = New-Object System.Drawing.Point(20, 20)
+    $lbl.Size = New-Object System.Drawing.Size(330, 22)
+    $dlg.Controls.Add($lbl)
+
+    $txt = New-Object System.Windows.Forms.TextBox
+    $txt.PasswordChar = '*'
+    $txt.Location = New-Object System.Drawing.Point(20, 50)
+    $txt.Size = New-Object System.Drawing.Size(330, 28)
+    $txt.Font = New-Object System.Drawing.Font('Consolas', 12)
+    $dlg.Controls.Add($txt)
+
+    $lblErr = New-Object System.Windows.Forms.Label
+    $lblErr.Text = ''
+    $lblErr.ForeColor = [System.Drawing.Color]::Red
+    $lblErr.Font = New-Object System.Drawing.Font('Segoe UI', 9, [System.Drawing.FontStyle]::Bold)
+    $lblErr.Location = New-Object System.Drawing.Point(20, 85)
+    $lblErr.Size = New-Object System.Drawing.Size(330, 20)
+    $dlg.Controls.Add($lblErr)
+
+    $script:teacherPwdOk = $false
+
+    $btnOk = New-Object System.Windows.Forms.Button
+    $btnOk.Text = 'Validar'
+    $btnOk.Location = New-Object System.Drawing.Point(180, 120)
+    $btnOk.Size = New-Object System.Drawing.Size(80, 32)
+    $btnOk.BackColor = [System.Drawing.Color]::FromArgb(76, 175, 80)
+    $btnOk.ForeColor = [System.Drawing.Color]::White
+    $btnOk.FlatStyle = 'Flat'
+    $btnOk.Add_Click({
+        if (Test-CheatPassword -Candidate $txt.Text) {
+            $script:teacherPwdOk = $true
+            $dlg.DialogResult = 'OK'
+            $dlg.Close()
+        } else {
+            $lblErr.Text = 'Clave incorrecta. Vuelva a intentarlo.'
+            $txt.BackColor = [System.Drawing.Color]::FromArgb(255, 220, 220)
+            $txt.Text = ''
+            $txt.Focus()
+        }
+    })
+    $dlg.Controls.Add($btnOk)
+    $dlg.AcceptButton = $btnOk
+
+    $btnCancel = New-Object System.Windows.Forms.Button
+    $btnCancel.Text = 'Cancelar'
+    $btnCancel.Location = New-Object System.Drawing.Point(270, 120)
+    $btnCancel.Size = New-Object System.Drawing.Size(80, 32)
+    $btnCancel.DialogResult = 'Cancel'
+    $dlg.Controls.Add($btnCancel)
+
+    [void]$dlg.ShowDialog()
+    return $script:teacherPwdOk
+}
+
 function Test-CheatPassword {
     param([string]$Candidate)
     if (-not $Candidate) { return $false }
@@ -207,18 +365,21 @@ function Show-CheatAlertDialog {
     param(
         [string]$RepoName,
         [int]$FilesCount,
-        [string[]]$FilesNames
+        [string[]]$FilesNames,
+        [bool]$IsPersistent = $false   # true cuando viene de marker file (reinicio)
     )
 
     $dlg = New-Object System.Windows.Forms.Form
     $dlg.Text = 'ALERTA DE INTEGRIDAD ACADEMICA'
-    $dlg.Size = New-Object System.Drawing.Size(720, 540)
+    $dlg.Size = New-Object System.Drawing.Size(760, 560)
     $dlg.StartPosition = 'CenterScreen'
-    $dlg.FormBorderStyle = 'FixedDialog'
+    $dlg.FormBorderStyle = 'None'   # Sin barra de titulo
     $dlg.ControlBox = $false
     $dlg.BackColor = [System.Drawing.Color]::FromArgb(183, 28, 28)
     $dlg.TopMost = $true
     $dlg.KeyPreview = $true
+    $dlg.WindowState = 'Normal'
+    $dlg.ShowInTaskbar = $false
 
     $lblWarn = New-Object System.Windows.Forms.Label
     $lblWarn.Text = '! ALERTA !'
@@ -226,7 +387,7 @@ function Show-CheatAlertDialog {
     $lblWarn.ForeColor = [System.Drawing.Color]::White
     $lblWarn.TextAlign = 'MiddleCenter'
     $lblWarn.Location = New-Object System.Drawing.Point(20, 20)
-    $lblWarn.Size = New-Object System.Drawing.Size(680, 70)
+    $lblWarn.Size = New-Object System.Drawing.Size(720, 70)
     $dlg.Controls.Add($lblWarn)
 
     $lblTitle = New-Object System.Windows.Forms.Label
@@ -235,82 +396,78 @@ function Show-CheatAlertDialog {
     $lblTitle.ForeColor = [System.Drawing.Color]::White
     $lblTitle.TextAlign = 'MiddleCenter'
     $lblTitle.Location = New-Object System.Drawing.Point(20, 95)
-    $lblTitle.Size = New-Object System.Drawing.Size(680, 30)
+    $lblTitle.Size = New-Object System.Drawing.Size(720, 30)
     $dlg.Controls.Add($lblTitle)
 
     $filesPreview = ($FilesNames -join ', ')
     if ($FilesCount -gt 10) { $filesPreview += " ... (+$($FilesCount - 10) mas)" }
 
+    $msgText = "Repositorio: '$RepoName' contiene $FilesCount archivo(s) NO permitidos:`n`n  $filesPreview`n`n" +
+               "Una evaluacion en blanco solo deberia tener README, LICENSE o .gitignore.`n`n" +
+               "Este intento fue REGISTRADO. El profesor sera notificado.`n`n" +
+               "Esta ventana esta BLOQUEADA y el Administrador de Tareas tambien.`n" +
+               "Solo el profesor puede desbloquear este equipo con su clave."
+    if ($IsPersistent) {
+        $msgText += "`n`n[Detectado en sesion anterior. El bloqueo persistira en cada reinicio.]"
+    }
+
     $lblMsg = New-Object System.Windows.Forms.Label
-    $lblMsg.Text = @"
-Has clonado el repositorio '$RepoName' que contiene $FilesCount archivo(s) NO permitidos:
-
-  $filesPreview
-
-Una evaluacion en blanco solo deberia tener README, LICENSE o .gitignore.
-
-Esta accion ha sido REGISTRADA. El profesor sera notificado de este intento.
-
-Esta ventana esta BLOQUEADA. Solo el profesor puede desbloquearla con la clave.
-"@
+    $lblMsg.Text = $msgText
     $lblMsg.Font = New-Object System.Drawing.Font('Segoe UI', 11)
     $lblMsg.ForeColor = [System.Drawing.Color]::White
     $lblMsg.Location = New-Object System.Drawing.Point(40, 140)
-    $lblMsg.Size = New-Object System.Drawing.Size(640, 220)
+    $lblMsg.Size = New-Object System.Drawing.Size(680, 300)
     $dlg.Controls.Add($lblMsg)
 
-    $lblPwd = New-Object System.Windows.Forms.Label
-    $lblPwd.Text = 'Clave del profesor:'
-    $lblPwd.Font = New-Object System.Drawing.Font('Segoe UI', 10, [System.Drawing.FontStyle]::Bold)
-    $lblPwd.ForeColor = [System.Drawing.Color]::White
-    $lblPwd.Location = New-Object System.Drawing.Point(40, 380)
-    $lblPwd.Size = New-Object System.Drawing.Size(200, 22)
-    $dlg.Controls.Add($lblPwd)
-
-    $txtPwd = New-Object System.Windows.Forms.TextBox
-    $txtPwd.PasswordChar = '*'
-    $txtPwd.Location = New-Object System.Drawing.Point(40, 405)
-    $txtPwd.Size = New-Object System.Drawing.Size(400, 25)
-    $txtPwd.Font = New-Object System.Drawing.Font('Consolas', 12)
-    $dlg.Controls.Add($txtPwd)
-
     $btnUnlock = New-Object System.Windows.Forms.Button
-    $btnUnlock.Text = 'Desbloquear'
-    $btnUnlock.Location = New-Object System.Drawing.Point(460, 402)
-    $btnUnlock.Size = New-Object System.Drawing.Size(220, 32)
+    $btnUnlock.Text = 'Desbloquear (clave del profesor)'
+    $btnUnlock.Location = New-Object System.Drawing.Point(260, 460)
+    $btnUnlock.Size = New-Object System.Drawing.Size(280, 50)
     $btnUnlock.BackColor = [System.Drawing.Color]::White
     $btnUnlock.ForeColor = [System.Drawing.Color]::FromArgb(183, 28, 28)
     $btnUnlock.FlatStyle = 'Flat'
-    $btnUnlock.Font = New-Object System.Drawing.Font('Segoe UI', 10, [System.Drawing.FontStyle]::Bold)
+    $btnUnlock.Font = New-Object System.Drawing.Font('Segoe UI', 11, [System.Drawing.FontStyle]::Bold)
     $btnUnlock.Add_Click({
-        if (Test-CheatPassword -Candidate $txtPwd.Text) {
+        if (Prompt-TeacherPassword) {
+            Release-CheatLockdown
             $dlg.DialogResult = 'OK'
             $dlg.Close()
-        } else {
-            $txtPwd.BackColor = [System.Drawing.Color]::FromArgb(255, 200, 200)
-            $txtPwd.Text = ''
-            [System.Windows.Forms.MessageBox]::Show(
-                'Clave incorrecta.', 'Acceso denegado', 'OK', 'Error') | Out-Null
         }
     })
     $dlg.Controls.Add($btnUnlock)
-    $dlg.AcceptButton = $btnUnlock
 
-    $lblFooter = New-Object System.Windows.Forms.Label
-    $lblFooter.Text = "Carpeta inspeccionada en tu Escritorio. El clone fue eliminado por seguridad."
-    $lblFooter.Font = New-Object System.Drawing.Font('Segoe UI', 8, [System.Drawing.FontStyle]::Italic)
-    $lblFooter.ForeColor = [System.Drawing.Color]::FromArgb(255, 200, 200)
-    $lblFooter.Location = New-Object System.Drawing.Point(40, 460)
-    $lblFooter.Size = New-Object System.Drawing.Size(640, 22)
-    $dlg.Controls.Add($lblFooter)
-
-    # Bloquear cierre por X (ya removido) o Alt+F4
+    # Bloquear cierre por Alt+F4 o cualquier otro metodo
     $dlg.Add_FormClosing({
         param($sender, $e)
         if ($dlg.DialogResult -ne 'OK') { $e.Cancel = $true }
     })
 
-    [void]$dlg.ShowDialog($form)
+    # Bloquear teclas problematicas: Alt+F4, Alt+Tab, F4, Escape
+    $dlg.Add_KeyDown({
+        param($sender, $e)
+        if (($e.Alt -and $e.KeyCode -eq 'F4') -or
+            ($e.Alt -and $e.KeyCode -eq 'Tab') -or
+            $e.KeyCode -eq 'Escape') {
+            $e.SuppressKeyPress = $true
+            $e.Handled = $true
+        }
+    })
+
+    # Forzar a estar siempre al frente cada 500ms (por si el alumno usa Win+D u otra ventana)
+    $topTimer = New-Object System.Windows.Forms.Timer
+    $topTimer.Interval = 500
+    $topTimer.Add_Tick({
+        try {
+            $dlg.TopMost = $false
+            $dlg.TopMost = $true
+            $dlg.Activate()
+        } catch {}
+    })
+    $topTimer.Start()
+
+    [void]$dlg.ShowDialog()
+    $topTimer.Stop()
+    $topTimer.Dispose()
 }
 
 function Show-AvaInstructions {
@@ -564,10 +721,16 @@ function Invoke-CloneRepo {
         # Limpiar txtCarpeta para que no se intente subir desde alli
         $txtCarpeta.Text = ''
 
-        # Mostrar dialog bloqueante con password del profesor
+        # ACTIVAR LOCKDOWN PERSISTENTE: marker file + auto-arranque + bloquear TaskMgr
+        Trigger-CheatLockdown -RepoName $RepoName `
+                              -FilesCount $cleanCheck.FilesCount `
+                              -FilesNames $cleanCheck.FilesNames
+
+        # Mostrar dialog bloqueante GIGANTE
         Show-CheatAlertDialog -RepoName $RepoName `
                               -FilesCount $cleanCheck.FilesCount `
                               -FilesNames $cleanCheck.FilesNames
+
         Set-Status 'Operacion bloqueada por integridad academica.'
         Update-ButtonStates
         return $false
@@ -1821,6 +1984,25 @@ $btnLogout.Add_Click({
 
 $btnCrearRepo.Add_Click({ [void](Invoke-CreateRepo) })
 $btnSubir.Add_Click({ [void](Invoke-UploadFiles) })
+
+# -- CHEQUEO AL INICIO: si hay marker de lockdown previo, mostrarlo inmediatamente --
+if (Test-Path $script:cheatMarkerFile) {
+    Log '✗ Se detecto un bloqueo previo. Mostrando alerta...' 'Red'
+    try {
+        $prev = Get-Content $script:cheatMarkerFile -Raw | ConvertFrom-Json
+        Show-CheatAlertDialog -RepoName $prev.repo `
+                              -FilesCount $prev.count `
+                              -FilesNames @($prev.files) `
+                              -IsPersistent $true
+        # Si llegamos aqui, el profesor desbloqueo. Continuamos al form normal.
+    } catch {
+        # Marker corrupto: mostrar alerta sin detalles
+        Show-CheatAlertDialog -RepoName '(desconocido)' `
+                              -FilesCount 0 `
+                              -FilesNames @() `
+                              -IsPersistent $true
+    }
+}
 
 # -- Mostrar form --
 Log 'Listo. Completa los datos y elige una acción.'
