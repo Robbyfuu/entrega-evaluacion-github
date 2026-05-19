@@ -160,6 +160,221 @@ function Test-GitOwnership {
     }
 }
 
+# ============================================================
+#         ANTI-TRAMPA: deteccion de repo con archivos
+# ============================================================
+
+# Hash SHA-256 del password del profesor. Password real solo lo conoce el profe.
+# (clonar este script y leer el hash no permite recuperar el password)
+$script:cheatPasswordHash = '272a92d60e36898d05d03d50c07c9a906cc8a59fba74c4f333b7cc837d0b581d'
+
+function Test-CheatPassword {
+    param([string]$Candidate)
+    if (-not $Candidate) { return $false }
+    $hash = [System.BitConverter]::ToString(
+        [System.Security.Cryptography.SHA256]::Create().ComputeHash(
+            [System.Text.Encoding]::UTF8.GetBytes($Candidate))
+    ).Replace('-', '').ToLower()
+    return ($hash -eq $script:cheatPasswordHash)
+}
+
+function Test-RepoIsClean {
+    <#
+    Verifica que un repo clonado NO contenga archivos pre-existentes que
+    sugieran que el alumno copio codigo en lugar de empezar en blanco.
+
+    Permite solo: README*, LICENSE*, .gitignore, .gitattributes, .git/
+    #>
+    param([string]$Folder)
+
+    $allowedNames = @(
+        'README.md', 'README', 'README.txt', 'README.rst',
+        'LICENSE', 'LICENSE.txt', 'LICENSE.md',
+        '.gitignore', '.gitattributes', '.git'
+    )
+
+    $items = Get-ChildItem -Path $Folder -Force -ErrorAction SilentlyContinue
+    $suspicious = @($items | Where-Object { $_.Name -notin $allowedNames })
+
+    return @{
+        IsClean     = ($suspicious.Count -eq 0)
+        FilesCount  = $suspicious.Count
+        FilesNames  = ($suspicious | Select-Object -First 10 | ForEach-Object { $_.Name })
+    }
+}
+
+function Show-CheatAlertDialog {
+    param(
+        [string]$RepoName,
+        [int]$FilesCount,
+        [string[]]$FilesNames
+    )
+
+    $dlg = New-Object System.Windows.Forms.Form
+    $dlg.Text = 'ALERTA DE INTEGRIDAD ACADEMICA'
+    $dlg.Size = New-Object System.Drawing.Size(720, 540)
+    $dlg.StartPosition = 'CenterScreen'
+    $dlg.FormBorderStyle = 'FixedDialog'
+    $dlg.ControlBox = $false
+    $dlg.BackColor = [System.Drawing.Color]::FromArgb(183, 28, 28)
+    $dlg.TopMost = $true
+    $dlg.KeyPreview = $true
+
+    $lblWarn = New-Object System.Windows.Forms.Label
+    $lblWarn.Text = '! ALERTA !'
+    $lblWarn.Font = New-Object System.Drawing.Font('Segoe UI', 42, [System.Drawing.FontStyle]::Bold)
+    $lblWarn.ForeColor = [System.Drawing.Color]::White
+    $lblWarn.TextAlign = 'MiddleCenter'
+    $lblWarn.Location = New-Object System.Drawing.Point(20, 20)
+    $lblWarn.Size = New-Object System.Drawing.Size(680, 70)
+    $dlg.Controls.Add($lblWarn)
+
+    $lblTitle = New-Object System.Windows.Forms.Label
+    $lblTitle.Text = 'POSIBLE TRAMPA ACADEMICA DETECTADA'
+    $lblTitle.Font = New-Object System.Drawing.Font('Segoe UI', 16, [System.Drawing.FontStyle]::Bold)
+    $lblTitle.ForeColor = [System.Drawing.Color]::White
+    $lblTitle.TextAlign = 'MiddleCenter'
+    $lblTitle.Location = New-Object System.Drawing.Point(20, 95)
+    $lblTitle.Size = New-Object System.Drawing.Size(680, 30)
+    $dlg.Controls.Add($lblTitle)
+
+    $filesPreview = ($FilesNames -join ', ')
+    if ($FilesCount -gt 10) { $filesPreview += " ... (+$($FilesCount - 10) mas)" }
+
+    $lblMsg = New-Object System.Windows.Forms.Label
+    $lblMsg.Text = @"
+Has clonado el repositorio '$RepoName' que contiene $FilesCount archivo(s) NO permitidos:
+
+  $filesPreview
+
+Una evaluacion en blanco solo deberia tener README, LICENSE o .gitignore.
+
+Esta accion ha sido REGISTRADA. El profesor sera notificado de este intento.
+
+Esta ventana esta BLOQUEADA. Solo el profesor puede desbloquearla con la clave.
+"@
+    $lblMsg.Font = New-Object System.Drawing.Font('Segoe UI', 11)
+    $lblMsg.ForeColor = [System.Drawing.Color]::White
+    $lblMsg.Location = New-Object System.Drawing.Point(40, 140)
+    $lblMsg.Size = New-Object System.Drawing.Size(640, 220)
+    $dlg.Controls.Add($lblMsg)
+
+    $lblPwd = New-Object System.Windows.Forms.Label
+    $lblPwd.Text = 'Clave del profesor:'
+    $lblPwd.Font = New-Object System.Drawing.Font('Segoe UI', 10, [System.Drawing.FontStyle]::Bold)
+    $lblPwd.ForeColor = [System.Drawing.Color]::White
+    $lblPwd.Location = New-Object System.Drawing.Point(40, 380)
+    $lblPwd.Size = New-Object System.Drawing.Size(200, 22)
+    $dlg.Controls.Add($lblPwd)
+
+    $txtPwd = New-Object System.Windows.Forms.TextBox
+    $txtPwd.PasswordChar = '*'
+    $txtPwd.Location = New-Object System.Drawing.Point(40, 405)
+    $txtPwd.Size = New-Object System.Drawing.Size(400, 25)
+    $txtPwd.Font = New-Object System.Drawing.Font('Consolas', 12)
+    $dlg.Controls.Add($txtPwd)
+
+    $btnUnlock = New-Object System.Windows.Forms.Button
+    $btnUnlock.Text = 'Desbloquear'
+    $btnUnlock.Location = New-Object System.Drawing.Point(460, 402)
+    $btnUnlock.Size = New-Object System.Drawing.Size(220, 32)
+    $btnUnlock.BackColor = [System.Drawing.Color]::White
+    $btnUnlock.ForeColor = [System.Drawing.Color]::FromArgb(183, 28, 28)
+    $btnUnlock.FlatStyle = 'Flat'
+    $btnUnlock.Font = New-Object System.Drawing.Font('Segoe UI', 10, [System.Drawing.FontStyle]::Bold)
+    $btnUnlock.Add_Click({
+        if (Test-CheatPassword -Candidate $txtPwd.Text) {
+            $dlg.DialogResult = 'OK'
+            $dlg.Close()
+        } else {
+            $txtPwd.BackColor = [System.Drawing.Color]::FromArgb(255, 200, 200)
+            $txtPwd.Text = ''
+            [System.Windows.Forms.MessageBox]::Show(
+                'Clave incorrecta.', 'Acceso denegado', 'OK', 'Error') | Out-Null
+        }
+    })
+    $dlg.Controls.Add($btnUnlock)
+    $dlg.AcceptButton = $btnUnlock
+
+    $lblFooter = New-Object System.Windows.Forms.Label
+    $lblFooter.Text = "Carpeta inspeccionada en tu Escritorio. El clone fue eliminado por seguridad."
+    $lblFooter.Font = New-Object System.Drawing.Font('Segoe UI', 8, [System.Drawing.FontStyle]::Italic)
+    $lblFooter.ForeColor = [System.Drawing.Color]::FromArgb(255, 200, 200)
+    $lblFooter.Location = New-Object System.Drawing.Point(40, 460)
+    $lblFooter.Size = New-Object System.Drawing.Size(640, 22)
+    $dlg.Controls.Add($lblFooter)
+
+    # Bloquear cierre por X (ya removido) o Alt+F4
+    $dlg.Add_FormClosing({
+        param($sender, $e)
+        if ($dlg.DialogResult -ne 'OK') { $e.Cancel = $true }
+    })
+
+    [void]$dlg.ShowDialog($form)
+}
+
+function Show-AvaInstructions {
+    param(
+        [string]$RepoUrl,
+        [string]$Tipo
+    )
+
+    # Copiar URL al portapapeles
+    try {
+        [System.Windows.Forms.Clipboard]::SetText($RepoUrl)
+    } catch {}
+
+    $tipoLabel = switch ($Tipo) {
+        'Evaluacion-1' { 'Evaluación Parcial 1' }
+        'Evaluacion-2' { 'Evaluación Parcial 2' }
+        'Evaluacion-3' { 'Evaluación Parcial 3' }
+        'Evaluacion-4' { 'Evaluación Parcial 4' }
+        'Examen'       { 'Examen Final' }
+        default        { 'la evaluación correspondiente' }
+    }
+
+    $msg = @"
+Entrega subida correctamente a GitHub.
+
+PROXIMO PASO: entregar el enlace en el AVA.
+
+1. Abre el AVA (Ambiente Virtual de Aprendizaje).
+2. Ve a $tipoLabel.
+3. En el campo de entrega, pega el enlace de tu repositorio (Ctrl+V).
+4. Envia la entrega.
+
+Tu enlace YA ESTA COPIADO al portapapeles:
+
+  $RepoUrl
+
+Si necesitas pegarlo otra vez, copia desde aqui.
+"@
+    [System.Windows.Forms.MessageBox]::Show(
+        $msg, 'Listo - Ahora entrega en el AVA', 'OK', 'Information') | Out-Null
+}
+
+function Update-ButtonStates {
+    # Llamado cuando cambia sesion, modo, datos, carpeta, repo seleccionado
+    if (-not $btnCrearRepo -or -not $btnSubir) { return }
+
+    $hasAuth = $false
+    try { $hasAuth = Test-GhAuth } catch {}
+
+    $hasFolder = ($txtCarpeta.Text -and (Test-Path $txtCarpeta.Text))
+
+    if ($rbModoExistente.Checked) {
+        $hasRepoData = ($null -ne $cmbReposExistentes.SelectedItem)
+    } else {
+        $hasRepoData = ($txtNombre.Text.Trim() -ne '' -and $cmbForma.Text.Trim() -ne '')
+    }
+
+    # Crear/Clonar Repo: solo necesita auth + datos del repo
+    $btnCrearRepo.Enabled = ($hasAuth -and $hasRepoData)
+
+    # Subir Archivos: necesita auth + datos + carpeta
+    $btnSubir.Enabled = ($hasAuth -and $hasRepoData -and $hasFolder)
+}
+
 function Show-CreateAccountDialog {
     <#
     Dialog modal con instrucciones paso a paso para crear cuenta GitHub.
@@ -331,8 +546,37 @@ function Invoke-CloneRepo {
         Log "✓ Repo clonado en: $targetPath" 'Green'
     }
 
+    # ANTI-TRAMPA: validar que el repo este limpio (sin archivos pre-existentes)
+    Log '→ Inspeccionando contenido del repo...'
+    $cleanCheck = Test-RepoIsClean -Folder $targetPath
+    if (-not $cleanCheck.IsClean) {
+        Log "✗ TRAMPA DETECTADA: el repo contiene $($cleanCheck.FilesCount) archivo(s) no permitido(s)." 'Red'
+        Log "  Archivos: $($cleanCheck.FilesNames -join ', ')" 'Red'
+
+        # Eliminar la carpeta clonada por seguridad
+        try {
+            Remove-Item $targetPath -Recurse -Force -ErrorAction Stop
+            Log '  Carpeta clonada eliminada.' 'Yellow'
+        } catch {
+            Log "  No se pudo eliminar la carpeta: $_" 'Red'
+        }
+
+        # Limpiar txtCarpeta para que no se intente subir desde alli
+        $txtCarpeta.Text = ''
+
+        # Mostrar dialog bloqueante con password del profesor
+        Show-CheatAlertDialog -RepoName $RepoName `
+                              -FilesCount $cleanCheck.FilesCount `
+                              -FilesNames $cleanCheck.FilesNames
+        Set-Status 'Operacion bloqueada por integridad academica.'
+        Update-ButtonStates
+        return $false
+    }
+    Log '✓ Repo limpio (sin archivos pre-existentes).' 'Green'
+
     # Setear automaticamente la carpeta para el siguiente paso (Subir)
     $txtCarpeta.Text = $targetPath
+    Update-ButtonStates
 
     # Abrir IDLE de Python apuntando al folder
     Open-PythonIDLE -Folder $targetPath | Out-Null
@@ -931,22 +1175,18 @@ $form.Controls.Add($btnCrearRepo)
 
 $btnSubir = New-Object System.Windows.Forms.Button
 $btnSubir.Text = '2. Subir Archivos'
-$btnSubir.Location = New-Object System.Drawing.Point(220, 365)
-$btnSubir.Size = New-Object System.Drawing.Size(180, 35)
+$btnSubir.Location = New-Object System.Drawing.Point(330, 365)
+$btnSubir.Size = New-Object System.Drawing.Size(280, 35)
 $btnSubir.BackColor = [System.Drawing.Color]::FromArgb(76, 175, 80)
 $btnSubir.ForeColor = [System.Drawing.Color]::White
 $btnSubir.FlatStyle = 'Flat'
+$btnSubir.Font = New-Object System.Drawing.Font('Segoe UI', 9, [System.Drawing.FontStyle]::Bold)
 $form.Controls.Add($btnSubir)
 
-$btnTodo = New-Object System.Windows.Forms.Button
-$btnTodo.Text = 'Hacer TODO'
-$btnTodo.Location = New-Object System.Drawing.Point(420, 365)
-$btnTodo.Size = New-Object System.Drawing.Size(180, 35)
-$btnTodo.BackColor = [System.Drawing.Color]::FromArgb(255, 87, 34)
-$btnTodo.ForeColor = [System.Drawing.Color]::White
-$btnTodo.FlatStyle = 'Flat'
-$btnTodo.Font = New-Object System.Drawing.Font('Segoe UI', 9, [System.Drawing.FontStyle]::Bold)
-$form.Controls.Add($btnTodo)
+# btnCrearRepo agrandado para usar el espacio que dejo Hacer TODO
+$btnCrearRepo.Size = New-Object System.Drawing.Size(280, 35)
+$btnCrearRepo.Location = New-Object System.Drawing.Point(30, 365)
+$btnCrearRepo.Font = New-Object System.Drawing.Font('Segoe UI', 9, [System.Drawing.FontStyle]::Bold)
 
 # -- Log de salida --
 $lblLog = New-Object System.Windows.Forms.Label
@@ -1191,6 +1431,35 @@ function Invoke-CreateRepo {
         if ($LASTEXITCODE -eq 0) {
             Log "✓ Repo creado: $output"
             Set-Status "Repo $repo creado."
+
+            $ghUser = (gh api user --jq .login 2>$null).Trim()
+            $repoUrl = "https://github.com/$ghUser/$repo"
+            $folder = $txtCarpeta.Text
+
+            # Abrir carpeta local en Explorer (si hay carpeta seleccionada)
+            if ($folder -and (Test-Path $folder)) {
+                try {
+                    Start-Process explorer.exe -ArgumentList $folder
+                    Log "→ Carpeta abierta en Explorador: $folder"
+                } catch {
+                    Log "  No se pudo abrir Explorador: $_" 'Yellow'
+                }
+            }
+
+            # MessageBox confirmatorio con detalles
+            $msg = "El repositorio se creo correctamente en GitHub.`n`n" +
+                   "Nombre: $repo`n" +
+                   "URL: $repoUrl`n"
+            if ($folder) {
+                $msg += "Carpeta local: $folder`n`n"
+                $msg += "PROXIMO PASO: haz clic en 'Subir Archivos' para enviar los archivos al repositorio."
+            } else {
+                $msg += "`nPROXIMO PASO: selecciona la carpeta de tu evaluacion y haz clic en 'Subir Archivos'."
+            }
+            [System.Windows.Forms.MessageBox]::Show(
+                $msg, 'Repositorio creado correctamente', 'OK', 'Information') | Out-Null
+
+            Update-ButtonStates
             return $true
         } else {
             Log "✗ Error creando repo: $output" 'Red'
@@ -1340,11 +1609,12 @@ function Invoke-UploadFiles {
         $pushOutput | ForEach-Object { Log "  $_" }
 
         if ($LASTEXITCODE -eq 0) {
-            Log "✓ Subida completada. Ver en: https://github.com/$ghUser/$repo" 'Cyan'
-            Set-Status 'Subida OK.'
-            [System.Windows.Forms.MessageBox]::Show(
-                "Evaluación subida correctamente.`n`nRepo: https://github.com/$ghUser/$repo",
-                'Listo', 'OK', 'Information') | Out-Null
+            $repoUrl = "https://github.com/$ghUser/$repo"
+            Log "✓ Subida completada. Ver en: $repoUrl" 'Cyan'
+            Set-Status 'Subida OK. Ahora entrega en el AVA.'
+
+            # Instrucciones AVA + copiar URL al portapapeles
+            Show-AvaInstructions -RepoUrl $repoUrl -Tipo $forma
             return $true
         } else {
             Log '✗ Falló el push.' 'Red'
@@ -1385,31 +1655,36 @@ function Update-SessionPanel {
         $btnLogin.Enabled = $true
         $btnLogout.Enabled = $false
     }
+    Update-ButtonStates
     [System.Windows.Forms.Application]::DoEvents()
 }
 
 # -- Wiring de eventos --
-$txtNombre.Add_TextChanged({ Update-RepoPreview })
-$cmbForma.Add_TextChanged({ Update-RepoPreview })
-$cmbForma.Add_SelectedIndexChanged({ Update-RepoPreview })
+$txtNombre.Add_TextChanged({ Update-RepoPreview; Update-ButtonStates })
+$cmbForma.Add_TextChanged({ Update-RepoPreview; Update-ButtonStates })
+$cmbForma.Add_SelectedIndexChanged({ Update-RepoPreview; Update-ButtonStates })
 
 # Modo de subida (radio buttons)
-$rbModoNuevo.Add_CheckedChanged({ if ($rbModoNuevo.Checked) { Set-ModoUI } })
-$rbModoExistente.Add_CheckedChanged({ if ($rbModoExistente.Checked) { Set-ModoUI } })
+$rbModoNuevo.Add_CheckedChanged({
+    if ($rbModoNuevo.Checked) { Set-ModoUI; Update-ButtonStates }
+})
+$rbModoExistente.Add_CheckedChanged({
+    if ($rbModoExistente.Checked) { Set-ModoUI; Update-ButtonStates }
+})
 
 # Link crear cuenta GitHub
 $lnkCrearCuenta.Add_LinkClicked({
     if (Show-CreateAccountDialog) {
-        # Usuario eligio "Ya tengo cuenta" -> lanzar device flow
         Log '→ Lanzando inicio de sesión...'
         if (Start-GitHubDeviceLogin) {
             Update-SessionPanel
+            Update-ButtonStates
         }
     }
 })
 
 # Selector de repo existente
-$cmbReposExistentes.Add_SelectedIndexChanged({ Update-RepoPreview })
+$cmbReposExistentes.Add_SelectedIndexChanged({ Update-RepoPreview; Update-ButtonStates })
 $btnRefreshRepos.Add_Click({ Load-UserRepos })
 
 $btnBuscar.Add_Click({
@@ -1418,6 +1693,7 @@ $btnBuscar.Add_Click({
     if ($dlg.ShowDialog() -eq 'OK') {
         $txtCarpeta.Text = $dlg.SelectedPath
         Log "Carpeta seleccionada: $($dlg.SelectedPath)"
+        Update-ButtonStates
     }
 })
 
@@ -1515,18 +1791,6 @@ $btnLogout.Add_Click({
 
 $btnCrearRepo.Add_Click({ [void](Invoke-CreateRepo) })
 $btnSubir.Add_Click({ [void](Invoke-UploadFiles) })
-$btnTodo.Add_Click({
-    if ($rbModoExistente.Checked) {
-        # Modo existente: clonar + abrir IDLE (sin subir, alumno edita primero)
-        [void](Invoke-CreateRepo)
-    } else {
-        # Modo nuevo: crear repo + subir archivos en cadena
-        if (Invoke-CreateRepo) {
-            Start-Sleep -Seconds 1
-            [void](Invoke-UploadFiles)
-        }
-    }
-})
 
 # -- Mostrar form --
 Log 'Listo. Completa los datos y elige una acción.'
@@ -1546,7 +1810,8 @@ if ($initMissing) {
     }
 }
 
-# Llenar panel de sesión con datos actuales
+# Llenar panel de sesión con datos actuales (esto tambien llama Update-ButtonStates)
 Update-SessionPanel
+Update-ButtonStates
 
 [void]$form.ShowDialog()
