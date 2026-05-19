@@ -288,8 +288,10 @@ function Start-GitHubDeviceLogin {
 
             if ($tokenResp.access_token) {
                 $timer.Stop()
-                $script:authToken = $tokenResp.access_token
+                # Limpiar token de whitespace/newlines defensivamente
+                $script:authToken = ($tokenResp.access_token -as [string]).Trim()
                 $script:authResult = 'OK'
+                $script:authScopes = $tokenResp.scope
                 $lblStatus.Text = 'Autorizado! Guardando credenciales...'
                 $lblStatus.ForeColor = [System.Drawing.Color]::Green
                 $progress.Style = 'Continuous'
@@ -348,95 +350,153 @@ function Save-GhToken {
         return $false
     }
 
-    # 1. Limpiar cualquier sesion previa que pueda interferir con --with-token
+    # Sanity check del token recibido
+    $Token = $Token.Trim() -replace "`r", '' -replace "`n", ''
+    if ($Token.Length -lt 20) {
+        Log "✗ Token recibido es invalido (length=$($Token.Length))." 'Red'
+        return $false
+    }
+    $prefix = $Token.Substring(0, 4)
+    Log "→ Token recibido (length=$($Token.Length), prefix='$prefix...')"
+
+    # 1. Validar el token PRIMERO contra la API antes de intentar guardarlo
+    Log '→ Validando token contra api.github.com...'
     try {
-        $existingAuth = gh auth status --hostname github.com 2>&1
+        $userInfo = Invoke-RestMethod -Method Get `
+            -Uri 'https://api.github.com/user' `
+            -Headers @{
+                'Authorization' = "Bearer $Token"
+                'Accept' = 'application/vnd.github+json'
+                'X-GitHub-Api-Version' = '2022-11-28'
+                'User-Agent' = 'Subir-Evaluacion-Script'
+            }
+        Log "✓ Token valido. Usuario: @$($userInfo.login)" 'Green'
+    } catch {
+        $statusCode = $_.Exception.Response.StatusCode.value__
+        Log "✗ Token rechazado por GitHub API (HTTP $statusCode)." 'Red'
+        Log "  Detalle: $_" 'Red'
+        [System.Windows.Forms.MessageBox]::Show(
+            "GitHub rechazo el token con HTTP $statusCode.`n`n" +
+            "Esto puede pasar si:`n" +
+            "  - El device flow expiro entre autorizar y guardar`n" +
+            "  - El reloj del sistema esta muy desincronizado`n`n" +
+            "Intenta de nuevo (cierra el dialog y vuelve a iniciar sesion).",
+            'Token rechazado por GitHub', 'OK', 'Error') | Out-Null
+        return $false
+    }
+
+    # 2. Limpiar sesion previa
+    try {
+        gh auth status --hostname github.com 2>&1 | Out-Null
         if ($LASTEXITCODE -eq 0) {
-            Log '→ Cerrando sesion previa antes de guardar nuevo token...'
+            Log '→ Cerrando sesion previa...'
             gh auth logout --hostname github.com 2>&1 | Out-Null
         }
     } catch {}
 
-    # 2. Localizar gh.exe (PATH puede no estar actualizado tras winget install)
+    # 3. ESTRATEGIA A: gh auth login --with-token via Process API
     $ghCmd = Get-Command gh -ErrorAction SilentlyContinue
-    if (-not $ghCmd) {
-        Log '✗ gh CLI no esta en el PATH. Cierra y vuelve a abrir el script.' 'Red'
-        [System.Windows.Forms.MessageBox]::Show(
-            'No se encontro gh.exe en el PATH. Cierra esta ventana y vuelve a abrir el script.',
-            'gh no encontrado', 'OK', 'Error') | Out-Null
-        return $false
+    if ($ghCmd) {
+        Log '→ Estrategia A: gh auth login --with-token'
+        $okA = Save-GhTokenViaProcess -Token $Token -GhPath $ghCmd.Source
+        if ($okA) { return $true }
+        Log '  Estrategia A fallo. Intentando B...' 'Yellow'
     }
-    $ghPath = $ghCmd.Source
 
-    # 3. Ejecutar gh auth login --with-token via .NET Process con stdin redirigido
+    # 4. ESTRATEGIA B: escribir directamente al hosts.yml de gh
+    Log '→ Estrategia B: escribir hosts.yml directamente'
+    $okB = Save-GhTokenToHostsYml -Token $Token -Login $userInfo.login
+    if ($okB) {
+        # Validar
+        $null = gh auth status 2>&1
+        if ($LASTEXITCODE -eq 0) {
+            Log '✓ Token guardado en hosts.yml correctamente.' 'Green'
+            return $true
+        }
+    }
+
+    Log '✗ Ambas estrategias de guardado fallaron.' 'Red'
+    return $false
+}
+
+function Save-GhTokenViaProcess {
+    param(
+        [string]$Token,
+        [string]$GhPath
+    )
+
     $psi = New-Object System.Diagnostics.ProcessStartInfo
-    $psi.FileName = $ghPath
+    $psi.FileName = $GhPath
     $psi.Arguments = 'auth login --hostname github.com --git-protocol https --with-token'
     $psi.RedirectStandardInput = $true
     $psi.RedirectStandardOutput = $true
     $psi.RedirectStandardError = $true
     $psi.UseShellExecute = $false
     $psi.CreateNoWindow = $true
-    # Forzar UTF-8 en streams para evitar problemas de encoding
     $psi.StandardOutputEncoding = [System.Text.Encoding]::UTF8
     $psi.StandardErrorEncoding = [System.Text.Encoding]::UTF8
 
     try {
         $proc = [System.Diagnostics.Process]::Start($psi)
-
-        # Escribir token en stdin sin newline final problematico
-        $proc.StandardInput.WriteLine($Token)
+        # Usar Write (no WriteLine) para evitar CRLF
+        $proc.StandardInput.Write($Token)
         $proc.StandardInput.Close()
 
-        # Leer salidas (con timeout para evitar bloqueo eterno)
         $stdout = $proc.StandardOutput.ReadToEnd()
         $stderr = $proc.StandardError.ReadToEnd()
 
         if (-not $proc.WaitForExit(15000)) {
             $proc.Kill()
-            Log '✗ Timeout esperando a gh auth login (>15s).' 'Red'
+            Log '  Timeout (>15s).' 'Red'
             return $false
         }
 
-        $exitCode = $proc.ExitCode
-
-        if ($exitCode -eq 0) {
-            # Validar que efectivamente quedo logueado
-            $null = gh auth status 2>&1
-            if ($LASTEXITCODE -eq 0) {
-                Log '✓ Sesion iniciada correctamente.' 'Green'
-                return $true
-            } else {
-                Log '✗ gh auth login retorno OK pero auth status falla.' 'Red'
-                Log "  stdout: $stdout" 'Red'
-                Log "  stderr: $stderr" 'Red'
-                return $false
-            }
-        } else {
-            Log "✗ Fallo gh auth login (exit code $exitCode):" 'Red'
-            if ($stdout) { Log "  stdout: $stdout" 'Red' }
-            if ($stderr) { Log "  stderr: $stderr" 'Red' }
-
-            # Mostrar dialog para que usuario pueda copiar el error
-            $errorMsg = "gh auth login --with-token fallo (exit $exitCode).`n`n" +
-                        "stdout:`n$stdout`n`nstderr:`n$stderr`n`n" +
-                        "Posibles causas:`n" +
-                        "  - gh CLI version desactualizada (winget install --id GitHub.cli)`n" +
-                        "  - Permisos en %APPDATA%\gh\`n" +
-                        "  - Antivirus bloqueando escritura"
-            [System.Windows.Forms.MessageBox]::Show($errorMsg, 'Error al guardar token', 'OK', 'Error') | Out-Null
-            return $false
+        if ($proc.ExitCode -eq 0) {
+            Log '  ✓ Process A OK.' 'Green'
+            return $true
         }
+
+        Log "  Process A fallo (exit $($proc.ExitCode))." 'Yellow'
+        if ($stdout) { Log "    stdout: $($stdout.Trim())" 'Yellow' }
+        if ($stderr) { Log "    stderr: $($stderr.Trim())" 'Yellow' }
+        return $false
     } catch {
-        Log "✗ Excepcion guardando token: $_" 'Red'
-        [System.Windows.Forms.MessageBox]::Show(
-            "Excepcion al ejecutar gh auth login:`n`n$_",
-            'Error', 'OK', 'Error') | Out-Null
+        Log "  Excepcion en Process A: $_" 'Red'
+        return $false
+    }
+}
+
+function Save-GhTokenToHostsYml {
+    param(
+        [string]$Token,
+        [string]$Login
+    )
+
+    # Path standard de gh CLI en Windows
+    $ghDir = Join-Path $env:APPDATA 'GitHub CLI'
+    if (-not (Test-Path $ghDir)) {
+        New-Item -ItemType Directory -Path $ghDir -Force | Out-Null
+    }
+    $hostsFile = Join-Path $ghDir 'hosts.yml'
+
+    # Formato YAML que gh espera
+    $yaml = @"
+github.com:
+    git_protocol: https
+    user: $Login
+    oauth_token: $Token
+"@
+
+    try {
+        # Escribir como UTF-8 sin BOM
+        [System.IO.File]::WriteAllText($hostsFile, $yaml, (New-Object System.Text.UTF8Encoding $false))
+        Log "  hosts.yml escrito en: $hostsFile"
+        return $true
+    } catch {
+        Log "  Error escribiendo hosts.yml: $_" 'Red'
         return $false
     } finally {
-        # Limpiar token de memoria
         $Token = $null
-        if ($script:authToken) { $script:authToken = $null }
     }
 }
 
