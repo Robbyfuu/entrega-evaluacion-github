@@ -668,6 +668,23 @@ function Invoke-UploadFiles {
             git init -b main 2>&1 | ForEach-Object { Log "  $_" }
         }
 
+        # Configurar identidad local del repo (no afecta config global)
+        # user.name = nombre real del alumno
+        # user.email = email publico de GitHub o noreply si es privado
+        Log "→ git config user.name = `"$nombre`""
+        git config user.name "$nombre" 2>&1 | Out-Null
+
+        $userInfo = gh api user 2>$null | ConvertFrom-Json
+        $email = $userInfo.email
+        if (-not $email) {
+            # Email privado en GitHub → usar formato noreply
+            $email = "$($userInfo.id)+$($userInfo.login)@users.noreply.github.com"
+            Log "→ git config user.email = `"$email`" (email privado, usando noreply)"
+        } else {
+            Log "→ git config user.email = `"$email`""
+        }
+        git config user.email "$email" 2>&1 | Out-Null
+
         # Configurar remote
         $remotes = git remote 2>$null
         if ($remotes -contains 'origin') {
