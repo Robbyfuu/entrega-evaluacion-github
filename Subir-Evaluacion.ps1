@@ -506,7 +506,7 @@ github.com:
 
 $form = New-Object System.Windows.Forms.Form
 $form.Text = 'Subir Evaluación a GitHub'
-$form.Size = New-Object System.Drawing.Size(640, 600)
+$form.Size = New-Object System.Drawing.Size(640, 720)
 $form.StartPosition = 'CenterScreen'
 $form.FormBorderStyle = 'FixedDialog'
 $form.MaximizeBox = $false
@@ -563,55 +563,96 @@ $btnLogout.Font = New-Object System.Drawing.Font('Segoe UI', 8)
 $btnLogout.Enabled = $false
 $form.Controls.Add($btnLogout)
 
-# -- Nombre completo --
+# -- GroupBox: Modo de subida --
+$grpModo = New-Object System.Windows.Forms.GroupBox
+$grpModo.Text = 'Modo de subida'
+$grpModo.Location = New-Object System.Drawing.Point(20, 95)
+$grpModo.Size = New-Object System.Drawing.Size(600, 55)
+$form.Controls.Add($grpModo)
+
+$rbModoNuevo = New-Object System.Windows.Forms.RadioButton
+$rbModoNuevo.Text = 'Crear repositorio nuevo'
+$rbModoNuevo.Location = New-Object System.Drawing.Point(15, 22)
+$rbModoNuevo.Size = New-Object System.Drawing.Size(220, 22)
+$rbModoNuevo.Checked = $true
+$grpModo.Controls.Add($rbModoNuevo)
+
+$rbModoExistente = New-Object System.Windows.Forms.RadioButton
+$rbModoExistente.Text = 'Usar repositorio existente de mi cuenta'
+$rbModoExistente.Location = New-Object System.Drawing.Point(280, 22)
+$rbModoExistente.Size = New-Object System.Drawing.Size(300, 22)
+$grpModo.Controls.Add($rbModoExistente)
+
+# -- Nombre completo (modo nuevo) --
 $lblNombre = New-Object System.Windows.Forms.Label
 $lblNombre.Text = 'Nombre completo:'
-$lblNombre.Location = New-Object System.Drawing.Point(20, 60)
+$lblNombre.Location = New-Object System.Drawing.Point(20, 165)
 $lblNombre.Size = New-Object System.Drawing.Size(150, 20)
 $form.Controls.Add($lblNombre)
 
 $txtNombre = New-Object System.Windows.Forms.TextBox
-$txtNombre.Location = New-Object System.Drawing.Point(180, 58)
+$txtNombre.Location = New-Object System.Drawing.Point(180, 163)
 $txtNombre.Size = New-Object System.Drawing.Size(420, 22)
 $form.Controls.Add($txtNombre)
 
-# -- Forma de prueba --
+# -- Forma de prueba (modo nuevo) --
 $lblForma = New-Object System.Windows.Forms.Label
 $lblForma.Text = 'Forma de prueba:'
-$lblForma.Location = New-Object System.Drawing.Point(20, 95)
+$lblForma.Location = New-Object System.Drawing.Point(20, 200)
 $lblForma.Size = New-Object System.Drawing.Size(150, 20)
 $form.Controls.Add($lblForma)
 
 $cmbForma = New-Object System.Windows.Forms.ComboBox
-$cmbForma.Location = New-Object System.Drawing.Point(180, 93)
+$cmbForma.Location = New-Object System.Drawing.Point(180, 198)
 $cmbForma.Size = New-Object System.Drawing.Size(420, 22)
-$cmbForma.DropDownStyle = 'DropDown'  # Permite escribir personalizado
+$cmbForma.DropDownStyle = 'DropDown'
 $cmbForma.Items.AddRange(@('Forma-A', 'Forma-B', 'Forma-C', 'Forma-D'))
 $form.Controls.Add($cmbForma)
+
+# -- Repositorio existente (modo existente) --
+$lblRepoExist = New-Object System.Windows.Forms.Label
+$lblRepoExist.Text = 'Tu repositorio:'
+$lblRepoExist.Location = New-Object System.Drawing.Point(20, 235)
+$lblRepoExist.Size = New-Object System.Drawing.Size(150, 20)
+$form.Controls.Add($lblRepoExist)
+
+$cmbReposExistentes = New-Object System.Windows.Forms.ComboBox
+$cmbReposExistentes.Location = New-Object System.Drawing.Point(180, 233)
+$cmbReposExistentes.Size = New-Object System.Drawing.Size(330, 22)
+$cmbReposExistentes.DropDownStyle = 'DropDownList'
+$cmbReposExistentes.Enabled = $false
+$form.Controls.Add($cmbReposExistentes)
+
+$btnRefreshRepos = New-Object System.Windows.Forms.Button
+$btnRefreshRepos.Text = 'Refrescar'
+$btnRefreshRepos.Location = New-Object System.Drawing.Point(520, 232)
+$btnRefreshRepos.Size = New-Object System.Drawing.Size(80, 25)
+$btnRefreshRepos.Enabled = $false
+$form.Controls.Add($btnRefreshRepos)
 
 # -- Carpeta de archivos --
 $lblCarpeta = New-Object System.Windows.Forms.Label
 $lblCarpeta.Text = 'Carpeta del proyecto:'
-$lblCarpeta.Location = New-Object System.Drawing.Point(20, 130)
+$lblCarpeta.Location = New-Object System.Drawing.Point(20, 270)
 $lblCarpeta.Size = New-Object System.Drawing.Size(150, 20)
 $form.Controls.Add($lblCarpeta)
 
 $txtCarpeta = New-Object System.Windows.Forms.TextBox
-$txtCarpeta.Location = New-Object System.Drawing.Point(180, 128)
+$txtCarpeta.Location = New-Object System.Drawing.Point(180, 268)
 $txtCarpeta.Size = New-Object System.Drawing.Size(330, 22)
 $txtCarpeta.ReadOnly = $true
 $form.Controls.Add($txtCarpeta)
 
 $btnBuscar = New-Object System.Windows.Forms.Button
 $btnBuscar.Text = 'Buscar...'
-$btnBuscar.Location = New-Object System.Drawing.Point(520, 127)
+$btnBuscar.Location = New-Object System.Drawing.Point(520, 267)
 $btnBuscar.Size = New-Object System.Drawing.Size(80, 25)
 $form.Controls.Add($btnBuscar)
 
 # -- Nombre del repo (preview) --
 $lblRepoPreview = New-Object System.Windows.Forms.Label
-$lblRepoPreview.Text = 'Repo:'
-$lblRepoPreview.Location = New-Object System.Drawing.Point(20, 165)
+$lblRepoPreview.Text = 'Repo destino:'
+$lblRepoPreview.Location = New-Object System.Drawing.Point(20, 305)
 $lblRepoPreview.Size = New-Object System.Drawing.Size(150, 20)
 $form.Controls.Add($lblRepoPreview)
 
@@ -619,15 +660,15 @@ $lblRepoValor = New-Object System.Windows.Forms.Label
 $lblRepoValor.Text = '(rellenar nombre y forma)'
 $lblRepoValor.ForeColor = [System.Drawing.Color]::Gray
 $lblRepoValor.Font = New-Object System.Drawing.Font('Consolas', 10)
-$lblRepoValor.Location = New-Object System.Drawing.Point(180, 165)
+$lblRepoValor.Location = New-Object System.Drawing.Point(180, 305)
 $lblRepoValor.Size = New-Object System.Drawing.Size(420, 20)
 $form.Controls.Add($lblRepoValor)
 
-# -- Visibilidad del repo --
+# -- Visibilidad del repo (solo modo nuevo) --
 $grpVis = New-Object System.Windows.Forms.GroupBox
-$grpVis.Text = 'Visibilidad'
-$grpVis.Location = New-Object System.Drawing.Point(20, 195)
-$grpVis.Size = New-Object System.Drawing.Size(580, 55)
+$grpVis.Text = 'Visibilidad (solo para repo nuevo)'
+$grpVis.Location = New-Object System.Drawing.Point(20, 335)
+$grpVis.Size = New-Object System.Drawing.Size(600, 55)
 $form.Controls.Add($grpVis)
 
 $rbPrivate = New-Object System.Windows.Forms.RadioButton
@@ -645,8 +686,8 @@ $grpVis.Controls.Add($rbPublic)
 
 # -- Botones de acción --
 $btnCrearRepo = New-Object System.Windows.Forms.Button
-$btnCrearRepo.Text = '1. Crear Repo'
-$btnCrearRepo.Location = New-Object System.Drawing.Point(20, 265)
+$btnCrearRepo.Text = '1. Crear/Validar Repo'
+$btnCrearRepo.Location = New-Object System.Drawing.Point(20, 405)
 $btnCrearRepo.Size = New-Object System.Drawing.Size(180, 35)
 $btnCrearRepo.BackColor = [System.Drawing.Color]::FromArgb(33, 150, 243)
 $btnCrearRepo.ForeColor = [System.Drawing.Color]::White
@@ -655,7 +696,7 @@ $form.Controls.Add($btnCrearRepo)
 
 $btnSubir = New-Object System.Windows.Forms.Button
 $btnSubir.Text = '2. Subir Archivos'
-$btnSubir.Location = New-Object System.Drawing.Point(220, 265)
+$btnSubir.Location = New-Object System.Drawing.Point(220, 405)
 $btnSubir.Size = New-Object System.Drawing.Size(180, 35)
 $btnSubir.BackColor = [System.Drawing.Color]::FromArgb(76, 175, 80)
 $btnSubir.ForeColor = [System.Drawing.Color]::White
@@ -664,7 +705,7 @@ $form.Controls.Add($btnSubir)
 
 $btnTodo = New-Object System.Windows.Forms.Button
 $btnTodo.Text = 'Hacer TODO'
-$btnTodo.Location = New-Object System.Drawing.Point(420, 265)
+$btnTodo.Location = New-Object System.Drawing.Point(420, 405)
 $btnTodo.Size = New-Object System.Drawing.Size(180, 35)
 $btnTodo.BackColor = [System.Drawing.Color]::FromArgb(255, 87, 34)
 $btnTodo.ForeColor = [System.Drawing.Color]::White
@@ -675,13 +716,13 @@ $form.Controls.Add($btnTodo)
 # -- Log de salida --
 $lblLog = New-Object System.Windows.Forms.Label
 $lblLog.Text = 'Salida:'
-$lblLog.Location = New-Object System.Drawing.Point(20, 315)
+$lblLog.Location = New-Object System.Drawing.Point(20, 455)
 $lblLog.Size = New-Object System.Drawing.Size(100, 20)
 $form.Controls.Add($lblLog)
 
 $txtLog = New-Object System.Windows.Forms.TextBox
-$txtLog.Location = New-Object System.Drawing.Point(20, 340)
-$txtLog.Size = New-Object System.Drawing.Size(580, 180)
+$txtLog.Location = New-Object System.Drawing.Point(20, 480)
+$txtLog.Size = New-Object System.Drawing.Size(600, 170)
 $txtLog.Multiline = $true
 $txtLog.ScrollBars = 'Vertical'
 $txtLog.ReadOnly = $true
@@ -692,8 +733,8 @@ $form.Controls.Add($txtLog)
 
 # -- Status bar --
 $lblStatus = New-Object System.Windows.Forms.Label
-$lblStatus.Location = New-Object System.Drawing.Point(20, 530)
-$lblStatus.Size = New-Object System.Drawing.Size(580, 20)
+$lblStatus.Location = New-Object System.Drawing.Point(20, 660)
+$lblStatus.Size = New-Object System.Drawing.Size(600, 20)
 $lblStatus.Text = 'Listo.'
 $form.Controls.Add($lblStatus)
 
@@ -716,6 +757,17 @@ function Set-Status {
 }
 
 function Update-RepoPreview {
+    if ($rbModoExistente.Checked) {
+        if ($cmbReposExistentes.SelectedItem) {
+            $lblRepoValor.Text = (Get-RepoName)
+            $lblRepoValor.ForeColor = [System.Drawing.Color]::Black
+        } else {
+            $lblRepoValor.Text = '(selecciona un repositorio de la lista)'
+            $lblRepoValor.ForeColor = [System.Drawing.Color]::Gray
+        }
+        return
+    }
+    # Modo: crear nuevo
     $nombre = $txtNombre.Text.Trim()
     $forma = $cmbForma.Text.Trim()
     if ($nombre -and $forma) {
@@ -729,10 +781,74 @@ function Update-RepoPreview {
 }
 
 function Get-RepoName {
+    if ($rbModoExistente.Checked) {
+        $sel = $cmbReposExistentes.SelectedItem
+        if (-not $sel) { return $null }
+        # Items vienen en formato "🔒 nombre-del-repo" — quitamos el emoji + espacios
+        return ($sel -replace '^\S+\s+', '').Trim()
+    }
     $nombre = $txtNombre.Text.Trim()
     $forma = $cmbForma.Text.Trim()
     if (-not $nombre -or -not $forma) { return $null }
     return (Sanitize-RepoName "$nombre-$forma")
+}
+
+function Load-UserRepos {
+    if (-not (Test-GhAuth)) {
+        Log '✗ Sin sesion. Inicia sesion primero para ver tus repos.' 'Red'
+        return
+    }
+    Log '→ Cargando lista de repositorios de tu cuenta...'
+    $cmbReposExistentes.Items.Clear()
+    Set-Status 'Cargando repos...'
+    try {
+        $reposJson = gh repo list --json name,visibility,description,isArchived --limit 200 2>$null
+        if ($LASTEXITCODE -ne 0 -or -not $reposJson) {
+            Log '✗ Error al listar repositorios.' 'Red'
+            Set-Status 'Error.'
+            return
+        }
+        $repos = $reposJson | ConvertFrom-Json | Sort-Object name
+        $count = 0
+        foreach ($r in $repos) {
+            if ($r.isArchived) { continue }
+            $vis = if ($r.visibility -eq 'PRIVATE') { '[Priv]' } else { '[Pub]' }
+            [void]$cmbReposExistentes.Items.Add("$vis $($r.name)")
+            $count++
+        }
+        Log "✓ $count repositorios cargados." 'Green'
+        Set-Status "Repos disponibles: $count"
+    } catch {
+        Log "✗ Error: $_" 'Red'
+        Set-Status 'Error.'
+    }
+}
+
+function Set-ModoUI {
+    if ($rbModoExistente.Checked) {
+        # Habilitar selector existente
+        $cmbReposExistentes.Enabled = $true
+        $btnRefreshRepos.Enabled = $true
+        # Deshabilitar campos de modo nuevo
+        $txtNombre.Enabled = $false
+        $cmbForma.Enabled = $false
+        $grpVis.Enabled = $false
+        # Cambiar texto del boton 1
+        $btnCrearRepo.Text = '1. Validar Repo'
+        # Cargar repos si no hay items
+        if ($cmbReposExistentes.Items.Count -eq 0) {
+            Load-UserRepos
+        }
+    } else {
+        # Modo: crear nuevo
+        $cmbReposExistentes.Enabled = $false
+        $btnRefreshRepos.Enabled = $false
+        $txtNombre.Enabled = $true
+        $cmbForma.Enabled = $true
+        $grpVis.Enabled = $true
+        $btnCrearRepo.Text = '1. Crear Repo'
+    }
+    Update-RepoPreview
 }
 
 function Validate-Inputs {
@@ -776,14 +892,23 @@ function Validate-Inputs {
         }
     }
 
-    # Campos requeridos
-    if (-not $txtNombre.Text.Trim()) {
-        [System.Windows.Forms.MessageBox]::Show('Ingresa tu nombre completo.', 'Falta dato', 'OK', 'Warning') | Out-Null
-        return $false
-    }
-    if (-not $cmbForma.Text.Trim()) {
-        [System.Windows.Forms.MessageBox]::Show('Selecciona o escribe la forma de la prueba.', 'Falta dato', 'OK', 'Warning') | Out-Null
-        return $false
+    # Campos requeridos segun modo
+    if ($rbModoExistente.Checked) {
+        if (-not $cmbReposExistentes.SelectedItem) {
+            [System.Windows.Forms.MessageBox]::Show(
+                'Selecciona un repositorio de la lista.',
+                'Falta dato', 'OK', 'Warning') | Out-Null
+            return $false
+        }
+    } else {
+        if (-not $txtNombre.Text.Trim()) {
+            [System.Windows.Forms.MessageBox]::Show('Ingresa tu nombre completo.', 'Falta dato', 'OK', 'Warning') | Out-Null
+            return $false
+        }
+        if (-not $cmbForma.Text.Trim()) {
+            [System.Windows.Forms.MessageBox]::Show('Selecciona o escribe la forma de la prueba.', 'Falta dato', 'OK', 'Warning') | Out-Null
+            return $false
+        }
     }
 
     if ($RequireFolder) {
@@ -799,20 +924,37 @@ function Validate-Inputs {
 function Invoke-CreateRepo {
     if (-not (Validate-Inputs)) { return $false }
     $repo = Get-RepoName
-    $visibility = if ($rbPrivate.Checked) { '--private' } else { '--public' }
 
+    # Modo: usar repo existente. Solo validar.
+    if ($rbModoExistente.Checked) {
+        Set-Status "Validando repo $repo..."
+        Log "→ Modo: repositorio existente '$repo'"
+        $null = gh repo view $repo 2>&1
+        if ($LASTEXITCODE -eq 0) {
+            Log "✓ Repo '$repo' encontrado en tu cuenta." 'Green'
+            Set-Status "Repo $repo OK."
+            return $true
+        } else {
+            Log "✗ No se pudo acceder al repo '$repo'." 'Red'
+            [System.Windows.Forms.MessageBox]::Show(
+                "No se encontró el repositorio '$repo' en tu cuenta.`n`nRefresca la lista o cambia a modo 'Crear repositorio nuevo'.",
+                'Repo no accesible', 'OK', 'Warning') | Out-Null
+            return $false
+        }
+    }
+
+    # Modo: crear nuevo
+    $visibility = if ($rbPrivate.Checked) { '--private' } else { '--public' }
     Set-Status "Creando repo $repo..."
     Log "→ Creando repo '$repo' ($visibility)"
 
     try {
-        # Verifica si ya existe
-        $existe = gh repo view $repo 2>&1
+        $null = gh repo view $repo 2>&1
         if ($LASTEXITCODE -eq 0) {
             Log "Repo '$repo' ya existe en tu cuenta. Lo usaremos." 'Yellow'
             return $true
         }
 
-        # Crea
         $output = gh repo create $repo $visibility --confirm 2>&1
         if ($LASTEXITCODE -eq 0) {
             Log "✓ Repo creado: $output"
@@ -962,6 +1104,14 @@ function Update-SessionPanel {
 $txtNombre.Add_TextChanged({ Update-RepoPreview })
 $cmbForma.Add_TextChanged({ Update-RepoPreview })
 $cmbForma.Add_SelectedIndexChanged({ Update-RepoPreview })
+
+# Modo de subida (radio buttons)
+$rbModoNuevo.Add_CheckedChanged({ if ($rbModoNuevo.Checked) { Set-ModoUI } })
+$rbModoExistente.Add_CheckedChanged({ if ($rbModoExistente.Checked) { Set-ModoUI } })
+
+# Selector de repo existente
+$cmbReposExistentes.Add_SelectedIndexChanged({ Update-RepoPreview })
+$btnRefreshRepos.Add_Click({ Load-UserRepos })
 
 $btnBuscar.Add_Click({
     $dlg = New-Object System.Windows.Forms.FolderBrowserDialog

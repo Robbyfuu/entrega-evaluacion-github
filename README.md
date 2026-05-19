@@ -85,14 +85,36 @@ En la esquina superior derecha verás siempre quién está conectado:
 
 ### 6. Subir tu evaluación
 
-1. Completa **Nombre completo** (ej: `Juan Pérez García`).
-2. Elige o escribe **Forma de prueba** (ej: `Forma-A`).
-3. Click **Buscar...** y selecciona la carpeta de tu evaluación.
-4. Elige visibilidad: **Privado** (recomendado) o **Público**.
-5. Click **Hacer TODO**.
+Hay **dos modos** de subida:
 
-El script:
-- Crea el repositorio en tu GitHub.
+#### Modo A: Crear repositorio nuevo (default)
+
+Para alumnos que vienen sin preparación previa.
+
+1. Selecciona **"Crear repositorio nuevo"**.
+2. Completa **Nombre completo** (ej: `Juan Pérez García`).
+3. Elige o escribe **Forma de prueba** (ej: `Forma-A`).
+4. Click **Buscar...** y selecciona la carpeta de tu evaluación.
+5. Elige visibilidad: **Privado** (recomendado) o **Público**.
+6. Click **Hacer TODO**.
+
+El script crea el repositorio con formato `nombre-completo-forma` y sube todo.
+
+#### Modo B: Usar repositorio existente
+
+Para alumnos que ya crearon el repo en su casa.
+
+1. Selecciona **"Usar repositorio existente de mi cuenta"**.
+2. El script carga automáticamente la lista de repos de tu cuenta.
+3. Elige tu repo del **dropdown** (los privados aparecen con `[Priv]`, públicos con `[Pub]`).
+4. Si creaste un repo nuevo recientemente, click **Refrescar** para actualizar la lista.
+5. Click **Buscar...** y selecciona la carpeta de tu evaluación.
+6. Click **Hacer TODO**.
+
+El script valida que el repo existe y sube los archivos sin crearlo.
+
+#### Lo que hace el script en ambos modos
+
 - Configura tu nombre y email en el repositorio local.
 - Ejecuta `git init`, `git add`, `git commit`, `git push`.
 - Te muestra el link al final.
