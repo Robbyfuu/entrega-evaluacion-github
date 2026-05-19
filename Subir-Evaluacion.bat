@@ -1,12 +1,15 @@
 @echo off
 REM ============================================================
 REM  Launcher para Subir-Evaluacion.ps1
-REM  Doble-click para abrir la GUI de entrega de evaluación.
+REM  Doble-click para abrir la GUI de entrega de evaluacion.
 REM ============================================================
+
+REM Forzar UTF-8 en la consola por si PowerShell hereda codepage
+chcp 65001 >nul 2>&1
 
 setlocal
 
-REM Carpeta donde está este .bat (con barra final)
+REM Carpeta donde esta este .bat (con barra final)
 set "SCRIPT_DIR=%~dp0"
 set "PS1=%SCRIPT_DIR%Subir-Evaluacion.ps1"
 
@@ -35,7 +38,7 @@ if errorlevel 1 (
 REM Lanzar con bypass de execution policy, sin ventana de consola visible
 powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "%PS1%"
 
-REM Si PowerShell falló, mostrar mensaje
+REM Si PowerShell fallo, mostrar mensaje
 if errorlevel 1 (
     echo.
     echo [ERROR] El script de PowerShell termino con error.

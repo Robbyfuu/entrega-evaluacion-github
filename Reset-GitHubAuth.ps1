@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Limpia credenciales de GitHub (Credential Manager + gh CLI + git config opcional)
     y permite loguearse con cuenta nueva.

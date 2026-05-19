@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     GUI interactiva para alumnos: crear repo en GitHub y subir su evaluación.
 
