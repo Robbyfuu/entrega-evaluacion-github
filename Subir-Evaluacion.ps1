@@ -1609,24 +1609,59 @@ function Invoke-UploadFiles {
         $pushOutput | ForEach-Object { Log "  $_" }
 
         if ($LASTEXITCODE -eq 0) {
-            $repoUrl = "https://github.com/$ghUser/$repo"
-            Log "✓ Subida completada. Ver en: $repoUrl" 'Cyan'
+            $script:lastPushSuccess = $true
+            $script:lastPushUrl = "https://github.com/$ghUser/$repo"
+            Log "✓ Subida completada. Ver en: $($script:lastPushUrl)" 'Cyan'
             Set-Status 'Subida OK. Ahora entrega en el AVA.'
-
-            # Instrucciones AVA + copiar URL al portapapeles
-            Show-AvaInstructions -RepoUrl $repoUrl -Tipo $forma
-            return $true
         } else {
             Log '✗ Falló el push.' 'Red'
             Set-Status 'Error en push.'
-            return $false
+            $script:lastPushSuccess = $false
         }
     } catch {
         Log "✗ Excepción: $_" 'Red'
-        return $false
+        $script:lastPushSuccess = $false
     } finally {
         Pop-Location
     }
+
+    if (-not $script:lastPushSuccess) { return $false }
+
+    # Post-push (ya fuera del directorio): instrucciones AVA + opcion de limpiar
+    Show-AvaInstructions -RepoUrl $script:lastPushUrl -Tipo $forma
+
+    # Preguntar si ya termino para eliminar carpeta local
+    $rDel = [System.Windows.Forms.MessageBox]::Show(
+        "¿Ya terminaste la evaluación y entregaste el enlace en el AVA?`n`n" +
+        "Si presionas SÍ, se ELIMINARÁ esta carpeta local:`n  $folder`n`n" +
+        "(El repositorio en GitHub se mantiene intacto. Puedes volver a clonarlo si necesitas.)",
+        '¿Eliminar carpeta local?', 'YesNo', 'Question')
+
+    if ($rDel -eq 'Yes') {
+        Log "→ Eliminando carpeta local: $folder"
+        Set-Status 'Eliminando carpeta...'
+        try {
+            Remove-Item -LiteralPath $folder -Recurse -Force -ErrorAction Stop
+            Log '✓ Carpeta local eliminada.' 'Green'
+            Set-Status 'Listo. Carpeta limpiada.'
+            $txtCarpeta.Text = ''
+            Update-ButtonStates
+            [System.Windows.Forms.MessageBox]::Show(
+                "Carpeta local eliminada.`n`nTu evaluación queda guardada en GitHub:`n$($script:lastPushUrl)",
+                'Limpieza completada', 'OK', 'Information') | Out-Null
+        } catch {
+            Log "✗ No se pudo eliminar la carpeta: $_" 'Red'
+            [System.Windows.Forms.MessageBox]::Show(
+                "No se pudo eliminar la carpeta automáticamente:`n$_`n`n" +
+                "Cierra cualquier programa que pueda estar usando archivos de esa carpeta " +
+                "(por ejemplo IDLE) y elimínala manualmente desde el Explorador.",
+                'Error al eliminar', 'OK', 'Warning') | Out-Null
+        }
+    } else {
+        Log '→ Carpeta local conservada.'
+    }
+
+    return $true
 }
 
 # -- Actualizar panel de sesión --
