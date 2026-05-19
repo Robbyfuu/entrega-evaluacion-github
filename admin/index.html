@@ -153,6 +153,77 @@
       <div id="ctlMsg" class="ok"></div>
     </div>
 
+    <!-- Tareas (GitHub Classroom) -->
+    <div class="card">
+      <h2>Tareas de GitHub Classroom <span style="font-size:12px;color:#8e8e93;">(visibles para los alumnos en su script)</span></h2>
+      <p style="color:#6e6e73;font-size:13px;margin-bottom:16px;">
+        Pegá los links de assignment de
+        <a href="https://classroom.github.com/" target="_blank" rel="noopener noreferrer">classroom.github.com</a>.
+        Los alumnos los ven en su script y los aceptan con un click.
+      </p>
+      <div class="row-flex">
+        <div class="field" style="flex:0 0 220px;">
+          <label for="asgTitle">Título (ej: "Evaluación 1")</label>
+          <input type="text" id="asgTitle" placeholder="Evaluación 1" />
+        </div>
+        <div class="field">
+          <label for="asgUrl">URL del Classroom assignment</label>
+          <input type="text" id="asgUrl" placeholder="https://classroom.github.com/a/XXXX" />
+        </div>
+        <button class="btn-primary" onclick="addAssignment()">Agregar tarea</button>
+      </div>
+      <div id="asgMsg" class="ok"></div>
+      <table style="margin-top:16px;">
+        <thead>
+          <tr>
+            <th style="width:25%;">Título</th>
+            <th style="width:40%;">URL</th>
+            <th style="width:15%;">Estado</th>
+            <th style="width:20%;">Acciones</th>
+          </tr>
+        </thead>
+        <tbody id="assignmentsBody">
+          <tr><td colspan="4" style="text-align:center;color:#8e8e93;">Cargando...</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Actividad de alumnos -->
+    <div class="card">
+      <h2>Actividad de alumnos
+        <span style="font-size:12px;color:#8e8e93;">(últimos 100)</span>
+      </h2>
+      <div class="row-flex" style="margin-bottom:12px;">
+        <div class="field" style="flex:0 0 200px;">
+          <label for="actionFilter">Filtrar por acción</label>
+          <select id="actionFilter" onchange="loadActivity()"
+                  style="width:100%;padding:10px 14px;border:1px solid #d2d2d7;border-radius:8px;font-size:14px;">
+            <option value="">Todas</option>
+            <option value="login">Login</option>
+            <option value="create_repo">Crear repo</option>
+            <option value="clone">Clonar repo</option>
+            <option value="upload">Subir archivos</option>
+          </select>
+        </div>
+        <button class="btn-secondary" onclick="loadActivity()">Refrescar</button>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>Fecha</th>
+            <th>Usuario GitHub</th>
+            <th>Email</th>
+            <th>PC</th>
+            <th>Acción</th>
+            <th>Repo</th>
+          </tr>
+        </thead>
+        <tbody id="activityBody">
+          <tr><td colspan="6" style="text-align:center;color:#8e8e93;">Cargando...</td></tr>
+        </tbody>
+      </table>
+    </div>
+
     <!-- Eventos de trampa -->
     <div class="card">
       <h2>Eventos de trampa detectados <span style="font-size:12px;color:#8e8e93;">(últimos 50)</span></h2>
@@ -249,8 +320,12 @@
       $('userBadge').textContent = user.email;
       loadState();
       loadEvents();
+      loadActivity();
+      loadAssignments();
       if (pollTimer) clearInterval(pollTimer);
-      pollTimer = setInterval(() => { loadState(); loadEvents(); }, 30000);
+      pollTimer = setInterval(() => {
+        loadState(); loadEvents(); loadActivity();
+      }, 30000);
       $('livePill').classList.remove('hidden');
     }
 
@@ -364,6 +439,196 @@
 
         tbody.appendChild(tr);
       });
+    };
+
+    // ===== Actividad de alumnos =====
+    const ACTION_LABEL = {
+      login: 'Login',
+      create_repo: 'Crear repo',
+      clone: 'Clonar',
+      upload: 'Subir'
+    };
+    const ACTION_COLOR = {
+      login: '#0071e3',
+      create_repo: '#4caf50',
+      clone: '#ff9800',
+      upload: '#9c27b0'
+    };
+
+    window.loadActivity = async function() {
+      const filter = $('actionFilter').value;
+      let q = supabase
+        .from('student_activity')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(100);
+      if (filter) q = q.eq('action', filter);
+      const { data, error } = await q;
+      const tbody = $('activityBody');
+      while (tbody.firstChild) tbody.removeChild(tbody.firstChild);
+
+      if (error) {
+        const tr = makeEl('tr');
+        const td = makeEl('td', { text: 'Error: ' + error.message, className: 'err' });
+        td.colSpan = 6;
+        tr.appendChild(td);
+        tbody.appendChild(tr);
+        return;
+      }
+      if (!data || data.length === 0) {
+        const tr = makeEl('tr');
+        const td = makeEl('td', {
+          text: 'Sin actividad registrada.',
+          style: { textAlign: 'center', color: '#8e8e93' }
+        });
+        td.colSpan = 6;
+        tr.appendChild(td);
+        tbody.appendChild(tr);
+        return;
+      }
+
+      data.forEach(e => {
+        const tr = makeEl('tr');
+        tr.appendChild(makeEl('td', { text: fmt(e.created_at) }));
+        tr.appendChild(makeEl('td', { text: '@' + (e.github_username || '?') }));
+        tr.appendChild(makeEl('td', { text: e.github_email || '-' }));
+        tr.appendChild(makeEl('td', { text: e.pc_name || '-' }));
+
+        // Accion como badge coloreado
+        const tdAct = makeEl('td');
+        const badge = makeEl('span', {
+          text: ACTION_LABEL[e.action] || e.action,
+          className: 'badge'
+        });
+        badge.style.background = ACTION_COLOR[e.action] || '#999';
+        badge.style.color = 'white';
+        tdAct.appendChild(badge);
+        tr.appendChild(tdAct);
+
+        // Repo: si hay URL, hacerlo clickeable. textContent para seguridad
+        const tdRepo = makeEl('td');
+        if (e.repo_url) {
+          const a = makeEl('a', { text: e.repo_name || e.repo_url });
+          a.href = e.repo_url;
+          a.target = '_blank';
+          a.rel = 'noopener noreferrer';
+          a.style.color = '#0071e3';
+          tdRepo.appendChild(a);
+        } else {
+          tdRepo.textContent = e.repo_name || '-';
+        }
+        tr.appendChild(tdRepo);
+
+        tbody.appendChild(tr);
+      });
+    };
+
+    // ===== Assignments (Classroom) =====
+    window.loadAssignments = async function() {
+      const { data, error } = await supabase
+        .from('assignments')
+        .select('*')
+        .order('created_at', { ascending: false });
+      const tbody = $('assignmentsBody');
+      if (!tbody) return;
+      while (tbody.firstChild) tbody.removeChild(tbody.firstChild);
+
+      if (error) return;
+      if (!data || data.length === 0) {
+        const tr = makeEl('tr');
+        const td = makeEl('td', {
+          text: 'Sin tareas configuradas. Agregá una pegando el link de Classroom.',
+          style: { textAlign: 'center', color: '#8e8e93' }
+        });
+        td.colSpan = 4;
+        tr.appendChild(td);
+        tbody.appendChild(tr);
+        return;
+      }
+
+      data.forEach(a => {
+        const tr = makeEl('tr');
+        tr.appendChild(makeEl('td', { text: a.title }));
+
+        const tdUrl = makeEl('td');
+        const link = makeEl('a', { text: a.classroom_url });
+        link.href = a.classroom_url;
+        link.target = '_blank';
+        link.rel = 'noopener noreferrer';
+        link.style.color = '#0071e3';
+        link.style.fontSize = '12px';
+        link.style.fontFamily = "'SF Mono', Consolas, monospace";
+        tdUrl.appendChild(link);
+        tr.appendChild(tdUrl);
+
+        const tdStatus = makeEl('td');
+        const badge = makeEl('span', {
+          text: a.active ? 'ACTIVA' : 'inactiva',
+          className: 'badge'
+        });
+        badge.style.background = a.active ? '#4caf50' : '#9e9e9e';
+        badge.style.color = 'white';
+        tdStatus.appendChild(badge);
+        tr.appendChild(tdStatus);
+
+        // Acciones
+        const tdActions = makeEl('td');
+        const btnToggle = makeEl('button', {
+          text: a.active ? 'Desactivar' : 'Activar',
+          className: a.active ? 'btn-secondary' : 'btn-success'
+        });
+        btnToggle.style.padding = '4px 12px';
+        btnToggle.style.fontSize = '12px';
+        btnToggle.onclick = () => toggleAssignment(a.id, !a.active);
+        tdActions.appendChild(btnToggle);
+
+        const btnDelete = makeEl('button', {
+          text: '×',
+          className: 'btn-danger'
+        });
+        btnDelete.style.padding = '4px 10px';
+        btnDelete.style.marginLeft = '6px';
+        btnDelete.style.fontSize = '14px';
+        btnDelete.onclick = () => deleteAssignment(a.id);
+        tdActions.appendChild(btnDelete);
+
+        tr.appendChild(tdActions);
+        tbody.appendChild(tr);
+      });
+    };
+
+    window.addAssignment = async function() {
+      const title = $('asgTitle').value.trim();
+      const url = $('asgUrl').value.trim();
+      if (!title || !url) {
+        $('asgMsg').textContent = 'Completa título y URL.';
+        $('asgMsg').className = 'err';
+        return;
+      }
+      const { error } = await supabase
+        .from('assignments')
+        .insert({ title, classroom_url: url, active: true });
+      if (error) {
+        $('asgMsg').textContent = 'Error: ' + error.message;
+        $('asgMsg').className = 'err';
+      } else {
+        $('asgTitle').value = '';
+        $('asgUrl').value = '';
+        $('asgMsg').textContent = 'Tarea agregada.';
+        $('asgMsg').className = 'ok';
+        loadAssignments();
+      }
+    };
+
+    window.toggleAssignment = async function(id, active) {
+      await supabase.from('assignments').update({ active }).eq('id', id);
+      loadAssignments();
+    };
+
+    window.deleteAssignment = async function(id) {
+      if (!confirm('¿Eliminar esta tarea?')) return;
+      await supabase.from('assignments').delete().eq('id', id);
+      loadAssignments();
     };
 
     // ===== Init =====

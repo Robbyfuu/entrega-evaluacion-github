@@ -298,6 +298,171 @@ function Check-AdminConfig {
     }
 }
 
+function Show-AssignmentsDialog {
+    <#
+    Dialog con la lista de tareas Classroom activas. Click en "Aceptar" abre
+    el URL del assignment en el navegador del alumno. Despues de aceptar en
+    GitHub, el alumno vuelve al script y usa modo "Repo existente" para clonar.
+    #>
+    $assignments = Get-ClassroomAssignments
+    if ($assignments.Count -eq 0) {
+        [System.Windows.Forms.MessageBox]::Show(
+            'No hay tareas de Classroom activas en este momento.',
+            'Sin tareas', 'OK', 'Information') | Out-Null
+        return
+    }
+
+    $dlg = New-Object System.Windows.Forms.Form
+    $dlg.Text = 'Tareas de GitHub Classroom'
+    $dlg.Size = New-Object System.Drawing.Size(560, 480)
+    $dlg.StartPosition = 'CenterParent'
+    $dlg.FormBorderStyle = 'FixedDialog'
+    $dlg.MaximizeBox = $false
+
+    $lblTitle = New-Object System.Windows.Forms.Label
+    $lblTitle.Text = 'Tareas activas asignadas por el profesor'
+    $lblTitle.Font = New-Object System.Drawing.Font('Segoe UI', 12, [System.Drawing.FontStyle]::Bold)
+    $lblTitle.Location = New-Object System.Drawing.Point(20, 15)
+    $lblTitle.Size = New-Object System.Drawing.Size(500, 25)
+    $dlg.Controls.Add($lblTitle)
+
+    $lblHelp = New-Object System.Windows.Forms.Label
+    $lblHelp.Text = @"
+1. Haz clic en "Aceptar tarea" abajo. Se abrira tu navegador en GitHub Classroom.
+2. Inicia sesion si te lo pide (usa tu cuenta de GitHub).
+3. Acepta la tarea. GitHub te crea automaticamente un repositorio.
+4. Cierra este dialog y selecciona "Usar repositorio existente" para clonarlo.
+"@
+    $lblHelp.Font = New-Object System.Drawing.Font('Segoe UI', 9)
+    $lblHelp.ForeColor = [System.Drawing.Color]::DimGray
+    $lblHelp.Location = New-Object System.Drawing.Point(20, 45)
+    $lblHelp.Size = New-Object System.Drawing.Size(500, 75)
+    $dlg.Controls.Add($lblHelp)
+
+    # Panel scrollable con tareas
+    $panel = New-Object System.Windows.Forms.Panel
+    $panel.Location = New-Object System.Drawing.Point(20, 130)
+    $panel.Size = New-Object System.Drawing.Size(500, 250)
+    $panel.AutoScroll = $true
+    $panel.BorderStyle = 'FixedSingle'
+    $dlg.Controls.Add($panel)
+
+    $y = 10
+    foreach ($a in $assignments) {
+        $titleLbl = New-Object System.Windows.Forms.Label
+        $titleLbl.Text = $a.title
+        $titleLbl.Font = New-Object System.Drawing.Font('Segoe UI', 11, [System.Drawing.FontStyle]::Bold)
+        $titleLbl.Location = New-Object System.Drawing.Point(15, $y)
+        $titleLbl.Size = New-Object System.Drawing.Size(340, 22)
+        $panel.Controls.Add($titleLbl)
+
+        $btnAccept = New-Object System.Windows.Forms.Button
+        $btnAccept.Text = 'Aceptar tarea'
+        $btnAccept.Location = New-Object System.Drawing.Point(360, ($y - 2))
+        $btnAccept.Size = New-Object System.Drawing.Size(110, 28)
+        $btnAccept.BackColor = [System.Drawing.Color]::FromArgb(76, 175, 80)
+        $btnAccept.ForeColor = [System.Drawing.Color]::White
+        $btnAccept.FlatStyle = 'Flat'
+        $url = $a.classroom_url
+        $btnAccept.Add_Click({
+            try {
+                Start-Process $url
+                Log "→ Abriendo Classroom: $url"
+            } catch {
+                [System.Windows.Forms.MessageBox]::Show(
+                    "No se pudo abrir el navegador.`nVisita manualmente:`n$url",
+                    'Abrir manual', 'OK', 'Information') | Out-Null
+            }
+        }.GetNewClosure())
+        $panel.Controls.Add($btnAccept)
+
+        $urlLbl = New-Object System.Windows.Forms.Label
+        $urlLbl.Text = $a.classroom_url
+        $urlLbl.Font = New-Object System.Drawing.Font('Consolas', 8)
+        $urlLbl.ForeColor = [System.Drawing.Color]::Gray
+        $urlLbl.Location = New-Object System.Drawing.Point(15, ($y + 22))
+        $urlLbl.Size = New-Object System.Drawing.Size(455, 18)
+        $panel.Controls.Add($urlLbl)
+
+        $y += 55
+    }
+
+    $btnClose = New-Object System.Windows.Forms.Button
+    $btnClose.Text = 'Cerrar'
+    $btnClose.Location = New-Object System.Drawing.Point(220, 395)
+    $btnClose.Size = New-Object System.Drawing.Size(100, 32)
+    $btnClose.DialogResult = 'OK'
+    $dlg.Controls.Add($btnClose)
+    $dlg.AcceptButton = $btnClose
+
+    [void]$dlg.ShowDialog($form)
+}
+
+function Update-AssignmentsBanner {
+    if (-not $lnkAssignments) { return }
+    $assignments = Get-ClassroomAssignments
+    if ($assignments.Count -gt 0) {
+        $lnkAssignments.Text = "📚 Tienes $($assignments.Count) tarea(s) de Classroom — Click para aceptarlas"
+        $lnkAssignments.Visible = $true
+    } else {
+        $lnkAssignments.Visible = $false
+    }
+}
+
+function Get-ClassroomAssignments {
+    <#
+    Lista las tareas activas de Classroom que el profesor configuro en el panel admin.
+    Devuelve array de {id, title, classroom_url}. Array vacio si no hay.
+    #>
+    try {
+        $resp = Invoke-RestMethod `
+            -Uri "$($script:supabaseUrl)/rest/v1/assignments?active=eq.true&select=*&order=created_at.desc" `
+            -Headers (Get-SupabaseHeaders) `
+            -TimeoutSec 5 -ErrorAction Stop
+        return @($resp)
+    } catch {
+        return @()
+    }
+}
+
+function Report-StudentActivity {
+    <#
+    Reporta actividad del alumno al backend Supabase. Acciones soportadas:
+    - login        : alumno completo el device flow de GitHub
+    - create_repo  : creo un repo nuevo desde el script
+    - upload       : hizo push exitoso a un repo
+    - clone        : clono un repo existente
+    #>
+    param(
+        [ValidateSet('login','create_repo','upload','clone')]
+        [string]$Action,
+        [string]$RepoName,
+        [string]$RepoUrl
+    )
+    try {
+        $userInfo = gh api user 2>$null | ConvertFrom-Json
+        if (-not $userInfo -or -not $userInfo.login) { return }
+
+        $payload = @{
+            github_username = $userInfo.login
+            github_email    = $userInfo.email   # puede ser null si email privado
+            pc_name         = $env:COMPUTERNAME
+            action          = $Action
+        }
+        if ($RepoName) { $payload['repo_name'] = $RepoName }
+        if ($RepoUrl)  { $payload['repo_url']  = $RepoUrl }
+
+        Invoke-RestMethod `
+            -Uri "$($script:supabaseUrl)/rest/v1/student_activity" `
+            -Method Post `
+            -Headers (Get-SupabaseHeaders) `
+            -Body ($payload | ConvertTo-Json) `
+            -TimeoutSec 5 -ErrorAction Stop | Out-Null
+    } catch {
+        # Silencioso. Si falla la red, no molestamos al alumno.
+    }
+}
+
 function Report-CheatEvent {
     <#
     Inserta un evento de trampa en la tabla cheat_events de Supabase para que
@@ -880,6 +1045,9 @@ function Invoke-CloneRepo {
     }
     Log '✓ Repo limpio (sin archivos pre-existentes).' 'Green'
 
+    # Reportar clone al backend
+    Report-StudentActivity -Action 'clone' -RepoName $RepoName -RepoUrl $repoUrl
+
     # Setear automaticamente la carpeta para el siguiente paso (Subir)
     $txtCarpeta.Text = $targetPath
     Update-ButtonStates
@@ -1184,7 +1352,10 @@ function Save-GhToken {
     if ($ghCmd) {
         Log '→ Estrategia A: gh auth login --with-token'
         $okA = Save-GhTokenViaProcess -Token $Token -GhPath $ghCmd.Source
-        if ($okA) { return $true }
+        if ($okA) {
+            Report-StudentActivity -Action 'login'
+            return $true
+        }
         Log '  Estrategia A fallo. Intentando B...' 'Yellow'
     }
 
@@ -1196,6 +1367,7 @@ function Save-GhToken {
         $null = gh auth status 2>&1
         if ($LASTEXITCODE -eq 0) {
             Log '✓ Token guardado en hosts.yml correctamente.' 'Green'
+            Report-StudentActivity -Action 'login'
             return $true
         }
     }
@@ -1303,6 +1475,16 @@ $lblTitulo.Font = New-Object System.Drawing.Font('Segoe UI', 16, [System.Drawing
 $lblTitulo.Location = New-Object System.Drawing.Point(20, 15)
 $lblTitulo.Size = New-Object System.Drawing.Size(420, 35)
 $form.Controls.Add($lblTitulo)
+
+# -- Banner de tareas de Classroom (visible solo si hay tareas activas) --
+$lnkAssignments = New-Object System.Windows.Forms.LinkLabel
+$lnkAssignments.Text = ''
+$lnkAssignments.Visible = $false
+$lnkAssignments.Font = New-Object System.Drawing.Font('Segoe UI', 9, [System.Drawing.FontStyle]::Bold)
+$lnkAssignments.LinkColor = [System.Drawing.Color]::FromArgb(33, 150, 243)
+$lnkAssignments.Location = New-Object System.Drawing.Point(20, 55)
+$lnkAssignments.Size = New-Object System.Drawing.Size(420, 22)
+$form.Controls.Add($lnkAssignments)
 
 # -- Panel de sesión (esquina superior derecha) --
 $grpSesion = New-Object System.Windows.Forms.GroupBox
@@ -1765,6 +1947,9 @@ function Invoke-CreateRepo {
             [System.Windows.Forms.MessageBox]::Show(
                 $msg, 'Repositorio creado correctamente', 'OK', 'Information') | Out-Null
 
+            # Reportar al backend
+            Report-StudentActivity -Action 'create_repo' -RepoName $repo -RepoUrl $repoUrl
+
             Update-ButtonStates
             return $true
         } else {
@@ -1933,6 +2118,9 @@ function Invoke-UploadFiles {
 
     if (-not $script:lastPushSuccess) { return $false }
 
+    # Reportar al backend
+    Report-StudentActivity -Action 'upload' -RepoName $repo -RepoUrl $script:lastPushUrl
+
     # Post-push (ya fuera del directorio): instrucciones AVA + opcion de limpiar
     Show-AvaInstructions -RepoUrl $script:lastPushUrl -Tipo $forma
 
@@ -2018,6 +2206,9 @@ $lnkCrearCuenta.Add_LinkClicked({
         }
     }
 })
+
+# Link banner de tareas de Classroom
+$lnkAssignments.Add_LinkClicked({ Show-AssignmentsDialog })
 
 # Selector de repo existente
 $cmbReposExistentes.Add_SelectedIndexChanged({ Update-RepoPreview; Update-ButtonStates })
@@ -2168,11 +2359,12 @@ if ($initMissing) {
 # Llenar panel de sesión con datos actuales (esto tambien llama Update-ButtonStates)
 Update-SessionPanel
 Update-ButtonStates
+Update-AssignmentsBanner
 
 # Iniciar polling del config remoto del profesor (cada 30s)
 $adminTimer = New-Object System.Windows.Forms.Timer
 $adminTimer.Interval = $script:adminPollInterval
-$adminTimer.Add_Tick({ Check-AdminConfig })
+$adminTimer.Add_Tick({ Check-AdminConfig; Update-AssignmentsBanner })
 $adminTimer.Start()
 # Primer check inmediato
 Check-AdminConfig
