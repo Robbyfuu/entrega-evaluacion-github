@@ -1638,27 +1638,22 @@ function Invoke-UploadFiles {
         '¿Eliminar carpeta local?', 'YesNo', 'Question')
 
     if ($rDel -eq 'Yes') {
-        Log "→ Eliminando carpeta local: $folder"
-        Set-Status 'Eliminando carpeta...'
+        # Eliminacion silenciosa: sin segundo popup, solo log discreto.
+        Set-Status 'Limpiando...'
         try {
             Remove-Item -LiteralPath $folder -Recurse -Force -ErrorAction Stop
-            Log '✓ Carpeta local eliminada.' 'Green'
-            Set-Status 'Listo. Carpeta limpiada.'
+            Log '✓ Carpeta local eliminada.' 'Gray'
             $txtCarpeta.Text = ''
             Update-ButtonStates
-            [System.Windows.Forms.MessageBox]::Show(
-                "Carpeta local eliminada.`n`nTu evaluación queda guardada en GitHub:`n$($script:lastPushUrl)",
-                'Limpieza completada', 'OK', 'Information') | Out-Null
+            Set-Status 'Listo.'
         } catch {
-            Log "✗ No se pudo eliminar la carpeta: $_" 'Red'
-            [System.Windows.Forms.MessageBox]::Show(
-                "No se pudo eliminar la carpeta automáticamente:`n$_`n`n" +
-                "Cierra cualquier programa que pueda estar usando archivos de esa carpeta " +
-                "(por ejemplo IDLE) y elimínala manualmente desde el Explorador.",
-                'Error al eliminar', 'OK', 'Warning') | Out-Null
+            # Si hay file lock (ej. IDLE abierto), reintentamos despues de cerrar nada.
+            # Sin popup molesto: solo log gris.
+            Log "  (no se pudo limpiar la carpeta: $($_.Exception.Message))" 'Gray'
+            Set-Status 'Listo.'
         }
     } else {
-        Log '→ Carpeta local conservada.'
+        Log '→ Carpeta local conservada.' 'Gray'
     }
 
     return $true
