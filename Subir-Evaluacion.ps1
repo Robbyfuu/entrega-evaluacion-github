@@ -160,6 +160,100 @@ function Test-GitOwnership {
     }
 }
 
+function Show-CreateAccountDialog {
+    <#
+    Dialog modal con instrucciones paso a paso para crear cuenta GitHub.
+    Botones: Abrir GitHub (Start-Process navegador), Ya tengo cuenta (cierra
+    este dialog y lanza el device flow), Cerrar.
+    #>
+    $dlg = New-Object System.Windows.Forms.Form
+    $dlg.Text = 'Crear cuenta de GitHub'
+    $dlg.Size = New-Object System.Drawing.Size(520, 440)
+    $dlg.StartPosition = 'CenterParent'
+    $dlg.FormBorderStyle = 'FixedDialog'
+    $dlg.MaximizeBox = $false
+    $dlg.MinimizeBox = $false
+
+    $lblTitulo = New-Object System.Windows.Forms.Label
+    $lblTitulo.Text = 'Crea tu cuenta de GitHub en 4 pasos'
+    $lblTitulo.Font = New-Object System.Drawing.Font('Segoe UI', 13, [System.Drawing.FontStyle]::Bold)
+    $lblTitulo.Location = New-Object System.Drawing.Point(20, 15)
+    $lblTitulo.Size = New-Object System.Drawing.Size(470, 28)
+    $dlg.Controls.Add($lblTitulo)
+
+    $lblIntro = New-Object System.Windows.Forms.Label
+    $lblIntro.Text = 'GitHub es donde se guardan tus evaluaciones. La cuenta es gratuita y se crea en 2 minutos.'
+    $lblIntro.Font = New-Object System.Drawing.Font('Segoe UI', 9)
+    $lblIntro.ForeColor = [System.Drawing.Color]::DimGray
+    $lblIntro.Location = New-Object System.Drawing.Point(20, 50)
+    $lblIntro.Size = New-Object System.Drawing.Size(470, 35)
+    $dlg.Controls.Add($lblIntro)
+
+    $lblPasos = New-Object System.Windows.Forms.Label
+    $lblPasos.Text = @"
+1. Haz clic en "Abrir GitHub" abajo. Se abrirá tu navegador en
+   https://github.com/signup
+
+2. Completa el formulario:
+   • Email: tu correo personal (usa el institucional si tienes)
+   • Contraseña: mínimo 8 caracteres con números y letras
+   • Username: el que aparecerá públicamente
+     (sugerencia: tu-nombre-apellido o tu-nombre.duoc)
+
+3. Verifica tu correo electrónico:
+   • GitHub te envía un código de 8 dígitos
+   • Revisa la bandeja de entrada y SPAM
+   • Ingresa el código en la página
+
+4. Listo. Vuelve a esta ventana y haz clic en "Ya tengo cuenta,
+   iniciar sesión".
+"@
+    $lblPasos.Font = New-Object System.Drawing.Font('Segoe UI', 9)
+    $lblPasos.Location = New-Object System.Drawing.Point(20, 90)
+    $lblPasos.Size = New-Object System.Drawing.Size(470, 220)
+    $dlg.Controls.Add($lblPasos)
+
+    $btnAbrir = New-Object System.Windows.Forms.Button
+    $btnAbrir.Text = 'Abrir GitHub'
+    $btnAbrir.Location = New-Object System.Drawing.Point(20, 335)
+    $btnAbrir.Size = New-Object System.Drawing.Size(150, 35)
+    $btnAbrir.BackColor = [System.Drawing.Color]::FromArgb(33, 150, 243)
+    $btnAbrir.ForeColor = [System.Drawing.Color]::White
+    $btnAbrir.FlatStyle = 'Flat'
+    $btnAbrir.Font = New-Object System.Drawing.Font('Segoe UI', 9, [System.Drawing.FontStyle]::Bold)
+    $btnAbrir.Add_Click({
+        try {
+            Start-Process 'https://github.com/signup'
+        } catch {
+            [System.Windows.Forms.MessageBox]::Show(
+                "No se pudo abrir el navegador. Visita manualmente:`nhttps://github.com/signup",
+                'Abrir manual', 'OK', 'Information') | Out-Null
+        }
+    })
+    $dlg.Controls.Add($btnAbrir)
+
+    $btnIniciar = New-Object System.Windows.Forms.Button
+    $btnIniciar.Text = 'Ya tengo cuenta, iniciar sesión'
+    $btnIniciar.Location = New-Object System.Drawing.Point(180, 335)
+    $btnIniciar.Size = New-Object System.Drawing.Size(220, 35)
+    $btnIniciar.BackColor = [System.Drawing.Color]::FromArgb(76, 175, 80)
+    $btnIniciar.ForeColor = [System.Drawing.Color]::White
+    $btnIniciar.FlatStyle = 'Flat'
+    $btnIniciar.DialogResult = 'OK'  # Cerrar y devolver OK
+    $dlg.Controls.Add($btnIniciar)
+
+    $btnCerrar = New-Object System.Windows.Forms.Button
+    $btnCerrar.Text = 'Cerrar'
+    $btnCerrar.Location = New-Object System.Drawing.Point(410, 335)
+    $btnCerrar.Size = New-Object System.Drawing.Size(80, 35)
+    $btnCerrar.DialogResult = 'Cancel'
+    $dlg.Controls.Add($btnCerrar)
+    $dlg.CancelButton = $btnCerrar
+
+    $result = $dlg.ShowDialog($form)
+    return ($result -eq 'OK')
+}
+
 function Open-PythonIDLE {
     param([string]$Folder)
 
@@ -703,6 +797,17 @@ $btnLogout.FlatStyle = 'Flat'
 $btnLogout.Font = New-Object System.Drawing.Font('Segoe UI', 8)
 $btnLogout.Enabled = $false
 $form.Controls.Add($btnLogout)
+
+# -- Link para crear cuenta (debajo del groupbox de sesión) --
+$lnkCrearCuenta = New-Object System.Windows.Forms.LinkLabel
+$lnkCrearCuenta.Text = '¿No tienes cuenta de GitHub? Créala aquí'
+$lnkCrearCuenta.Location = New-Object System.Drawing.Point(440, 90)
+$lnkCrearCuenta.Size = New-Object System.Drawing.Size(180, 18)
+$lnkCrearCuenta.Font = New-Object System.Drawing.Font('Segoe UI', 8, [System.Drawing.FontStyle]::Underline)
+$lnkCrearCuenta.LinkColor = [System.Drawing.Color]::FromArgb(33, 150, 243)
+$lnkCrearCuenta.ActiveLinkColor = [System.Drawing.Color]::FromArgb(13, 71, 161)
+$lnkCrearCuenta.TextAlign = 'MiddleRight'
+$form.Controls.Add($lnkCrearCuenta)
 
 # -- GroupBox: Modo de subida --
 $grpModo = New-Object System.Windows.Forms.GroupBox
@@ -1292,6 +1397,17 @@ $cmbForma.Add_SelectedIndexChanged({ Update-RepoPreview })
 $rbModoNuevo.Add_CheckedChanged({ if ($rbModoNuevo.Checked) { Set-ModoUI } })
 $rbModoExistente.Add_CheckedChanged({ if ($rbModoExistente.Checked) { Set-ModoUI } })
 
+# Link crear cuenta GitHub
+$lnkCrearCuenta.Add_LinkClicked({
+    if (Show-CreateAccountDialog) {
+        # Usuario eligio "Ya tengo cuenta" -> lanzar device flow
+        Log '→ Lanzando inicio de sesión...'
+        if (Start-GitHubDeviceLogin) {
+            Update-SessionPanel
+        }
+    }
+})
+
 # Selector de repo existente
 $cmbReposExistentes.Add_SelectedIndexChanged({ Update-RepoPreview })
 $btnRefreshRepos.Add_Click({ Load-UserRepos })
@@ -1318,35 +1434,83 @@ $btnLogout.Add_Click({
         return
     }
     $ghUser = (gh api user --jq .login 2>$null).Trim()
+    if (-not $ghUser) { $ghUser = '(desconocido)' }
+
     $r = [System.Windows.Forms.MessageBox]::Show(
         "Se cerrará la sesión de @$ghUser y se borrarán las credenciales guardadas en este equipo.`n`n¿Confirmas?",
         'Cerrar sesión', 'YesNo', 'Warning')
     if ($r -ne 'Yes') { return }
 
     Log "→ Cerrando sesión de @$ghUser..."
+    Set-Status 'Cerrando sesión...'
 
-    # 1. Logout en gh CLI (limpia token guardado por gh)
-    gh auth logout --hostname github.com 2>&1 | Out-Null
+    # 1. Logout en gh CLI con --user explicito para evitar prompt interactivo
+    $logoutOk = $false
+    if ($ghUser -and $ghUser -ne '(desconocido)') {
+        $logoutOutput = gh auth logout --hostname github.com --user $ghUser 2>&1
+        if ($LASTEXITCODE -eq 0) {
+            $logoutOk = $true
+            Log "  gh auth logout OK"
+        } else {
+            Log "  gh auth logout exit $LASTEXITCODE : $logoutOutput" 'Yellow'
+        }
+    }
 
-    # 2. Limpiar Windows Credential Manager (entradas de github.com)
+    # 2. Fallback: borrar hosts.yml directamente si gh logout fallo o no removio la entrada
+    if (-not $logoutOk -or (Test-GhAuth)) {
+        Log '  Fallback: borrando hosts.yml directamente...' 'Yellow'
+        $hostsFile = Join-Path $env:APPDATA 'GitHub CLI\hosts.yml'
+        if (Test-Path $hostsFile) {
+            try {
+                Remove-Item $hostsFile -Force -ErrorAction Stop
+                Log "  hosts.yml borrado: $hostsFile"
+            } catch {
+                Log "  ✗ No se pudo borrar hosts.yml: $_" 'Red'
+            }
+        }
+    }
+
+    # 3. Limpiar Windows Credential Manager (entradas de github.com)
     try {
-        $targets = cmdkey /list 2>$null | Select-String -Pattern 'github\.com' | ForEach-Object {
-            ($_ -split 'Target:\s*')[1].Trim()
+        $cmdOutput = cmdkey /list 2>$null
+        $targets = @()
+        foreach ($line in $cmdOutput) {
+            if ($line -match 'Target:\s*(.*github\.com.*)') {
+                $targets += $Matches[1].Trim()
+            }
         }
         foreach ($t in $targets) {
             cmdkey /delete:$t 2>&1 | Out-Null
             Log "  borrada credencial: $t"
         }
-    } catch {}
+        if (-not $targets) {
+            Log '  (no habia credenciales github.com en Credential Manager)'
+        }
+    } catch {
+        Log "  Error con cmdkey: $_" 'Yellow'
+    }
 
-    # 3. Limpiar caché del git credential helper
+    # 4. Limpiar cache del git credential helper
     git credential-cache exit 2>$null | Out-Null
 
-    Log '✓ Sesión cerrada y credenciales borradas.' 'Green'
+    # 5. Verificacion final
+    if (Test-GhAuth) {
+        Log '✗ La sesion sigue activa despues de intentar cerrarla.' 'Red'
+        [System.Windows.Forms.MessageBox]::Show(
+            "No se pudo cerrar la sesion completamente. Intenta:`n" +
+            "1. Cerrar este script`n" +
+            "2. Abrir PowerShell y ejecutar: gh auth logout`n" +
+            "3. Volver a abrir el script",
+            'Logout incompleto', 'OK', 'Warning') | Out-Null
+    } else {
+        Log '✓ Sesion cerrada y credenciales borradas.' 'Green'
+        Set-Status 'Sesion cerrada.'
+        [System.Windows.Forms.MessageBox]::Show(
+            'Sesion cerrada. Ahora puedes iniciar sesion con otra cuenta usando el boton "Iniciar sesion".',
+            'Listo', 'OK', 'Information') | Out-Null
+    }
+
     Update-SessionPanel
-    [System.Windows.Forms.MessageBox]::Show(
-        'Sesión cerrada. Ahora puedes iniciar sesión con otra cuenta usando el botón "Iniciar sesión".',
-        'Listo', 'OK', 'Information') | Out-Null
 })
 
 $btnCrearRepo.Add_Click({ [void](Invoke-CreateRepo) })

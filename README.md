@@ -17,11 +17,21 @@ Y sube todos los archivos de tu carpeta de evaluación con un solo click.
 ## Requisitos
 
 - Windows 10 / 11
-- Cuenta en [GitHub](https://github.com) (gratuita)
+- Cuenta en [GitHub](https://github.com) (gratuita — el script tiene un asistente para crearla)
 - Conexión a internet
 
 **No necesitas instalar nada manualmente.** El script detecta y ofrece instalar
 automáticamente `git` y `gh` (GitHub CLI) si no están presentes.
+
+### ¿No tienes cuenta de GitHub?
+
+En la esquina superior derecha del script verás el link:
+
+> **¿No tienes cuenta de GitHub? Créala aquí**
+
+Al hacer clic se abre un asistente con instrucciones paso a paso para crear tu
+cuenta. Te lleva al formulario de GitHub, te guía con el email + contraseña +
+verificación, y al terminar te ofrece iniciar sesión directamente.
 
 ---
 
