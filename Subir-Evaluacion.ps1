@@ -116,6 +116,147 @@ function Test-GhAuth {
     }
 }
 
+function Test-GitOwnership {
+    <#
+    Inspecciona una carpeta y determina si tiene un .git, y si lo tiene,
+    a que cuenta de GitHub pertenece el remote origin.
+    Devuelve hashtable con: Status, Owner, Url
+    Status puede ser: NoGit, NoRemote, NotGitHub, SameUser, OtherUser
+    #>
+    param(
+        [string]$Folder,
+        [string]$CurrentGhUser
+    )
+
+    $gitPath = Join-Path $Folder '.git'
+    if (-not (Test-Path $gitPath)) {
+        return @{ Status = 'NoGit'; Owner = $null; Url = $null }
+    }
+
+    Push-Location $Folder
+    try {
+        $remoteUrl = (git config --get remote.origin.url 2>$null).Trim()
+        if (-not $remoteUrl) {
+            return @{ Status = 'NoRemote'; Owner = $null; Url = $null }
+        }
+        # Parsear owner desde URLs tipo:
+        #   https://github.com/USER/REPO.git
+        #   git@github.com:USER/REPO.git
+        #   https://USER@github.com/USER/REPO.git
+        $owner = $null
+        if ($remoteUrl -match 'github\.com[:/](?:[^/]+@)?([^/]+)/[^/]+?(?:\.git)?/?$') {
+            $owner = $Matches[1]
+        }
+        if (-not $owner) {
+            return @{ Status = 'NotGitHub'; Owner = $null; Url = $remoteUrl }
+        }
+        if ($owner -ieq $CurrentGhUser) {
+            return @{ Status = 'SameUser'; Owner = $owner; Url = $remoteUrl }
+        } else {
+            return @{ Status = 'OtherUser'; Owner = $owner; Url = $remoteUrl }
+        }
+    } finally {
+        Pop-Location
+    }
+}
+
+function Open-PythonIDLE {
+    param([string]$Folder)
+
+    # Buscar pythonw / python / py launcher en este orden
+    $pyCmd = $null
+    foreach ($candidate in @('pythonw', 'python', 'py')) {
+        $c = Get-Command $candidate -ErrorAction SilentlyContinue
+        if ($c) { $pyCmd = $c; break }
+    }
+
+    if (-not $pyCmd) {
+        Log '⚠ Python no encontrado. Abre IDLE manualmente.' 'Yellow'
+        [System.Windows.Forms.MessageBox]::Show(
+            "No se encontró Python en este equipo.`n`nAbre IDLE manualmente y navega a:`n$Folder",
+            'Python no encontrado', 'OK', 'Warning') | Out-Null
+        return $false
+    }
+
+    try {
+        # Cambiar cwd al folder antes de abrir IDLE para que el shell de IDLE
+        # arranque ahi
+        Start-Process -FilePath $pyCmd.Source `
+                      -ArgumentList '-m', 'idlelib' `
+                      -WorkingDirectory $Folder `
+                      -ErrorAction Stop
+        Log "✓ IDLE de Python abierto en: $Folder" 'Green'
+        return $true
+    } catch {
+        Log "⚠ No se pudo abrir IDLE: $_" 'Yellow'
+        return $false
+    }
+}
+
+function Invoke-CloneRepo {
+    <#
+    Clona el repo seleccionado en el dropdown a Desktop\<repo-name>.
+    Despues setea txtCarpeta con esa ruta y abre IDLE.
+    Si la carpeta ya existe, se reutiliza (no se reclona).
+    #>
+    param([string]$RepoName)
+
+    if (-not $RepoName) { return $false }
+
+    $ghUser = (gh api user --jq .login 2>$null).Trim()
+    if (-not $ghUser) {
+        Log '✗ No se pudo obtener tu usuario de GitHub.' 'Red'
+        return $false
+    }
+
+    $desktop = [Environment]::GetFolderPath('Desktop')
+    $targetPath = Join-Path $desktop $RepoName
+    $repoUrl = "https://github.com/$ghUser/$RepoName.git"
+
+    Set-Status "Clonando $RepoName..."
+
+    if (Test-Path $targetPath) {
+        # Verificar que es el mismo repo
+        $check = Test-GitOwnership -Folder $targetPath -CurrentGhUser $ghUser
+        if ($check.Status -eq 'OtherUser') {
+            Log "✗ La carpeta '$targetPath' ya existe pero pertenece a '$($check.Owner)'." 'Red'
+            [System.Windows.Forms.MessageBox]::Show(
+                "Ya existe una carpeta '$RepoName' en tu Escritorio, pero esta asociada a otra cuenta de GitHub ('$($check.Owner)').`n`nElimina esa carpeta manualmente o cambia de cuenta.",
+                'Carpeta en conflicto', 'OK', 'Error') | Out-Null
+            return $false
+        }
+        Log "→ La carpeta ya existe en: $targetPath (no se reclona)"
+    } else {
+        Log "→ Clonando $repoUrl en $targetPath..."
+        $cloneOutput = git clone $repoUrl $targetPath 2>&1
+        $cloneOutput | ForEach-Object { Log "  $_" }
+        if ($LASTEXITCODE -ne 0 -or -not (Test-Path $targetPath)) {
+            Log '✗ Falló el clone.' 'Red'
+            return $false
+        }
+        Log "✓ Repo clonado en: $targetPath" 'Green'
+    }
+
+    # Setear automaticamente la carpeta para el siguiente paso (Subir)
+    $txtCarpeta.Text = $targetPath
+
+    # Abrir IDLE de Python apuntando al folder
+    Open-PythonIDLE -Folder $targetPath | Out-Null
+
+    # Avisar al alumno con MessageBox
+    [System.Windows.Forms.MessageBox]::Show(
+        "El repositorio '$RepoName' está clonado en:`n`n$targetPath`n`n" +
+        "Se abrió IDLE de Python en esa carpeta.`n`n" +
+        "Cuando termines de editar tu evaluación:`n" +
+        "1. Guarda los cambios en IDLE (Ctrl+S)`n" +
+        "2. Vuelve a esta ventana`n" +
+        "3. Haz clic en 'Subir Archivos'",
+        'Repositorio listo', 'OK', 'Information') | Out-Null
+
+    Set-Status "Listo. Edita en IDLE y luego Subir Archivos."
+    return $true
+}
+
 # ============================================================
 #         DEVICE FLOW LOGIN (sin abrir navegador local)
 # ============================================================
@@ -506,7 +647,7 @@ github.com:
 
 $form = New-Object System.Windows.Forms.Form
 $form.Text = 'Subir Evaluación a GitHub'
-$form.Size = New-Object System.Drawing.Size(640, 720)
+$form.Size = New-Object System.Drawing.Size(640, 705)
 $form.StartPosition = 'CenterScreen'
 $form.FormBorderStyle = 'FixedDialog'
 $form.MaximizeBox = $false
@@ -595,9 +736,9 @@ $txtNombre.Location = New-Object System.Drawing.Point(180, 163)
 $txtNombre.Size = New-Object System.Drawing.Size(420, 22)
 $form.Controls.Add($txtNombre)
 
-# -- Forma de prueba (modo nuevo) --
+# -- Tipo de evaluación (modo nuevo) --
 $lblForma = New-Object System.Windows.Forms.Label
-$lblForma.Text = 'Forma de prueba:'
+$lblForma.Text = 'Tipo de evaluación:'
 $lblForma.Location = New-Object System.Drawing.Point(20, 200)
 $lblForma.Size = New-Object System.Drawing.Size(150, 20)
 $form.Controls.Add($lblForma)
@@ -605,8 +746,8 @@ $form.Controls.Add($lblForma)
 $cmbForma = New-Object System.Windows.Forms.ComboBox
 $cmbForma.Location = New-Object System.Drawing.Point(180, 198)
 $cmbForma.Size = New-Object System.Drawing.Size(420, 22)
-$cmbForma.DropDownStyle = 'DropDown'
-$cmbForma.Items.AddRange(@('Forma-A', 'Forma-B', 'Forma-C', 'Forma-D'))
+$cmbForma.DropDownStyle = 'DropDownList'
+$cmbForma.Items.AddRange(@('Evaluacion-1', 'Evaluacion-2', 'Evaluacion-3', 'Evaluacion-4', 'Examen'))
 $form.Controls.Add($cmbForma)
 
 # -- Repositorio existente (modo existente) --
@@ -664,30 +805,19 @@ $lblRepoValor.Location = New-Object System.Drawing.Point(180, 305)
 $lblRepoValor.Size = New-Object System.Drawing.Size(420, 20)
 $form.Controls.Add($lblRepoValor)
 
-# -- Visibilidad del repo (solo modo nuevo) --
-$grpVis = New-Object System.Windows.Forms.GroupBox
-$grpVis.Text = 'Visibilidad (solo para repo nuevo)'
-$grpVis.Location = New-Object System.Drawing.Point(20, 335)
-$grpVis.Size = New-Object System.Drawing.Size(600, 55)
-$form.Controls.Add($grpVis)
-
-$rbPrivate = New-Object System.Windows.Forms.RadioButton
-$rbPrivate.Text = 'Privado (recomendado)'
-$rbPrivate.Location = New-Object System.Drawing.Point(15, 22)
-$rbPrivate.Size = New-Object System.Drawing.Size(200, 22)
-$rbPrivate.Checked = $true
-$grpVis.Controls.Add($rbPrivate)
-
-$rbPublic = New-Object System.Windows.Forms.RadioButton
-$rbPublic.Text = 'Público'
-$rbPublic.Location = New-Object System.Drawing.Point(230, 22)
-$rbPublic.Size = New-Object System.Drawing.Size(120, 22)
-$grpVis.Controls.Add($rbPublic)
+# -- Aviso: repositorios siempre publicos --
+$lblAvisoPublic = New-Object System.Windows.Forms.Label
+$lblAvisoPublic.Text = 'ⓘ Los repositorios se crean siempre como públicos para que el profesor pueda verlos.'
+$lblAvisoPublic.Location = New-Object System.Drawing.Point(20, 335)
+$lblAvisoPublic.Size = New-Object System.Drawing.Size(600, 20)
+$lblAvisoPublic.ForeColor = [System.Drawing.Color]::FromArgb(96, 96, 96)
+$lblAvisoPublic.Font = New-Object System.Drawing.Font('Segoe UI', 8, [System.Drawing.FontStyle]::Italic)
+$form.Controls.Add($lblAvisoPublic)
 
 # -- Botones de acción --
 $btnCrearRepo = New-Object System.Windows.Forms.Button
-$btnCrearRepo.Text = '1. Crear/Validar Repo'
-$btnCrearRepo.Location = New-Object System.Drawing.Point(20, 405)
+$btnCrearRepo.Text = '1. Crear Repo'
+$btnCrearRepo.Location = New-Object System.Drawing.Point(20, 365)
 $btnCrearRepo.Size = New-Object System.Drawing.Size(180, 35)
 $btnCrearRepo.BackColor = [System.Drawing.Color]::FromArgb(33, 150, 243)
 $btnCrearRepo.ForeColor = [System.Drawing.Color]::White
@@ -696,7 +826,7 @@ $form.Controls.Add($btnCrearRepo)
 
 $btnSubir = New-Object System.Windows.Forms.Button
 $btnSubir.Text = '2. Subir Archivos'
-$btnSubir.Location = New-Object System.Drawing.Point(220, 405)
+$btnSubir.Location = New-Object System.Drawing.Point(220, 365)
 $btnSubir.Size = New-Object System.Drawing.Size(180, 35)
 $btnSubir.BackColor = [System.Drawing.Color]::FromArgb(76, 175, 80)
 $btnSubir.ForeColor = [System.Drawing.Color]::White
@@ -705,7 +835,7 @@ $form.Controls.Add($btnSubir)
 
 $btnTodo = New-Object System.Windows.Forms.Button
 $btnTodo.Text = 'Hacer TODO'
-$btnTodo.Location = New-Object System.Drawing.Point(420, 405)
+$btnTodo.Location = New-Object System.Drawing.Point(420, 365)
 $btnTodo.Size = New-Object System.Drawing.Size(180, 35)
 $btnTodo.BackColor = [System.Drawing.Color]::FromArgb(255, 87, 34)
 $btnTodo.ForeColor = [System.Drawing.Color]::White
@@ -716,13 +846,13 @@ $form.Controls.Add($btnTodo)
 # -- Log de salida --
 $lblLog = New-Object System.Windows.Forms.Label
 $lblLog.Text = 'Salida:'
-$lblLog.Location = New-Object System.Drawing.Point(20, 455)
+$lblLog.Location = New-Object System.Drawing.Point(20, 410)
 $lblLog.Size = New-Object System.Drawing.Size(100, 20)
 $form.Controls.Add($lblLog)
 
 $txtLog = New-Object System.Windows.Forms.TextBox
-$txtLog.Location = New-Object System.Drawing.Point(20, 480)
-$txtLog.Size = New-Object System.Drawing.Size(600, 170)
+$txtLog.Location = New-Object System.Drawing.Point(20, 435)
+$txtLog.Size = New-Object System.Drawing.Size(600, 195)
 $txtLog.Multiline = $true
 $txtLog.ScrollBars = 'Vertical'
 $txtLog.ReadOnly = $true
@@ -733,7 +863,7 @@ $form.Controls.Add($txtLog)
 
 # -- Status bar --
 $lblStatus = New-Object System.Windows.Forms.Label
-$lblStatus.Location = New-Object System.Drawing.Point(20, 660)
+$lblStatus.Location = New-Object System.Drawing.Point(20, 640)
 $lblStatus.Size = New-Object System.Drawing.Size(600, 20)
 $lblStatus.Text = 'Listo.'
 $form.Controls.Add($lblStatus)
@@ -832,9 +962,8 @@ function Set-ModoUI {
         # Deshabilitar campos de modo nuevo
         $txtNombre.Enabled = $false
         $cmbForma.Enabled = $false
-        $grpVis.Enabled = $false
         # Cambiar texto del boton 1
-        $btnCrearRepo.Text = '1. Validar Repo'
+        $btnCrearRepo.Text = '1. Clonar Repo'
         # Cargar repos si no hay items
         if ($cmbReposExistentes.Items.Count -eq 0) {
             Load-UserRepos
@@ -845,7 +974,6 @@ function Set-ModoUI {
         $btnRefreshRepos.Enabled = $false
         $txtNombre.Enabled = $true
         $cmbForma.Enabled = $true
-        $grpVis.Enabled = $true
         $btnCrearRepo.Text = '1. Crear Repo'
     }
     Update-RepoPreview
@@ -925,28 +1053,27 @@ function Invoke-CreateRepo {
     if (-not (Validate-Inputs)) { return $false }
     $repo = Get-RepoName
 
-    # Modo: usar repo existente. Solo validar.
+    # Modo: usar repo existente. Validar + clonar + abrir IDLE.
     if ($rbModoExistente.Checked) {
         Set-Status "Validando repo $repo..."
         Log "→ Modo: repositorio existente '$repo'"
         $null = gh repo view $repo 2>&1
-        if ($LASTEXITCODE -eq 0) {
-            Log "✓ Repo '$repo' encontrado en tu cuenta." 'Green'
-            Set-Status "Repo $repo OK."
-            return $true
-        } else {
+        if ($LASTEXITCODE -ne 0) {
             Log "✗ No se pudo acceder al repo '$repo'." 'Red'
             [System.Windows.Forms.MessageBox]::Show(
                 "No se encontró el repositorio '$repo' en tu cuenta.`n`nRefresca la lista o cambia a modo 'Crear repositorio nuevo'.",
                 'Repo no accesible', 'OK', 'Warning') | Out-Null
             return $false
         }
+        Log "✓ Repo '$repo' encontrado." 'Green'
+        # Clonar + setear carpeta + abrir IDLE
+        return (Invoke-CloneRepo -RepoName $repo)
     }
 
-    # Modo: crear nuevo
-    $visibility = if ($rbPrivate.Checked) { '--private' } else { '--public' }
+    # Modo: crear nuevo (siempre publico para que el profesor pueda ver)
+    $visibility = '--public'
     Set-Status "Creando repo $repo..."
-    Log "→ Creando repo '$repo' ($visibility)"
+    Log "→ Creando repo '$repo' (publico)"
 
     try {
         $null = gh repo view $repo 2>&1
@@ -993,17 +1120,69 @@ function Invoke-UploadFiles {
     Log "→ Carpeta: $folder"
     Log "→ Repo URL: $repoUrl"
 
+    # Validar ownership del .git ANTES de tocar nada
+    $ownerCheck = Test-GitOwnership -Folder $folder -CurrentGhUser $ghUser
+    switch ($ownerCheck.Status) {
+        'OtherUser' {
+            Log "✗ La carpeta tiene un .git asociado a '@$($ownerCheck.Owner)' (no a @$ghUser)." 'Red'
+            [System.Windows.Forms.MessageBox]::Show(
+                "Esta carpeta esta vinculada a la cuenta de GitHub '@$($ownerCheck.Owner)', pero tu sesion actual es '@$ghUser'.`n`n" +
+                "Por seguridad, no se permite subir desde esta carpeta. Opciones:`n" +
+                "  - Selecciona otra carpeta`n" +
+                "  - Cierra sesion y entra con la cuenta '@$($ownerCheck.Owner)'`n" +
+                "  - Elimina manualmente la subcarpeta .git de:`n    $folder",
+                'Conflicto de cuenta detectado', 'OK', 'Error') | Out-Null
+            return $false
+        }
+        'NotGitHub' {
+            $r = [System.Windows.Forms.MessageBox]::Show(
+                "Esta carpeta tiene un repositorio git apuntando a:`n$($ownerCheck.Url)`n`n" +
+                "No es de GitHub. Si continuas, se eliminara la subcarpeta .git existente y se reinicializara apuntando a tu repo de GitHub.`n`n" +
+                "¿Continuar?",
+                'Repo no-GitHub detectado', 'YesNo', 'Warning')
+            if ($r -ne 'Yes') { return $false }
+            Remove-Item (Join-Path $folder '.git') -Recurse -Force -ErrorAction SilentlyContinue
+            Log '→ Subcarpeta .git eliminada.' 'Yellow'
+        }
+        'SameUser' {
+            # Si el remote ya apunta al repo destino, perfecto. Si no, reinit.
+            $expectedUrl = "https://github.com/$ghUser/$($repo).git"
+            if ($ownerCheck.Url -notlike "*$ghUser/$repo*") {
+                $r = [System.Windows.Forms.MessageBox]::Show(
+                    "Esta carpeta ya tiene un .git de tu cuenta pero apunta a otro repo:`n$($ownerCheck.Url)`n`n" +
+                    "Si continuas, se eliminara y se reinicializara apuntando a:`n$expectedUrl`n`n" +
+                    "¿Continuar?",
+                    'Reinicializar repo local?', 'YesNo', 'Warning')
+                if ($r -ne 'Yes') { return $false }
+                Remove-Item (Join-Path $folder '.git') -Recurse -Force -ErrorAction SilentlyContinue
+                Log '→ Subcarpeta .git eliminada (era de tu cuenta, otro repo).' 'Yellow'
+            } else {
+                Log "→ .git existente de tu cuenta apunta al repo correcto. Se reutiliza." 'Green'
+            }
+        }
+        'NoRemote' {
+            Log '→ Subcarpeta .git sin remote, se elimina para reinicializar.' 'Yellow'
+            Remove-Item (Join-Path $folder '.git') -Recurse -Force -ErrorAction SilentlyContinue
+        }
+        'NoGit' {
+            # Caso normal: carpeta limpia
+        }
+    }
+
     Push-Location $folder
     try {
-        # Init si no es repo
+        # Init si no es repo (despues de eliminacion eventual)
         if (-not (Test-Path .git)) {
             Log '→ git init'
             git init -b main 2>&1 | ForEach-Object { Log "  $_" }
         }
 
         # Configurar identidad local del repo (no afecta config global)
-        # user.name = nombre real del alumno
-        # user.email = email publico de GitHub o noreply si es privado
+        # En modo existente, $nombre puede estar vacio -> usar gh user data
+        if (-not $nombre) {
+            $userJson = gh api user 2>$null | ConvertFrom-Json
+            $nombre = if ($userJson.name) { $userJson.name } else { $userJson.login }
+        }
         Log "→ git config user.name = `"$nombre`""
         git config user.name "$nombre" 2>&1 | Out-Null
 
@@ -1041,7 +1220,11 @@ function Invoke-UploadFiles {
             Log '⚠ Sin cambios para commitear (working tree limpio).' 'Yellow'
         } else {
             # Commit
-            $msg = "Entrega de evaluación - $nombre ($forma)"
+            $msg = if ($forma) {
+                "Entrega de evaluación - $nombre ($forma)"
+            } else {
+                "Entrega de evaluación - $nombre"
+            }
             Log "→ git commit -m `"$msg`""
             git commit -m $msg 2>&1 | ForEach-Object { Log "  $_" }
         }
@@ -1169,9 +1352,15 @@ $btnLogout.Add_Click({
 $btnCrearRepo.Add_Click({ [void](Invoke-CreateRepo) })
 $btnSubir.Add_Click({ [void](Invoke-UploadFiles) })
 $btnTodo.Add_Click({
-    if (Invoke-CreateRepo) {
-        Start-Sleep -Seconds 1
-        [void](Invoke-UploadFiles)
+    if ($rbModoExistente.Checked) {
+        # Modo existente: clonar + abrir IDLE (sin subir, alumno edita primero)
+        [void](Invoke-CreateRepo)
+    } else {
+        # Modo nuevo: crear repo + subir archivos en cadena
+        if (Invoke-CreateRepo) {
+            Start-Sleep -Seconds 1
+            [void](Invoke-UploadFiles)
+        }
     }
 })
 

@@ -93,12 +93,11 @@ Para alumnos que vienen sin preparación previa.
 
 1. Selecciona **"Crear repositorio nuevo"**.
 2. Completa **Nombre completo** (ej: `Juan Pérez García`).
-3. Elige o escribe **Forma de prueba** (ej: `Forma-A`).
+3. Elige el **Tipo de evaluación**: `Evaluacion-1`, `Evaluacion-2`, `Evaluacion-3`, `Evaluacion-4` o `Examen`.
 4. Click **Buscar...** y selecciona la carpeta de tu evaluación.
-5. Elige visibilidad: **Privado** (recomendado) o **Público**.
-6. Click **Hacer TODO**.
+5. Click **Hacer TODO**.
 
-El script crea el repositorio con formato `nombre-completo-forma` y sube todo.
+El script crea el repositorio con formato `nombre-completo-tipo` (siempre **público** para que el profesor pueda verlo) y sube todo.
 
 #### Modo B: Usar repositorio existente
 
@@ -108,16 +107,34 @@ Para alumnos que ya crearon el repo en su casa.
 2. El script carga automáticamente la lista de repos de tu cuenta.
 3. Elige tu repo del **dropdown** (los privados aparecen con `[Priv]`, públicos con `[Pub]`).
 4. Si creaste un repo nuevo recientemente, click **Refrescar** para actualizar la lista.
-5. Click **Buscar...** y selecciona la carpeta de tu evaluación.
-6. Click **Hacer TODO**.
+5. Click **Hacer TODO** (o **Clonar Repo**).
 
-El script valida que el repo existe y sube los archivos sin crearlo.
+El script:
+- Clona el repositorio en tu **Escritorio** (`Desktop\nombre-del-repo`).
+- Te muestra la ruta donde quedó la carpeta.
+- Abre **IDLE de Python** apuntando a esa carpeta para que edites tu evaluación.
+- Auto-completa la ruta en "Carpeta del proyecto".
+
+Cuando termines de editar:
+1. Guarda los cambios en IDLE (`Ctrl+S`).
+2. Vuelve a la ventana del script.
+3. Click **Subir Archivos**.
+
+#### Protección contra confusión de cuentas
+
+Si seleccionas una carpeta que ya tiene un `.git` asociado a **otra cuenta de GitHub** (no a la tuya actual), el script:
+
+- **NO permite** subir desde ahí.
+- Muestra el nombre de la cuenta conflictiva.
+- Sugiere cambiar de carpeta o cerrar sesión y entrar con la cuenta correcta.
+
+Si el `.git` es de **tu cuenta** pero apunta a otro repo, el script pregunta antes de reinicializar.
 
 #### Lo que hace el script en ambos modos
 
 - Configura tu nombre y email en el repositorio local.
-- Ejecuta `git init`, `git add`, `git commit`, `git push`.
-- Te muestra el link al final.
+- Ejecuta `git init` (si hace falta), `git add`, `git commit`, `git push`.
+- Te muestra el link final al repo en GitHub.
 
 ---
 
