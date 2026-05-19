@@ -241,16 +241,29 @@ function Trigger-CheatLockdown {
 #   - force_lockdown: dispara el dialog rojo aunque no haya trampa
 #   - message: muestra mensaje arbitrario al alumno
 
-$script:adminConfigUrl = 'https://raw.githubusercontent.com/Robbyfuu/entrega-evaluacion-github/main/admin-config.json'
-$script:adminPollInterval = 30000   # ms (30 segundos)
+# Constantes Supabase (anon key es safe-to-share por diseño RLS)
+$script:supabaseUrl = 'https://oiownlxyquarmqwauegf.supabase.co'
+$script:supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9pb3dubHh5cXVhcm1xd2F1ZWdmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkyMDk5NTEsImV4cCI6MjA5NDc4NTk1MX0.MMODHCBz_xl3gnzJVfY-aIQPyINQDkwXyr-e6KPtrm4'
+
+$script:adminPollInterval = 60000   # ms (60 segundos como pidio el profesor)
 $script:internetBlocked = $false
-$script:lastAdminEtag = ''
+$script:lastAdminMessage = ''
+
+function Get-SupabaseHeaders {
+    return @{
+        'apikey'        = $script:supabaseAnonKey
+        'Authorization' = "Bearer $($script:supabaseAnonKey)"
+        'Content-Type'  = 'application/json'
+    }
+}
 
 function Check-AdminConfig {
     try {
-        # Cache-buster para que el CDN no devuelva versiones viejas
-        $url = "$($script:adminConfigUrl)?cb=$(Get-Random)"
-        $cfg = Invoke-RestMethod -Uri $url -TimeoutSec 5 -ErrorAction Stop
+        $url = "$($script:supabaseUrl)/rest/v1/control?id=eq.1&select=*"
+        $resp = Invoke-RestMethod -Uri $url -Headers (Get-SupabaseHeaders) `
+                                  -TimeoutSec 5 -ErrorAction Stop
+        if (-not $resp -or $resp.Count -eq 0) { return }
+        $cfg = $resp[0]
 
         # Internet block toggle
         if ($cfg.internet_block -eq $true -and -not $script:internetBlocked) {
@@ -266,20 +279,53 @@ function Check-AdminConfig {
         # Force lockdown remoto (sin trampa, solo orden del profe)
         if ($cfg.force_lockdown -eq $true -and -not (Test-Path $script:cheatMarkerFile)) {
             Log '[ADMIN] Profesor activo lockdown remoto.' 'Yellow'
-            Trigger-CheatLockdown -RepoName '(remoto)' -FilesCount 0 -FilesNames @('Lockdown remoto activado por el profesor')
+            Trigger-CheatLockdown -RepoName '(remoto)' -FilesCount 0 `
+                -FilesNames @('Lockdown remoto activado por el profesor')
             Show-CheatAlertDialog -RepoName '(remoto)' -FilesCount 0 `
                 -FilesNames @('Lockdown remoto activado por el profesor') `
                 -IsPersistent $true
         }
 
-        # Mensaje arbitrario del profesor
+        # Mensaje arbitrario del profesor (solo mostrar si cambio)
         if ($cfg.message -and $cfg.message -ne $script:lastAdminMessage) {
             $script:lastAdminMessage = $cfg.message
             [System.Windows.Forms.MessageBox]::Show(
                 $cfg.message, 'Mensaje del profesor', 'OK', 'Information') | Out-Null
         }
+        if (-not $cfg.message) { $script:lastAdminMessage = '' }
     } catch {
-        # Falla silenciosa: no hay internet o el JSON no existe. No molestar al alumno.
+        # Falla silenciosa: no hay internet o problema con Supabase. No molestar al alumno.
+    }
+}
+
+function Report-CheatEvent {
+    <#
+    Inserta un evento de trampa en la tabla cheat_events de Supabase para que
+    el profesor pueda verlo en su panel.
+    #>
+    param(
+        [string]$RepoName,
+        [int]$FilesCount,
+        [string[]]$FilesNames
+    )
+    try {
+        $ghUser = (gh api user --jq .login 2>$null).Trim()
+        if (-not $ghUser) { $ghUser = '(sin auth)' }
+        $payload = @{
+            username     = $ghUser
+            pc_name      = $env:COMPUTERNAME
+            repo_name    = $RepoName
+            files_count  = $FilesCount
+            files_sample = @($FilesNames | Select-Object -First 10)
+        } | ConvertTo-Json
+        Invoke-RestMethod `
+            -Uri "$($script:supabaseUrl)/rest/v1/cheat_events" `
+            -Method Post `
+            -Headers (Get-SupabaseHeaders) `
+            -Body $payload `
+            -TimeoutSec 5 -ErrorAction Stop | Out-Null
+    } catch {
+        # Silencioso. No queremos que el alumno vea logs del backend.
     }
 }
 
@@ -817,6 +863,11 @@ function Invoke-CloneRepo {
         Trigger-CheatLockdown -RepoName $RepoName `
                               -FilesCount $cleanCheck.FilesCount `
                               -FilesNames $cleanCheck.FilesNames
+
+        # Reportar el evento al profesor via Supabase (silencioso)
+        Report-CheatEvent -RepoName $RepoName `
+                          -FilesCount $cleanCheck.FilesCount `
+                          -FilesNames $cleanCheck.FilesNames
 
         # Mostrar dialog bloqueante GIGANTE
         Show-CheatAlertDialog -RepoName $RepoName `
