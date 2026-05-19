@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "internet_block": false,
+  "force_lockdown": false,
+  "message": "",
+  "updated_at": "2026-05-19T12:30:00Z",
+  "notes": "Este archivo es leido por todos los scripts cada 30s. El profesor lo edita para activar acciones remotas en los PCs de los alumnos. NO contiene secretos."
+}

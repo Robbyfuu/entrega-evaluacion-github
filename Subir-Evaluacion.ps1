@@ -164,9 +164,10 @@ function Test-GitOwnership {
 #         ANTI-TRAMPA: deteccion de repo con archivos
 # ============================================================
 
-# Hash SHA-256 del password del profesor. Password real solo lo conoce el profe.
+# Hash SHA-256 del password del profesor. Password real NUNCA aparece en este repo.
+# Se comparte solo en privado con el profesor responsable.
 # (clonar este script y leer el hash no permite recuperar el password)
-$script:cheatPasswordHash = '272a92d60e36898d05d03d50c07c9a906cc8a59fba74c4f333b7cc837d0b581d'
+$script:cheatPasswordHash = '203ed3a8347bae6d9659e8830f4f5b882828e91b5249f63d61392ead80ec2d74'
 
 # Marker file que persiste el estado de bloqueo entre ejecuciones del script
 $script:cheatMarkerFile = Join-Path $env:APPDATA 'GitHub CLI\.cheat-detected.json'
@@ -228,6 +229,82 @@ function Trigger-CheatLockdown {
             New-Item -Path $polPath -Force | Out-Null
         }
         Set-ItemProperty -Path $polPath -Name 'DisableTaskMgr' -Value 1 -Type DWord -Force
+    } catch {}
+}
+
+# ============================================================
+#         ADMIN REMOTO: polling de config JSON publico
+# ============================================================
+# El profesor publica un JSON en el repo (admin-config.json).
+# Cada script polling cada 30 segundos. Cuando detecta cambios actua:
+#   - internet_block: cierra browsers y setea proxy a localhost
+#   - force_lockdown: dispara el dialog rojo aunque no haya trampa
+#   - message: muestra mensaje arbitrario al alumno
+
+$script:adminConfigUrl = 'https://raw.githubusercontent.com/Robbyfuu/entrega-evaluacion-github/main/admin-config.json'
+$script:adminPollInterval = 30000   # ms (30 segundos)
+$script:internetBlocked = $false
+$script:lastAdminEtag = ''
+
+function Check-AdminConfig {
+    try {
+        # Cache-buster para que el CDN no devuelva versiones viejas
+        $url = "$($script:adminConfigUrl)?cb=$(Get-Random)"
+        $cfg = Invoke-RestMethod -Uri $url -TimeoutSec 5 -ErrorAction Stop
+
+        # Internet block toggle
+        if ($cfg.internet_block -eq $true -and -not $script:internetBlocked) {
+            Log '[ADMIN] Profesor activo el bloqueo de internet.' 'Yellow'
+            Block-InternetUserMode
+            $script:internetBlocked = $true
+        } elseif ($cfg.internet_block -ne $true -and $script:internetBlocked) {
+            Log '[ADMIN] Profesor desactivo el bloqueo de internet.' 'Green'
+            Unblock-InternetUserMode
+            $script:internetBlocked = $false
+        }
+
+        # Force lockdown remoto (sin trampa, solo orden del profe)
+        if ($cfg.force_lockdown -eq $true -and -not (Test-Path $script:cheatMarkerFile)) {
+            Log '[ADMIN] Profesor activo lockdown remoto.' 'Yellow'
+            Trigger-CheatLockdown -RepoName '(remoto)' -FilesCount 0 -FilesNames @('Lockdown remoto activado por el profesor')
+            Show-CheatAlertDialog -RepoName '(remoto)' -FilesCount 0 `
+                -FilesNames @('Lockdown remoto activado por el profesor') `
+                -IsPersistent $true
+        }
+
+        # Mensaje arbitrario del profesor
+        if ($cfg.message -and $cfg.message -ne $script:lastAdminMessage) {
+            $script:lastAdminMessage = $cfg.message
+            [System.Windows.Forms.MessageBox]::Show(
+                $cfg.message, 'Mensaje del profesor', 'OK', 'Information') | Out-Null
+        }
+    } catch {
+        # Falla silenciosa: no hay internet o el JSON no existe. No molestar al alumno.
+    }
+}
+
+function Block-InternetUserMode {
+    # 1. Cerrar browsers comunes (sin admin, mata solo procesos del usuario)
+    $browsers = @('chrome', 'msedge', 'firefox', 'opera', 'brave', 'iexplore', 'vivaldi', 'tor')
+    foreach ($b in $browsers) {
+        Get-Process -Name $b -ErrorAction SilentlyContinue |
+            Stop-Process -Force -ErrorAction SilentlyContinue
+    }
+
+    # 2. Setear proxy del usuario a localhost (HKCU, no requiere admin)
+    # Esto rompe casi todos los browsers que respetan el proxy del sistema
+    try {
+        $regPath = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings'
+        Set-ItemProperty -Path $regPath -Name 'ProxyEnable' -Value 1 -Type DWord -Force
+        Set-ItemProperty -Path $regPath -Name 'ProxyServer' -Value '127.0.0.1:1' -Type String -Force
+        Set-ItemProperty -Path $regPath -Name 'ProxyOverride' -Value '' -Type String -Force
+    } catch {}
+}
+
+function Unblock-InternetUserMode {
+    try {
+        $regPath = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings'
+        Set-ItemProperty -Path $regPath -Name 'ProxyEnable' -Value 0 -Type DWord -Force
     } catch {}
 }
 
@@ -461,10 +538,25 @@ function Show-CheatAlertDialog {
             $dlg.TopMost = $false
             $dlg.TopMost = $true
             $dlg.Activate()
+            $dlg.BringToFront()
         } catch {}
     })
     $topTimer.Start()
 
+    # Fix bug: forzar el dialog al frente apenas se carga.
+    # Si no, queda detras del form principal y parece que no aparecio.
+    $dlg.Add_Shown({
+        $dlg.TopMost = $true
+        $dlg.Activate()
+        $dlg.BringToFront()
+        $dlg.Focus()
+    })
+    $dlg.Add_Load({
+        $dlg.TopMost = $true
+        $dlg.BringToFront()
+    })
+
+    # ShowDialog sin parent: evita que el form principal lo tape
     [void]$dlg.ShowDialog()
     $topTimer.Stop()
     $topTimer.Dispose()
@@ -2026,4 +2118,14 @@ if ($initMissing) {
 Update-SessionPanel
 Update-ButtonStates
 
+# Iniciar polling del config remoto del profesor (cada 30s)
+$adminTimer = New-Object System.Windows.Forms.Timer
+$adminTimer.Interval = $script:adminPollInterval
+$adminTimer.Add_Tick({ Check-AdminConfig })
+$adminTimer.Start()
+# Primer check inmediato
+Check-AdminConfig
+
 [void]$form.ShowDialog()
+$adminTimer.Stop()
+$adminTimer.Dispose()
