@@ -2187,45 +2187,54 @@ function Load-UserRepos {
         }
         Set-Status "Repos disponibles: $count"
 
-        # Si el alumno no tiene repos:
-        # 1) Chequear invitaciones pendientes (Classroom invita pero alumno no acepto)
-        # 2) Probar acceso directo a repos esperados (fallback si /user/repos no lista)
-        # 3) Si no hay nada, mostrar dialog 'Aceptar tarea' de Classroom
-        if ($count -eq 0) {
-            $pendingInvites = @(Get-PendingRepoInvitations)
-            if ($pendingInvites.Count -gt 0) {
-                Log "⚠ Tienes $($pendingInvites.Count) invitacion(es) pendiente(s) a repos." 'Yellow'
-                if (Accept-PendingInvitations -Invitations $pendingInvites) {
-                    Start-Sleep -Seconds 2
-                    Load-UserRepos
-                    return
-                }
+        # SIEMPRE chequear invitaciones pendientes, incluso si el alumno tiene
+        # otros repos. Es comun que tenga repos propios + invitacion de Classroom
+        # sin aceptar.
+        $pendingInvites = @(Get-PendingRepoInvitations)
+        if ($pendingInvites.Count -gt 0) {
+            Log "⚠ Tienes $($pendingInvites.Count) invitacion(es) pendiente(s) a repos." 'Yellow'
+            if (Accept-PendingInvitations -Invitations $pendingInvites) {
+                Start-Sleep -Seconds 2
+                Load-UserRepos
+                return
+            }
+        }
+
+        # Chequear si los assignments tienen sus repos correspondientes en la
+        # lista. Si falta alguno, intentar fallback directo o avisar.
+        $assignments = @(Get-ClassroomAssignments)
+        if ($assignments.Count -gt 0) {
+            # Buscar matches en repos cargados: nombre contiene slug del title + username
+            $missingAssignments = @()
+            foreach ($a in $assignments) {
+                $slug = $a.title.ToLower().Trim() -replace '\s+', '-' -replace '[^a-z0-9-]', ''
+                $expectedName = "$slug-$($ghUser.ToLower())"
+                $match = $repos | Where-Object { $_.name.ToLower() -eq $expectedName }
+                if (-not $match) { $missingAssignments += $a }
             }
 
-            $assignments = @(Get-ClassroomAssignments)
-
-            # FALLBACK: probar acceso directo a /repos/{org}/{slug}-{username}
-            # Cubre el caso 'alumno ya tiene el repo pero /user/repos no lo lista'
-            if ($assignments.Count -gt 0) {
-                Log '→ Probando acceso directo a repos esperados...' 'Yellow'
-                $directRepos = @(Find-AssignmentRepoDirect -Assignments $assignments -GhUser $ghUser)
+            if ($missingAssignments.Count -gt 0) {
+                Log "→ Faltan $($missingAssignments.Count) repo(s) de assignments. Probando acceso directo..." 'Yellow'
+                $directRepos = @(Find-AssignmentRepoDirect -Assignments $missingAssignments -GhUser $ghUser)
                 if ($directRepos.Count -gt 0) {
                     foreach ($r in $directRepos) {
                         $vis = if ($r.private) { '[Priv]' } else { '[Pub]' }
                         [void]$cmbReposExistentes.Items.Add("$vis $($r.full_name)")
                     }
-                    Log "✓ $($directRepos.Count) repo(s) encontrado(s) via acceso directo." 'Green'
-                    Set-Status "Repos disponibles: $($directRepos.Count)"
-                    return
+                    Log "✓ $($directRepos.Count) repo(s) agregado(s) via acceso directo." 'Green'
+                    Set-Status "Repos disponibles: $($cmbReposExistentes.Items.Count)"
+                }
+
+                # Si aun faltan repos (no encontrados directos ni listados),
+                # mostrar dialog de aceptar
+                $stillMissing = $missingAssignments.Count - $directRepos.Count
+                if ($stillMissing -gt 0 -and $count -eq 0 -and $directRepos.Count -eq 0) {
+                    Log "⚠ Tienes $stillMissing tarea(s) sin aceptar de Classroom." 'Yellow'
+                    Show-MustAcceptAssignmentDialog -Assignments $missingAssignments
                 }
             }
-
-            if ($assignments.Count -gt 0) {
-                Log "⚠ Tienes $($assignments.Count) tarea(s) sin aceptar de Classroom." 'Yellow'
-                Show-MustAcceptAssignmentDialog -Assignments $assignments
-            } else {
-                Log '  Sin assignments activos para tu seccion. Pregunta al profesor.' 'Yellow'
-            }
+        } elseif ($count -eq 0) {
+            Log '  Sin assignments activos para tu seccion. Pregunta al profesor.' 'Yellow'
         }
     } catch {
         Log "✗ Error: $_" 'Red'
