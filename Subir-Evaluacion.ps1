@@ -1385,10 +1385,15 @@ function Save-GhToken {
         }
     } catch {}
 
-    # 3. ESTRATEGIA A: gh auth login --with-token via Process API
+    # 3. ESTRATEGIA A: gh auth login --with-token --insecure-storage via Process API
+    # --insecure-storage fuerza a gh a guardar el token plain en hosts.yml en lugar
+    # de keyring. Sin este flag, gh CLI nuevo usa Credential Manager y el token
+    # escrito directamente en hosts.yml no funciona.
     $ghCmd = Get-Command gh -ErrorAction SilentlyContinue
-    if ($ghCmd) {
-        Log '→ Estrategia A: gh auth login --with-token'
+    if (-not $ghCmd) {
+        Log '  Estrategia A omitida: gh CLI no encontrado en PATH.' 'Yellow'
+    } else {
+        Log '→ Estrategia A: gh auth login --with-token --insecure-storage'
         $okA = Save-GhTokenViaProcess -Token $Token -GhPath $ghCmd.Source
         if ($okA) {
             Report-StudentActivity -Action 'login'
@@ -1401,16 +1406,40 @@ function Save-GhToken {
     Log '→ Estrategia B: escribir hosts.yml directamente'
     $okB = Save-GhTokenToHostsYml -Token $Token -Login $userInfo.login
     if ($okB) {
-        # Validar
-        $null = gh auth status 2>&1
+        # Validar con gh auth status especificando hostname
+        $statusOutput = gh auth status --hostname github.com 2>&1
         if ($LASTEXITCODE -eq 0) {
             Log '✓ Token guardado en hosts.yml correctamente.' 'Green'
             Report-StudentActivity -Action 'login'
             return $true
         }
+        Log "  gh auth status fallo: $statusOutput" 'Yellow'
+
+        # ESTRATEGIA C: setear GH_TOKEN como variable de entorno persistente del usuario
+        # gh CLI respeta esta var como override del keyring
+        Log '→ Estrategia C: variable de entorno GH_TOKEN (persistente para el usuario)'
+        try {
+            [System.Environment]::SetEnvironmentVariable('GH_TOKEN', $Token, 'User')
+            $env:GH_TOKEN = $Token
+            $null = gh auth status --hostname github.com 2>&1
+            if ($LASTEXITCODE -eq 0) {
+                Log '✓ Token guardado en GH_TOKEN del usuario.' 'Green'
+                Report-StudentActivity -Action 'login'
+                return $true
+            }
+        } catch {
+            Log "  Estrategia C fallo: $_" 'Red'
+        }
     }
 
-    Log '✗ Ambas estrategias de guardado fallaron.' 'Red'
+    Log '✗ Todas las estrategias de guardado fallaron.' 'Red'
+    [System.Windows.Forms.MessageBox]::Show(
+        "No se pudo guardar el token de GitHub en este equipo.`n`n" +
+        "Como workaround manual:`n" +
+        "1. Abre PowerShell`n" +
+        "2. Ejecuta: gh auth login --with-token --insecure-storage`n" +
+        "3. Pega cuando te pida un token (te lo paso por privado)",
+        'Error al guardar token', 'OK', 'Error') | Out-Null
     return $false
 }
 
@@ -1422,7 +1451,10 @@ function Save-GhTokenViaProcess {
 
     $psi = New-Object System.Diagnostics.ProcessStartInfo
     $psi.FileName = $GhPath
-    $psi.Arguments = 'auth login --hostname github.com --git-protocol https --with-token'
+    # --insecure-storage fuerza a gh a usar hosts.yml en lugar de keyring/Credential Manager.
+    # Sin este flag, en versiones recientes de gh (>= 2.40) el token termina en keyring
+    # y nuestro Save-GhTokenToHostsYml no es leido.
+    $psi.Arguments = 'auth login --hostname github.com --git-protocol https --with-token --insecure-storage'
     $psi.RedirectStandardInput = $true
     $psi.RedirectStandardOutput = $true
     $psi.RedirectStandardError = $true
