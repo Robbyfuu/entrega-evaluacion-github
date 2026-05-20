@@ -275,7 +275,7 @@ function Trigger-CheatLockdown {
 $script:supabaseUrl = 'https://oiownlxyquarmqwauegf.supabase.co'
 $script:supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9pb3dubHh5cXVhcm1xd2F1ZWdmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkyMDk5NTEsImV4cCI6MjA5NDc4NTk1MX0.MMODHCBz_xl3gnzJVfY-aIQPyINQDkwXyr-e6KPtrm4'
 
-$script:adminPollInterval = 60000   # ms (60 segundos como pidio el profesor)
+$script:adminPollInterval = 20000   # ms (20 segundos - balance entre responsividad y trafico)
 $script:internetBlocked = $false
 $script:lastAdminMessage = ''
 $script:remoteLockdownActive = $false
@@ -663,9 +663,30 @@ function Block-InternetUserMode {
 }
 
 function Unblock-InternetUserMode {
+    # Desbloquear robusto: ProxyEnable=0 + ELIMINAR ProxyServer y ProxyOverride.
+    # Solo flag a 0 no alcanza: algunos browsers ignoran el flag si encuentran
+    # el server seteado. Despues notificar al sistema (InternetSetOption) para
+    # que IE/Edge recarguen settings sin esperar a reiniciar.
     try {
         $regPath = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings'
         Set-ItemProperty -Path $regPath -Name 'ProxyEnable' -Value 0 -Type DWord -Force
+        Remove-ItemProperty -Path $regPath -Name 'ProxyServer' -ErrorAction SilentlyContinue
+        Remove-ItemProperty -Path $regPath -Name 'ProxyOverride' -ErrorAction SilentlyContinue
+    } catch {}
+
+    # Notificar a Windows que la config cambio (sin esto, IE/Edge siguen
+    # usando la config cacheada hasta reiniciar)
+    try {
+        if (-not ('Win32.WinInet' -as [type])) {
+            Add-Type -MemberDefinition @'
+                [DllImport("wininet.dll", SetLastError = true, CharSet = CharSet.Auto)]
+                public static extern bool InternetSetOption(IntPtr hInternet, int dwOption, IntPtr lpBuffer, int dwBufferLength);
+'@ -Name 'WinInet' -Namespace 'Win32' | Out-Null
+        }
+        $INTERNET_OPTION_SETTINGS_CHANGED = 39
+        $INTERNET_OPTION_REFRESH = 37
+        [Win32.WinInet]::InternetSetOption([IntPtr]::Zero, $INTERNET_OPTION_SETTINGS_CHANGED, [IntPtr]::Zero, 0) | Out-Null
+        [Win32.WinInet]::InternetSetOption([IntPtr]::Zero, $INTERNET_OPTION_REFRESH, [IntPtr]::Zero, 0) | Out-Null
     } catch {}
 }
 
