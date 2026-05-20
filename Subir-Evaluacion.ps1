@@ -1895,18 +1895,31 @@ function Load-UserRepos {
     $cmbReposExistentes.Items.Clear()
     Set-Status 'Cargando repos...'
     try {
-        # gh api /user/repos retorna TODOS los repos accesibles:
-        # owner, collaborator, organization_member. Los assignments de Classroom
-        # viven en la org del profesor pero el alumno es collaborator, asi que
-        # aparecen aqui. 'gh repo list' SOLO devuelve owner repos, por eso no
-        # mostraba los assignments.
-        $reposJson = gh api '/user/repos?per_page=100&type=all&sort=updated&affiliation=owner,collaborator,organization_member' --paginate 2>$null
-        if ($LASTEXITCODE -ne 0 -or -not $reposJson) {
+        # affiliation=collaborator captura assignments de Classroom (donde
+        # el alumno fue agregado como collaborator del repo en la org del
+        # profesor). NO usamos type=all porque sobreescribe affiliation.
+        # NO usamos --paginate porque puede generar JSON invalido (multiples
+        # arrays concatenados). Max 100 repos es suficiente para alumnos.
+        $url = '/user/repos?per_page=100&sort=updated&affiliation=owner%2Ccollaborator%2Corganization_member'
+        $reposJson = gh api $url 2>&1
+        if ($LASTEXITCODE -ne 0) {
             Log '✗ Error al listar repositorios.' 'Red'
+            Log "  Detalle: $reposJson" 'Red'
+            Set-Status 'Error al cargar repos.'
+            return
+        }
+        if (-not $reposJson) {
+            Log '✗ Respuesta vacia de gh api /user/repos.' 'Red'
             Set-Status 'Error.'
             return
         }
-        $repos = $reposJson | ConvertFrom-Json
+        try {
+            $repos = $reposJson | ConvertFrom-Json
+        } catch {
+            Log "✗ JSON invalido recibido: $_" 'Red'
+            Set-Status 'Error.'
+            return
+        }
         $ghUser = (gh api user --jq .login 2>$null).Trim()
 
         # Ordenar: primero los de orgs (Classroom), despues los del user
