@@ -1,0 +1,488 @@
+% !TEX program = lualatex
+% Guia paso a paso para alumnos - DUOC FPY1101
+% Compilar con: lualatex Guia-Alumno.tex (dos veces para TOC)
+\DocumentMetadata{
+  pdfstandard   = ua-2,
+  pdfversion    = 2.0,
+  lang          = es-CL,
+  tagging       = on,
+  testphase     = {phase-III,tagpdf,table,firstaid}
+}
+
+\documentclass[11pt,a4paper,oneside]{report}
+
+\usepackage{fontspec}
+\usepackage{polyglossia}
+\setdefaultlanguage{spanish}
+
+\usepackage[a4paper,margin=2.5cm,top=2.8cm,bottom=2.8cm]{geometry}
+\usepackage{xcolor}
+
+% Colores con contraste WCAG AA (>= 4.5:1 sobre fondo blanco)
+\definecolor{primary}{HTML}{0050A0}     % azul oscuro
+\definecolor{accent}{HTML}{8B4500}      % naranja oscuro
+\definecolor{success}{HTML}{1B5E20}     % verde oscuro
+\definecolor{danger}{HTML}{B71C1C}      % rojo oscuro
+\definecolor{boxBg}{HTML}{F4F6FA}       % gris muy claro fondo cajas
+\definecolor{boxBorder}{HTML}{C5D0E0}   % gris-azul borde
+\definecolor{codeBg}{HTML}{F0F0F0}      % gris claro para codigo
+
+\usepackage{hyperref}
+\hypersetup{
+  pdftitle    = {Guia del Alumno - Entrega de Evaluacion a GitHub},
+  pdfauthor   = {DUOC UC - Roberto Arce - FPY1101},
+  pdfsubject  = {Guia paso a paso para entrega de evaluaciones via GitHub Classroom},
+  pdfkeywords = {GitHub, Classroom, evaluacion, DUOC, FPY1101, Python, IDLE},
+  pdflang     = {es-CL},
+  colorlinks  = true,
+  linkcolor   = primary,
+  urlcolor    = primary,
+  citecolor   = primary,
+  bookmarksnumbered = true
+}
+
+\usepackage{titlesec}
+\titleformat{\chapter}[display]
+  {\normalfont\Huge\bfseries\color{primary}}
+  {\filright\Large\MakeUppercase{\chaptertitlename}\ \thechapter}
+  {1ex}{\filright}
+\titlespacing*{\chapter}{0pt}{-30pt}{20pt}
+
+\titleformat{\section}
+  {\normalfont\Large\bfseries\color{primary}}{\thesection}{1em}{}
+
+\titleformat{\subsection}
+  {\normalfont\large\bfseries\color{accent}}{\thesubsection}{1em}{}
+
+\usepackage{enumitem}
+\setlist{itemsep=2pt,parsep=2pt}
+
+\usepackage{tcolorbox}
+\tcbuselibrary{skins,breakable}
+
+\newtcolorbox{notebox}[1][]{
+  enhanced, breakable, colback=boxBg, colframe=boxBorder,
+  boxrule=0.5pt, arc=3pt, left=8pt, right=8pt, top=6pt, bottom=6pt,
+  title=#1, fonttitle=\bfseries\color{primary},
+  coltitle=primary, colbacktitle=boxBg,
+  attach boxed title to top left={xshift=8pt, yshift=-9pt},
+  boxed title style={size=small, colback=white, colframe=white}
+}
+
+\newtcolorbox{warnbox}[1][]{
+  enhanced, breakable, colback=boxBg, colframe=danger,
+  boxrule=1pt, arc=3pt, left=8pt, right=8pt, top=6pt, bottom=6pt,
+  title=#1, fonttitle=\bfseries\color{white},
+  coltitle=white, colbacktitle=danger,
+  attach boxed title to top left={xshift=8pt, yshift=-9pt},
+  boxed title style={size=small, colback=danger, colframe=danger}
+}
+
+\newtcolorbox{successbox}[1][]{
+  enhanced, breakable, colback=boxBg, colframe=success,
+  boxrule=1pt, arc=3pt, left=8pt, right=8pt, top=6pt, bottom=6pt,
+  title=#1, fonttitle=\bfseries\color{white},
+  coltitle=white, colbacktitle=success,
+  attach boxed title to top left={xshift=8pt, yshift=-9pt},
+  boxed title style={size=small, colback=success, colframe=success}
+}
+
+\usepackage{listings}
+\lstset{
+  basicstyle=\ttfamily\small,
+  backgroundcolor=\color{codeBg},
+  frame=single,
+  rulecolor=\color{boxBorder},
+  framesep=4pt,
+  xleftmargin=0pt,
+  xrightmargin=0pt,
+  breaklines=true,
+  showstringspaces=false,
+  literate={á}{{\'a}}1 {é}{{\'e}}1 {í}{{\'i}}1 {ó}{{\'o}}1 {ú}{{\'u}}1
+           {ñ}{{\~n}}1 {Á}{{\'A}}1 {É}{{\'E}}1 {Í}{{\'I}}1
+           {Ó}{{\'O}}1 {Ú}{{\'U}}1 {Ñ}{{\~N}}1
+}
+
+\usepackage{fancyhdr}
+\pagestyle{fancy}
+\fancyhf{}
+\renewcommand{\headrulewidth}{0.4pt}
+\renewcommand{\footrulewidth}{0pt}
+\fancyhead[L]{\small\color{primary}Entrega de Evaluacion a GitHub}
+\fancyhead[R]{\small\color{primary}Guia del Alumno}
+\fancyfoot[C]{\thepage}
+
+\renewcommand{\contentsname}{Indice}
+\renewcommand{\chaptername}{Capitulo}
+
+% ============================================================
+\begin{document}
+\sloppy
+
+% ===== Portada =====
+\begin{titlepage}
+\centering
+\vspace*{2cm}
+
+{\color{primary}\Huge\bfseries Entrega de Evaluacion a GitHub}\\[8pt]
+{\color{accent}\LARGE Guia paso a paso para alumnos}\\[2.5cm]
+
+\rule{0.7\textwidth}{0.8pt}\\[10pt]
+{\large DUOC UC\,---\,Asignatura FPY1101}\\[4pt]
+{\large Programacion en Python}\\[10pt]
+\rule{0.7\textwidth}{0.8pt}\\[3cm]
+
+{\large Profesor: Roberto Arce}\\[8pt]
+{\large Secciones 001D \textbullet{} 002D \textbullet{} 003D}\\[3cm]
+
+{\small Version 1.2.x}\\[4pt]
+{\small \href{https://github.com/Robbyfuu/entrega-evaluacion-github}{github.com/Robbyfuu/entrega-evaluacion-github}}\\
+
+\vfill
+\end{titlepage}
+
+\tableofcontents
+\clearpage
+
+% ============================================================
+\chapter{Resumen del proceso}
+
+Esta guia te explica como entregar tus evaluaciones de programacion usando un script automatico que sube tu codigo a GitHub.
+
+El proceso se divide en \textbf{dos momentos}:
+
+\begin{notebox}[En tu casa\,---\,Antes del examen]
+Una vez por semestre, debes preparar tu PC: instalar dependencias, crear tu cuenta de GitHub, iniciar sesion, elegir tu seccion y aceptar la tarea asignada por el profesor.
+
+Luego, antes de cada evaluacion, repites solo el paso de \textbf{aceptar la tarea} de Classroom (un click).
+\end{notebox}
+
+\begin{successbox}[En el aula\,---\,Dia del examen]
+Solo tres pasos: clonar el repositorio que ya aceptaste en casa, programar tu evaluacion en IDLE, y subir los archivos. El script entrega automaticamente el enlace que pegas en el AVA.
+\end{successbox}
+
+\section{Que vas a necesitar}
+
+\begin{itemize}
+  \item Windows 10 o 11
+  \item Conexion a internet
+  \item Una cuenta de GitHub (gratuita\,---\,la guia explica como crearla)
+  \item El paquete \texttt{EntregaEvaluacion-Alumno.zip} que entrego el profesor
+\end{itemize}
+
+\section{Que NO necesitas saber}
+
+\begin{itemize}
+  \item No necesitas saber usar la consola
+  \item No necesitas instalar git ni gh manualmente (el script lo hace solo)
+  \item No necesitas memorizar comandos
+\end{itemize}
+
+% ============================================================
+\chapter{En casa\,---\,Preparacion (una sola vez)}
+
+Sigue estos pasos ANTES del dia de la evaluacion. Lo ideal es hacerlo el primer dia de clases para evitar problemas.
+
+\section{Paso 1\,---\,Descargar y descomprimir el script}
+
+\begin{enumerate}
+  \item El profesor te entregara un archivo llamado \texttt{EntregaEvaluacion-Alumno.zip}.
+  \item Descargalo y guardalo en una carpeta facil de encontrar (por ejemplo \texttt{Escritorio\textbackslash{}DUOC}).
+  \item Click derecho sobre el ZIP $\rightarrow$ \textbf{Extraer todo}.
+  \item Veras una carpeta con estos archivos:
+\end{enumerate}
+
+\begin{lstlisting}
+EntregaEvaluacion-Alumno/
+  Subir-Evaluacion.bat       <- Doble-click aqui
+  Subir-Evaluacion.ps1
+  Reset-GitHubAuth.ps1
+  README.md
+\end{lstlisting}
+
+\section{Paso 2\,---\,Crear tu cuenta de GitHub (si no tienes)}
+
+Si ya tienes cuenta, salta al Paso 3.
+
+\begin{enumerate}
+  \item Haz doble-click en \texttt{Subir-Evaluacion.bat}.
+  \item Windows puede mostrar una advertencia de seguridad: click en \textbf{Mas informacion} $\rightarrow$ \textbf{Ejecutar de todas formas}.
+  \item Se abre el formulario principal.
+  \item En la esquina superior derecha veras el enlace: \emph{\textquotedblleft\,No tienes cuenta de GitHub? Creala aqui\,\textquotedblright}.
+  \item Click en el enlace $\rightarrow$ se abre un dialogo con instrucciones $\rightarrow$ click \textbf{Abrir GitHub}.
+  \item Se abre tu navegador en \url{https://github.com/signup}.
+  \item Completa: email personal, contrasena (minimo 8 caracteres con letras y numeros), username.
+  \item Verifica tu email con el codigo de 8 digitos que recibes.
+  \item Listo. Vuelve al script y click \textbf{Ya tengo cuenta, iniciar sesion}.
+\end{enumerate}
+
+\begin{notebox}[Sugerencia de username]
+Usa algo profesional como \texttt{tu-nombre-apellido} o \texttt{tu-nombre.duoc}. Lo veras toda tu carrera y aparece publicamente en GitHub.
+\end{notebox}
+
+\section{Paso 3\,---\,Instalar dependencias (winget)}
+
+La primera vez que abres el script, te ofrecera instalar \texttt{git} y \texttt{gh} (GitHub CLI) usando \texttt{winget}.
+
+\begin{enumerate}
+  \item Cuando aparezca el dialogo \textbf{Instalar dependencias}, click \textbf{Si}.
+  \item Acepta los permisos de administrador que pida Windows.
+  \item Espera 1\,---\,2 minutos. Veras una consola negra instalando.
+  \item Cuando termine, \textbf{cierra y vuelve a abrir} el script para que detecte las nuevas herramientas.
+\end{enumerate}
+
+\section{Paso 4\,---\,Seleccionar tu seccion}
+
+La primera vez aparecera un dialogo \textbf{Selecciona tu seccion}.
+
+\begin{itemize}
+  \item Elige \textbf{001D}, \textbf{002D} o \textbf{003D} segun corresponda a tu inscripcion.
+  \item Click \textbf{Continuar}.
+\end{itemize}
+
+\begin{warnbox}[Importante]
+Si te equivocas de seccion, los assignments del Classroom no apareceran. Puedes corregirlo desde el dropdown \emph{\textquotedblleft\,Tu seccion\,\textquotedblright} arriba del formulario principal.
+\end{warnbox}
+
+\section{Paso 5\,---\,Iniciar sesion en GitHub}
+
+\begin{enumerate}
+  \item En el formulario principal, click en cualquier accion (por ejemplo, \textbf{Crear Repo}).
+  \item Si no estas conectado, el script muestra un dialogo con un \textbf{codigo} grande tipo \texttt{XXXX-XXXX}.
+  \item Abre en tu navegador (o celular): \url{https://github.com/login/device}
+  \item Ingresa el codigo (boton \textbf{Copiar codigo} ayuda).
+  \item Inicia sesion en GitHub si no estabas conectado.
+  \item Autoriza el acceso a \emph{\textquotedblleft GitHub CLI\,\textquotedblright}.
+  \item El script detecta automaticamente la autorizacion y continua.
+\end{enumerate}
+
+\begin{successbox}[Una sola vez]
+Tu sesion queda guardada permanentemente en este PC. No tendras que volver a loguearte (a menos que cierres sesion manualmente).
+\end{successbox}
+
+\section{Paso 6\,---\,Aceptar la tarea de GitHub Classroom}
+
+Esto es lo MAS importante para preparar el dia del examen:
+
+\begin{enumerate}
+  \item Cuando hay tareas activas, veras un banner azul arriba del formulario:\\
+        \emph{\textquotedblleft 📚 Tienes 1 tarea(s) de Classroom\,---\,Click para aceptarlas\,\textquotedblright}
+  \item Click en el banner.
+  \item Se abre un dialogo con la lista de tareas (filtradas por tu seccion).
+  \item Click en \textbf{Aceptar tarea} de la evaluacion correspondiente.
+  \item Se abre tu navegador en GitHub Classroom.
+  \item Verifica que la cuenta logueada en GitHub es la \textbf{tuya} (no la del PC del aula si estas en clases).
+  \item Click \textbf{Accept this assignment} en GitHub.
+  \item GitHub Classroom crea automaticamente un repositorio en tu cuenta con un nombre tipo \texttt{evaluacion-1-tu-username}.
+  \item Cierra el navegador y vuelve al script.
+\end{enumerate}
+
+\begin{warnbox}[NO clones todavia]
+Acepta la tarea pero NO la clones en casa. Si clonas y editas codigo en casa, el sistema lo detectara como TRAMPA cuando lo subas el dia del examen.
+
+Solo acepta la tarea. El repositorio queda esperando en tu cuenta de GitHub, vacio.
+\end{warnbox}
+
+\section{Paso 7\,---\,Cerrar el script y guardar el PC}
+
+Si trabajas desde tu PC personal, cierra el script normalmente y apaga. Todo queda configurado.
+
+\textbf{El dia de la evaluacion solo tendras que abrir el script y hacer clone + edit + push.}
+
+% ============================================================
+\chapter{Dia del examen\,---\,En el aula}
+
+Llegaste al aula. Estos son los pasos:
+
+\section{Paso 1\,---\,Abrir el script}
+
+\begin{enumerate}
+  \item Si el PC del aula ya tiene el script: doble-click \texttt{Subir-Evaluacion.bat}.
+  \item Si NO lo tiene: descargalo de nuevo del enlace que entrega el profesor y extrae el ZIP.
+  \item En PCs del aula puede que tengas que repetir el login (Paso 5 del capitulo anterior).
+\end{enumerate}
+
+\section{Paso 2\,---\,Verificar tu seccion}
+
+Mira el dropdown \emph{\textquotedblleft\,Tu seccion\,\textquotedblright} arriba: debe decir tu seccion correcta. Si no, cambiala.
+
+\section{Paso 3\,---\,Clonar el repositorio}
+
+\begin{enumerate}
+  \item En el formulario principal, selecciona \textbf{Usar repositorio existente de mi cuenta}.
+  \item Los campos Nombre y Tipo se deshabilitan. Aparece el dropdown \textbf{Tu repositorio}.
+  \item Click en \textbf{Refrescar} para cargar la lista de tus repositorios.
+  \item Selecciona el repositorio del assignment (tipo \texttt{[Pub] evaluacion-1-tu-username}).
+  \item Click en \textbf{Clonar Repo}.
+\end{enumerate}
+
+El script:
+
+\begin{itemize}
+  \item Descarga tu repositorio a \texttt{Escritorio\textbackslash{}evaluacion-1-tu-username}
+  \item Verifica que el repo este VACIO (anti-trampa)
+  \item Abre \textbf{IDLE de Python} apuntando a esa carpeta
+  \item Te muestra un mensaje con la ruta exacta
+\end{itemize}
+
+\section{Paso 4\,---\,Programar la evaluacion en IDLE}
+
+\begin{enumerate}
+  \item En IDLE, click \textbf{File} $\rightarrow$ \textbf{New File} para crear un archivo nuevo.
+  \item Guarda como \texttt{evaluacion.py} (o el nombre que indique el profesor) DENTRO de la carpeta clonada.
+  \item Programa tu solucion.
+  \item Guarda con \texttt{Ctrl+S} cada vez que avances.
+\end{enumerate}
+
+\begin{notebox}[Probar tu codigo]
+Click \textbf{Run} $\rightarrow$ \textbf{Run Module} (F5) para ejecutar.
+\end{notebox}
+
+\section{Paso 5\,---\,Subir tu evaluacion}
+
+Cuando termines:
+
+\begin{enumerate}
+  \item Vuelve al script (esta abierto en la barra de tareas).
+  \item Click \textbf{Subir Archivos} (boton verde).
+  \item Espera 5\,---\,10 segundos mientras hace \texttt{git add}, \texttt{commit} y \texttt{push}.
+  \item Aparece un mensaje \textbf{Listo\,---\,Ahora entrega en el AVA} con tu URL.
+  \item El URL queda automaticamente \textbf{copiado al portapapeles}.
+\end{enumerate}
+
+\section{Paso 6\,---\,Entregar el enlace en el AVA}
+
+\begin{enumerate}
+  \item Abre el AVA (Ambiente Virtual de Aprendizaje).
+  \item Ve a la \textbf{Evaluacion Parcial} correspondiente (1, 2, 3 o 4 segun el tipo).
+  \item En el campo de entrega, pega el enlace con \texttt{Ctrl+V}.
+  \item Click \textbf{Enviar entrega}.
+\end{enumerate}
+
+\section{Paso 7\,---\,Limpieza (opcional)}
+
+El script te preguntara: \emph{\textquotedblleft\,Ya terminaste la evaluacion\,?\,\textquotedblright}
+
+\begin{itemize}
+  \item Si responde \textbf{Si}, elimina la carpeta local del Escritorio. Tu evaluacion queda guardada en GitHub.
+  \item Si responde \textbf{No}, la carpeta se conserva por si necesitas seguir editando.
+\end{itemize}
+
+% ============================================================
+\chapter{Problemas comunes}
+
+\section{\textquotedblleft Windows protegio su PC\textquotedblright}
+
+Primera vez normal. Click \textbf{Mas informacion} $\rightarrow$ \textbf{Ejecutar de todas formas}.
+
+El script desbloquea automaticamente los archivos al iniciar para evitar que esta advertencia se repita.
+
+\section{\textquotedblleft winget no se reconoce\textquotedblright}
+
+Tu Windows no tiene \texttt{winget}. Instala \textbf{App Installer} desde Microsoft Store, o descarga manualmente:
+
+\begin{itemize}
+  \item Git: \url{https://git-scm.com/download/win}
+  \item GitHub CLI: \url{https://cli.github.com/}
+\end{itemize}
+
+\section{\textquotedblleft No tienes una sesion de GitHub activa\textquotedblright}
+
+Click \textbf{Si} cuando el script ofrezca iniciar sesion. Sigue las instrucciones del dialogo con el codigo.
+
+\section{\textquotedblleft No aparece mi tarea en el banner\textquotedblright}
+
+Verifica:
+
+\begin{enumerate}
+  \item Tu seccion en el dropdown superior coincide con tu inscripcion real.
+  \item El profesor ya activo la tarea en el panel admin (preguntale).
+  \item Tienes conexion a internet (el script consulta el backend cada 60 segundos).
+\end{enumerate}
+
+\section{\textquotedblleft No aparece mi repositorio al refrescar\textquotedblright}
+
+Verifica:
+
+\begin{enumerate}
+  \item Aceptaste el assignment en GitHub Classroom.
+  \item Estas logueado con la \textbf{misma cuenta} con la que aceptaste.
+  \item Click \textbf{Refrescar} de nuevo.
+\end{enumerate}
+
+\section{\textquotedblleft Falla el push\textquotedblright}
+
+Posibles causas:
+
+\begin{itemize}
+  \item Conexion a internet caida.
+  \item Token expirado: usa el boton \textbf{Cerrar sesion} y vuelve a iniciar sesion.
+\end{itemize}
+
+\section{Quiero cambiar de cuenta de GitHub}
+
+Click \textbf{Cerrar sesion} (boton rojo en la esquina superior derecha). Luego \textbf{Iniciar sesion} con la nueva cuenta.
+
+\section{ALERTA roja gigante en mi pantalla}
+
+\begin{warnbox}[NO PANIQUEES]
+Si te aparece una ventana roja gigante con el texto \textbf{ALERTA\,---\,POSIBLE TRAMPA ACADEMICA DETECTADA}, significa que el repositorio que intentaste clonar contiene archivos NO permitidos (codigo pre-existente).
+
+Esto puede pasar si:
+\begin{itemize}
+  \item Aceptaste un repositorio que ya tenia codigo.
+  \item Estas intentando clonar un repo de otra persona.
+  \item Por error elegiste un repositorio que no es de la evaluacion.
+\end{itemize}
+
+\textbf{Solo el profesor puede desbloquear esta ventana} con su clave personal. Avisa al profesor para que se acerque y libere el PC.
+\end{warnbox}
+
+% ============================================================
+\chapter{Resumen visual del flujo}
+
+\section{Flujo en casa (una vez)}
+
+\begin{lstlisting}
+1. Descargar y extraer ZIP
+2. Doble-click Subir-Evaluacion.bat
+3. Aceptar instalacion winget (Si)
+4. Elegir seccion (001D / 002D / 003D)
+5. Iniciar sesion en GitHub (codigo XXXX-XXXX)
+6. Click banner "Tienes N tareas"
+7. Aceptar tarea (se abre Classroom)
+8. NO clonar todavia
+9. Cerrar el script
+\end{lstlisting}
+
+\section{Flujo en el aula (cada evaluacion)}
+
+\begin{lstlisting}
+1. Abrir Subir-Evaluacion.bat
+2. Modo "Repositorio existente" -> Refrescar
+3. Seleccionar tu repo -> Clonar Repo
+4. IDLE abre automatico -> programar
+5. Subir Archivos
+6. URL copiado -> pegar en AVA
+\end{lstlisting}
+
+\section{Tabla de tiempo estimado}
+
+\begin{tabular}{l l}
+\hline
+\textbf{Actividad} & \textbf{Tiempo} \\
+\hline
+Setup en casa (primera vez)                & 15\,---\,20 min \\
+Aceptar nuevo assignment (por evaluacion)  & 1 min \\
+Clonar + IDLE en el aula                   & 1 min \\
+Subir archivos + AVA                       & 2 min \\
+\hline
+\end{tabular}
+
+\vspace{1cm}
+
+\begin{successbox}[Recuerda]
+Si haces el setup en casa, el dia del examen tienes \textbf{solo 4 minutos de procedimiento tecnico}. El resto del tiempo es para programar tu evaluacion.
+\end{successbox}
+
+\end{document}
