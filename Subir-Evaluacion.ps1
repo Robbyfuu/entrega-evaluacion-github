@@ -54,6 +54,36 @@ function Test-Dependencies {
     return $missing
 }
 
+function Ensure-Dependencies {
+    <#
+    Chequea git + gh. Si faltan, ofrece instalar via winget y reintenta.
+    Devuelve $true si quedaron instalados, $false si no se pudo.
+    Usar antes de cualquier accion que requiera gh CLI.
+    #>
+    $missing = Test-Dependencies
+    if (-not $missing) { return $true }
+
+    Log "→ Faltan dependencias: $($missing -join ', ')" 'Yellow'
+    $installed = Install-Dependencies -Missing $missing
+    if (-not $installed) {
+        Log '✗ Instalacion cancelada o fallida.' 'Red'
+        return $false
+    }
+
+    # Re-chequear despues de instalar
+    $missing = Test-Dependencies
+    if ($missing) {
+        Log "✗ Aun faltan: $($missing -join ', '). Cierra y reabre el script." 'Red'
+        [System.Windows.Forms.MessageBox]::Show(
+            "Las dependencias se instalaron pero el PATH del proceso actual no las ve.`n`n" +
+            "Cierra COMPLETAMENTE el script y vuelve a abrir Subir-Evaluacion.bat.",
+            'Reinicio requerido', 'OK', 'Warning') | Out-Null
+        return $false
+    }
+    Log '✓ Dependencias listas.' 'Green'
+    return $true
+}
+
 function Install-Dependencies {
     param([string[]]$Missing)
 
@@ -1900,20 +1930,8 @@ function Set-ModoUI {
 function Validate-Inputs {
     param([switch]$RequireFolder)
 
-    # Dependencias
-    $missing = Test-Dependencies
-    if ($missing) {
-        $installed = Install-Dependencies -Missing $missing
-        if (-not $installed) { return $false }
-        # Re-chequear
-        $missing = Test-Dependencies
-        if ($missing) {
-            [System.Windows.Forms.MessageBox]::Show(
-                "Aún faltan: $($missing -join ', ').`n`nCerrá y reabre el script.",
-                'Reiniciar requerido', 'OK', 'Warning') | Out-Null
-            return $false
-        }
-    }
+    # Dependencias (instala automaticamente si faltan)
+    if (-not (Ensure-Dependencies)) { return $false }
 
     # gh auth
     if (-not (Test-GhAuth)) {
@@ -2316,6 +2334,9 @@ $btnBuscar.Add_Click({
 })
 
 $btnLogin.Add_Click({
+    # Validar git+gh ANTES de intentar el login (instalar si faltan)
+    if (-not (Ensure-Dependencies)) { return }
+
     Log '→ Iniciando sesión con código (sin abrir navegador)...'
     if (Start-GitHubDeviceLogin) {
         Update-SessionPanel
@@ -2433,11 +2454,20 @@ if (Test-Path $script:cheatMarkerFile) {
 Log 'Listo. Completa los datos y elige una acción.'
 Log 'Tip: usa "Hacer TODO" si es la primera vez.' 'Cyan'
 
-# Chequeo proactivo de dependencias al abrir
+# Chequeo proactivo de dependencias al abrir: si faltan, ofrecer instalar AHORA
 $initMissing = Test-Dependencies
 if ($initMissing) {
     Log "⚠ Dependencias faltantes detectadas: $($initMissing -join ', ')" 'Yellow'
-    Log '  Se te ofrecerá instalarlas la primera vez que uses una acción.' 'Yellow'
+    $r = [System.Windows.Forms.MessageBox]::Show(
+        "Faltan estas herramientas necesarias:`n  - $($initMissing -join "`n  - ")`n`n" +
+        "Sin ellas no podras iniciar sesion en GitHub ni subir tu evaluacion.`n`n" +
+        "¿Instalarlas ahora con winget? (requiere permisos de administrador)",
+        'Instalar dependencias', 'YesNo', 'Question')
+    if ($r -eq 'Yes') {
+        [void](Ensure-Dependencies)
+    } else {
+        Log '  Pospusiste la instalacion. Se te volvera a pedir al iniciar sesion.' 'Yellow'
+    }
 } else {
     Log '✓ git y gh detectados.'
     if (Test-GhAuth) {
