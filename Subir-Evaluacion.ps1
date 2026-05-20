@@ -470,23 +470,38 @@ function Get-ClassroomAssignments {
     Lista las tareas activas de Classroom que aplican a la seccion del alumno.
     Devuelve array de {id, title, classroom_url, section}. Filtra por seccion
     elegida + las marcadas como "todas" (section = '').
+    Con logging detallado para diagnosticar problemas de filtrado.
     #>
     $mySection = Get-StudentSection
+    Log "  [debug] mi seccion (registry): '$mySection'"
+
     try {
         $resp = Invoke-RestMethod `
             -Uri "$($script:supabaseUrl)/rest/v1/assignments?active=eq.true&select=*&order=created_at.desc" `
             -Headers (Get-SupabaseHeaders) `
             -TimeoutSec 5 -ErrorAction Stop
         $all = @($resp)
-        if (-not $mySection) {
-            # Sin seccion elegida: mostrar solo las "para todas las secciones"
-            return @($all | Where-Object { -not $_.section -or $_.section -eq '' })
+        Log "  [debug] assignments recibidos del backend: $($all.Count)"
+        foreach ($a in $all) {
+            Log "    - id=$($a.id) title='$($a.title)' section='$($a.section)' active=$($a.active)"
         }
-        # Mostrar las de mi seccion + las "todas"
-        return @($all | Where-Object {
-            -not $_.section -or $_.section -eq '' -or $_.section -eq $mySection
+
+        if (-not $mySection) {
+            $filtered = @($all | Where-Object { -not $_.section -or $_.section -eq '' })
+            Log "  [debug] sin seccion configurada, mostrando solo globales: $($filtered.Count)"
+            return $filtered
+        }
+
+        # Comparacion case-insensitive y trim por las dudas
+        $mySectionNorm = $mySection.Trim().ToUpperInvariant()
+        $filtered = @($all | Where-Object {
+            $sec = if ($_.section) { $_.section.Trim().ToUpperInvariant() } else { '' }
+            (-not $sec) -or ($sec -eq $mySectionNorm)
         })
+        Log "  [debug] tras filtrar por seccion '$mySection': $($filtered.Count)"
+        return $filtered
     } catch {
+        Log "  [debug] excepcion en Get-ClassroomAssignments: $($_.Exception.Message)" 'Red'
         return @()
     }
 }
