@@ -1035,6 +1035,10 @@ function Invoke-CloneRepo {
     Clona el repo seleccionado en el dropdown a Desktop\<repo-name>.
     Despues setea txtCarpeta con esa ruta y abre IDLE.
     Si la carpeta ya existe, se reutiliza (no se reclona).
+
+    $RepoName puede ser:
+    - "nombre"          -> repo del user actual
+    - "org/nombre"      -> repo de una org (ej. Classroom)
     #>
     param([string]$RepoName)
 
@@ -1046,11 +1050,22 @@ function Invoke-CloneRepo {
         return $false
     }
 
-    $desktop = [Environment]::GetFolderPath('Desktop')
-    $targetPath = Join-Path $desktop $RepoName
-    $repoUrl = "https://github.com/$ghUser/$RepoName.git"
+    # Parsear owner/nombre. Si tiene '/', es de otra cuenta/org.
+    if ($RepoName.Contains('/')) {
+        $parts = $RepoName -split '/', 2
+        $repoOwner = $parts[0]
+        $repoSimpleName = $parts[1]
+        Log "→ Repo de org detectado: $repoOwner / $repoSimpleName"
+    } else {
+        $repoOwner = $ghUser
+        $repoSimpleName = $RepoName
+    }
 
-    Set-Status "Clonando $RepoName..."
+    $desktop = [Environment]::GetFolderPath('Desktop')
+    $targetPath = Join-Path $desktop $repoSimpleName
+    $repoUrl = "https://github.com/$repoOwner/$repoSimpleName.git"
+
+    Set-Status "Clonando $repoSimpleName..."
 
     if (Test-Path $targetPath) {
         # Verificar que es el mismo repo
@@ -1876,25 +1891,50 @@ function Load-UserRepos {
         Log '✗ Sin sesion. Inicia sesion primero para ver tus repos.' 'Red'
         return
     }
-    Log '→ Cargando lista de repositorios de tu cuenta...'
+    Log '→ Cargando repos (incluyendo Classroom de orgs del profesor)...'
     $cmbReposExistentes.Items.Clear()
     Set-Status 'Cargando repos...'
     try {
-        $reposJson = gh repo list --json name,visibility,description,isArchived --limit 200 2>$null
+        # gh api /user/repos retorna TODOS los repos accesibles:
+        # owner, collaborator, organization_member. Los assignments de Classroom
+        # viven en la org del profesor pero el alumno es collaborator, asi que
+        # aparecen aqui. 'gh repo list' SOLO devuelve owner repos, por eso no
+        # mostraba los assignments.
+        $reposJson = gh api '/user/repos?per_page=100&type=all&sort=updated&affiliation=owner,collaborator,organization_member' --paginate 2>$null
         if ($LASTEXITCODE -ne 0 -or -not $reposJson) {
             Log '✗ Error al listar repositorios.' 'Red'
             Set-Status 'Error.'
             return
         }
-        $repos = $reposJson | ConvertFrom-Json | Sort-Object name
+        $repos = $reposJson | ConvertFrom-Json
+        $ghUser = (gh api user --jq .login 2>$null).Trim()
+
+        # Ordenar: primero los de orgs (Classroom), despues los del user
+        $sorted = $repos | Sort-Object @{Expression={
+            if ($_.owner.login -ne $ghUser) { 0 } else { 1 }
+        }}, full_name
+
         $count = 0
-        foreach ($r in $repos) {
-            if ($r.isArchived) { continue }
-            $vis = if ($r.visibility -eq 'PRIVATE') { '[Priv]' } else { '[Pub]' }
-            [void]$cmbReposExistentes.Items.Add("$vis $($r.name)")
+        $classroomCount = 0
+        foreach ($r in $sorted) {
+            if ($r.archived) { continue }
+            $vis = if ($r.private) { '[Priv]' } else { '[Pub]' }
+            # Si es de otra cuenta/org -> mostrar full_name (org/nombre)
+            # Si es del mismo user -> mostrar solo el name
+            if ($r.owner.login -ne $ghUser) {
+                $display = "$vis $($r.full_name)"
+                $classroomCount++
+            } else {
+                $display = "$vis $($r.name)"
+            }
+            [void]$cmbReposExistentes.Items.Add($display)
             $count++
         }
-        Log "✓ $count repositorios cargados." 'Green'
+        if ($classroomCount -gt 0) {
+            Log "✓ $count repos cargados ($classroomCount de orgs / Classroom)." 'Green'
+        } else {
+            Log "✓ $count repos cargados." 'Green'
+        }
         Set-Status "Repos disponibles: $count"
     } catch {
         Log "✗ Error: $_" 'Red'
@@ -2082,7 +2122,18 @@ function Invoke-UploadFiles {
         return $false
     }
 
-    $repoUrl = "https://github.com/$ghUser/$repo.git"
+    # $repo puede ser "nombre" (user) o "org/nombre" (Classroom u otra org).
+    # Determinar owner para construir la URL del remote correctamente.
+    if ($repo.Contains('/')) {
+        $parts = $repo -split '/', 2
+        $repoOwner = $parts[0]
+        $repoSimpleName = $parts[1]
+    } else {
+        $repoOwner = $ghUser
+        $repoSimpleName = $repo
+    }
+
+    $repoUrl = "https://github.com/$repoOwner/$repoSimpleName.git"
 
     Set-Status "Subiendo a $repo..."
     Log "→ Carpeta: $folder"
@@ -2204,7 +2255,8 @@ function Invoke-UploadFiles {
 
         if ($LASTEXITCODE -eq 0) {
             $script:lastPushSuccess = $true
-            $script:lastPushUrl = "https://github.com/$ghUser/$repo"
+            # Construir URL final usando el owner correcto (puede ser org de Classroom)
+            $script:lastPushUrl = "https://github.com/$repoOwner/$repoSimpleName"
             Log "✓ Subida completada. Ver en: $($script:lastPushUrl)" 'Cyan'
             Set-Status 'Subida OK. Ahora entrega en el AVA.'
         } else {
