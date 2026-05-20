@@ -1949,9 +1949,170 @@ function Load-UserRepos {
             Log "✓ $count repos cargados." 'Green'
         }
         Set-Status "Repos disponibles: $count"
+
+        # Si el alumno no tiene repos PERO hay assignments activos para su seccion,
+        # significa que no acepto la tarea todavia. Forzar dialog para aceptar.
+        if ($count -eq 0) {
+            $assignments = Get-ClassroomAssignments
+            if ($assignments.Count -gt 0) {
+                Log "⚠ Tienes $($assignments.Count) tarea(s) sin aceptar de Classroom." 'Yellow'
+                Show-MustAcceptAssignmentDialog -Assignments $assignments
+            } else {
+                Log '  Sin assignments activos para tu seccion. Pregunta al profesor.' 'Yellow'
+            }
+        }
     } catch {
         Log "✗ Error: $_" 'Red'
         Set-Status 'Error.'
+    }
+}
+
+function Show-MustAcceptAssignmentDialog {
+    <#
+    Dialog OBLIGATORIO cuando el alumno no tiene repos PERO hay assignments
+    activos para su seccion. Lo fuerza a aceptar antes de continuar.
+    Sin boton X (ControlBox = false), solo botones de accion explicitos.
+    #>
+    param([Parameter(Mandatory)][object[]]$Assignments)
+
+    $dlg = New-Object System.Windows.Forms.Form
+    $dlg.Text = 'Acción requerida: aceptar tarea de Classroom'
+    $dlg.Size = New-Object System.Drawing.Size(620, 540)
+    $dlg.StartPosition = 'CenterScreen'
+    $dlg.FormBorderStyle = 'FixedDialog'
+    $dlg.ControlBox = $false
+    $dlg.TopMost = $true
+
+    $lblTitle = New-Object System.Windows.Forms.Label
+    $lblTitle.Text = '⚠ Debes aceptar tu tarea antes de continuar'
+    $lblTitle.Font = New-Object System.Drawing.Font('Segoe UI', 14, [System.Drawing.FontStyle]::Bold)
+    $lblTitle.ForeColor = [System.Drawing.Color]::FromArgb(183, 28, 28)
+    $lblTitle.Location = New-Object System.Drawing.Point(20, 20)
+    $lblTitle.Size = New-Object System.Drawing.Size(580, 30)
+    $dlg.Controls.Add($lblTitle)
+
+    $lblHelp = New-Object System.Windows.Forms.Label
+    $lblHelp.Text = @"
+No se encontro ningun repositorio en tu cuenta de GitHub.
+Esto significa que aun NO aceptaste la tarea de GitHub Classroom.
+
+Pasos OBLIGATORIOS para continuar:
+
+  1. Haz clic en "Aceptar tarea" abajo (se abrira tu navegador).
+  2. Verifica que estes logueado con la cuenta de GitHub correcta.
+  3. Haz clic en "Accept this assignment" en la pagina de GitHub.
+  4. Espera unos segundos hasta que Classroom cree tu repositorio.
+  5. Vuelve a este script y haz clic en "Verificar".
+  6. Cuando aparezca tu repo en la lista, podras continuar.
+"@
+    $lblHelp.Font = New-Object System.Drawing.Font('Segoe UI', 10)
+    $lblHelp.Location = New-Object System.Drawing.Point(20, 60)
+    $lblHelp.Size = New-Object System.Drawing.Size(580, 200)
+    $dlg.Controls.Add($lblHelp)
+
+    # Panel con assignments disponibles
+    $panel = New-Object System.Windows.Forms.Panel
+    $panel.Location = New-Object System.Drawing.Point(20, 270)
+    $panel.Size = New-Object System.Drawing.Size(580, 170)
+    $panel.AutoScroll = $true
+    $panel.BorderStyle = 'FixedSingle'
+    $panel.BackColor = [System.Drawing.Color]::FromArgb(255, 250, 240)
+    $dlg.Controls.Add($panel)
+
+    $y = 10
+    foreach ($a in $Assignments) {
+        $titleLbl = New-Object System.Windows.Forms.Label
+        $titleLbl.Text = $a.title
+        $titleLbl.Font = New-Object System.Drawing.Font('Segoe UI', 11, [System.Drawing.FontStyle]::Bold)
+        $titleLbl.Location = New-Object System.Drawing.Point(15, $y)
+        $titleLbl.Size = New-Object System.Drawing.Size(380, 22)
+        $panel.Controls.Add($titleLbl)
+
+        $btnAccept = New-Object System.Windows.Forms.Button
+        $btnAccept.Text = 'Aceptar tarea'
+        $btnAccept.Location = New-Object System.Drawing.Point(420, ($y - 2))
+        $btnAccept.Size = New-Object System.Drawing.Size(140, 30)
+        $btnAccept.BackColor = [System.Drawing.Color]::FromArgb(76, 175, 80)
+        $btnAccept.ForeColor = [System.Drawing.Color]::White
+        $btnAccept.FlatStyle = 'Flat'
+        $btnAccept.Font = New-Object System.Drawing.Font('Segoe UI', 9, [System.Drawing.FontStyle]::Bold)
+        $url = $a.classroom_url
+        $btnAccept.Add_Click({
+            try {
+                Start-Process $url
+                Log "→ Abriendo Classroom: $url"
+            } catch {
+                [System.Windows.Forms.MessageBox]::Show(
+                    "No se pudo abrir navegador. URL:`n$url",
+                    'Abrir manual', 'OK', 'Information') | Out-Null
+            }
+        }.GetNewClosure())
+        $panel.Controls.Add($btnAccept)
+
+        $urlLbl = New-Object System.Windows.Forms.Label
+        $urlLbl.Text = $a.classroom_url
+        $urlLbl.Font = New-Object System.Drawing.Font('Consolas', 8)
+        $urlLbl.ForeColor = [System.Drawing.Color]::Gray
+        $urlLbl.Location = New-Object System.Drawing.Point(15, ($y + 24))
+        $urlLbl.Size = New-Object System.Drawing.Size(545, 18)
+        $panel.Controls.Add($urlLbl)
+
+        $y += 55
+    }
+
+    # Boton Verificar (re-chequea si ya hay repos)
+    $btnVerify = New-Object System.Windows.Forms.Button
+    $btnVerify.Text = 'Verificar (busca mi repo)'
+    $btnVerify.Location = New-Object System.Drawing.Point(20, 460)
+    $btnVerify.Size = New-Object System.Drawing.Size(220, 38)
+    $btnVerify.BackColor = [System.Drawing.Color]::FromArgb(33, 150, 243)
+    $btnVerify.ForeColor = [System.Drawing.Color]::White
+    $btnVerify.FlatStyle = 'Flat'
+    $btnVerify.Font = New-Object System.Drawing.Font('Segoe UI', 10, [System.Drawing.FontStyle]::Bold)
+    $btnVerify.Add_Click({
+        # Re-chequear via gh api
+        try {
+            $url = '/user/repos?per_page=100&sort=updated&affiliation=owner%2Ccollaborator%2Corganization_member'
+            $reposJson = gh api $url 2>$null
+            if ($LASTEXITCODE -eq 0 -and $reposJson) {
+                $repos = @($reposJson | ConvertFrom-Json)
+                if ($repos.Count -gt 0) {
+                    $dlg.DialogResult = 'OK'
+                    $dlg.Close()
+                    return
+                }
+            }
+            [System.Windows.Forms.MessageBox]::Show(
+                "Aun no tienes repositorios.`n`nAcepta la tarea en el navegador primero, luego vuelve aqui y haz clic en Verificar.",
+                'Sin repos todavia', 'OK', 'Warning') | Out-Null
+        } catch {
+            [System.Windows.Forms.MessageBox]::Show(
+                "Error verificando: $_",
+                'Error', 'OK', 'Error') | Out-Null
+        }
+    })
+    $dlg.Controls.Add($btnVerify)
+
+    # Boton Cancelar (sale del modo existente)
+    $btnCancel = New-Object System.Windows.Forms.Button
+    $btnCancel.Text = 'Cambiar a modo "Crear repositorio nuevo"'
+    $btnCancel.Location = New-Object System.Drawing.Point(280, 460)
+    $btnCancel.Size = New-Object System.Drawing.Size(320, 38)
+    $btnCancel.BackColor = [System.Drawing.Color]::FromArgb(158, 158, 158)
+    $btnCancel.ForeColor = [System.Drawing.Color]::White
+    $btnCancel.FlatStyle = 'Flat'
+    $btnCancel.DialogResult = 'Cancel'
+    $dlg.Controls.Add($btnCancel)
+
+    $result = $dlg.ShowDialog()
+
+    if ($result -eq 'OK') {
+        # Se acepto la tarea, recargar repos
+        Log '✓ Tarea aceptada. Recargando lista de repos...' 'Green'
+        Load-UserRepos
+    } elseif ($result -eq 'Cancel') {
+        # Cambiar a modo Crear repositorio nuevo
+        $rbModoNuevo.Checked = $true
     }
 }
 
