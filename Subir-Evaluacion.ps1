@@ -663,6 +663,57 @@ function Unblock-InternetUserMode {
     } catch {}
 }
 
+function Test-ProxyIsBlocked {
+    # Lee el registry actual y devuelve true si el proxy esta apuntando a 127.0.0.1
+    try {
+        $regPath = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings'
+        $val = Get-ItemProperty -Path $regPath -ErrorAction SilentlyContinue
+        if (-not $val) { return $false }
+        if ($val.ProxyEnable -ne 1) { return $false }
+        if ($val.ProxyServer -like '127.0.0.1*') { return $true }
+        return $false
+    } catch {
+        return $false
+    }
+}
+
+function Reconcile-InternetBlock {
+    # Al iniciar el script, lee el estado real del proxy en registry y lo
+    # sincroniza con el estado deseado segun Supabase. Cubre el caso 'alumno
+    # cerro el script con bloqueo activo y reabre despues de que profe
+    # desbloqueo'.
+    try {
+        $url = "$($script:supabaseUrl)/rest/v1/control?id=eq.1&select=internet_block"
+        $resp = Invoke-RestMethod -Uri $url -Headers (Get-SupabaseHeaders) `
+                                  -TimeoutSec 5 -ErrorAction Stop
+        if (-not $resp -or $resp.Count -eq 0) { return }
+        $shouldBlock = ($resp[0].internet_block -eq $true)
+        $isBlocked   = Test-ProxyIsBlocked
+
+        if ($shouldBlock -and -not $isBlocked) {
+            Log '→ Reconciliando: profesor dice BLOQUEAR pero proxy esta libre.' 'Yellow'
+            Block-InternetUserMode
+            $script:internetBlocked = $true
+        } elseif (-not $shouldBlock -and $isBlocked) {
+            Log '→ Reconciliando: profesor dice LIBRE pero proxy esta bloqueado. Desbloqueando.' 'Yellow'
+            Unblock-InternetUserMode
+            $script:internetBlocked = $false
+        } else {
+            $script:internetBlocked = $isBlocked
+        }
+    } catch {
+        # Sin internet o problema con Supabase: si el proxy esta bloqueado y no
+        # podemos consultar al profe, desbloquear por seguridad. Asi el alumno
+        # no queda atrapado sin internet por un script que no puede consultar
+        # el backend.
+        if (Test-ProxyIsBlocked) {
+            Log '⚠ Sin conexion a Supabase pero proxy bloqueado. Desbloqueando por seguridad.' 'Yellow'
+            Unblock-InternetUserMode
+            $script:internetBlocked = $false
+        }
+    }
+}
+
 function Release-CheatLockdown {
     <#
     Solo se llama tras password correcto del profesor.
@@ -2859,6 +2910,9 @@ if ($savedSection -and $cmbSeccion.Items.Contains($savedSection)) {
 Update-SessionPanel
 Update-ButtonStates
 Update-AssignmentsBanner
+
+# Reconciliar estado de internet (cubre caso 'alumno cerro con bloqueo, profe desbloqueo, alumno reabre')
+Reconcile-InternetBlock
 
 # Iniciar polling del config remoto del profesor (cada 30s)
 $adminTimer = New-Object System.Windows.Forms.Timer
