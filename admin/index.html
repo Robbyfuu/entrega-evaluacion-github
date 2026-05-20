@@ -162,11 +162,11 @@
         Los alumnos los ven en su script y los aceptan con un click.
       </p>
       <div class="row-flex">
-        <div class="field" style="flex:0 0 180px;">
+        <div class="field" style="flex:0 0 160px;">
           <label for="asgTitle">Título</label>
           <input type="text" id="asgTitle" placeholder="Evaluación 1" />
         </div>
-        <div class="field" style="flex:0 0 120px;">
+        <div class="field" style="flex:0 0 110px;">
           <label for="asgSection">Sección</label>
           <select id="asgSection"
                   style="width:100%;padding:10px 14px;border:1px solid #d2d2d7;border-radius:8px;font-size:14px;">
@@ -175,6 +175,10 @@
             <option value="003D">003D</option>
             <option value="">Todas las secciones</option>
           </select>
+        </div>
+        <div class="field" style="flex:0 0 220px;">
+          <label for="asgOrg">Org GitHub (Classroom)</label>
+          <input type="text" id="asgOrg" placeholder="Fundamentos-de-la-Programacion" />
         </div>
         <div class="field">
           <label for="asgUrl">URL del Classroom assignment</label>
@@ -649,6 +653,7 @@
       const title = $('asgTitle').value.trim();
       const url = $('asgUrl').value.trim();
       const section = $('asgSection').value;
+      const org = $('asgOrg').value.trim();
       if (!title || !url) {
         $('asgMsg').textContent = 'Completa título y URL.';
         $('asgMsg').className = 'err';
@@ -656,13 +661,14 @@
       }
       const { error } = await supabase
         .from('assignments')
-        .insert({ title, classroom_url: url, section, active: true });
+        .insert({ title, classroom_url: url, section, org, active: true });
       if (error) {
         $('asgMsg').textContent = 'Error: ' + error.message;
         $('asgMsg').className = 'err';
       } else {
         $('asgTitle').value = '';
         $('asgUrl').value = '';
+        $('asgOrg').value = '';
         $('asgMsg').textContent = 'Tarea agregada.';
         $('asgMsg').className = 'ok';
         loadAssignments();

@@ -471,6 +471,49 @@ function Set-StudentSection {
     } catch {}
 }
 
+function Find-AssignmentRepoDirect {
+    <#
+    Fallback: si /user/repos no lista el repo del alumno, probar accesso
+    directo via /repos/{org}/{slug-title}-{username}. Util cuando el token
+    del alumno no tiene scope/cache para listar repos de la org.
+
+    Devuelve array de hashtables {full_name, name, private, owner} para los
+    repos que existen.
+    #>
+    param(
+        [Parameter(Mandatory)][object[]]$Assignments,
+        [Parameter(Mandatory)][string]$GhUser
+    )
+
+    $found = @()
+    foreach ($a in $Assignments) {
+        $org = if ($a.org) { $a.org.Trim() } else { '' }
+        if (-not $org) { continue }
+
+        # Slug del titulo: "Evaluacion 3" -> "evaluacion-3"
+        $slug = $a.title.ToLower().Trim() -replace '\s+', '-' -replace '[^a-z0-9-]', ''
+        $repoName = "$slug-$($GhUser.ToLower())"
+        $fullPath = "/repos/$org/$repoName"
+        Log "  [debug] Probando acceso directo: $fullPath"
+
+        $resp = gh api $fullPath 2>$null
+        if ($LASTEXITCODE -eq 0 -and $resp) {
+            try {
+                $repo = $resp | ConvertFrom-Json
+                $found += @{
+                    full_name = $repo.full_name
+                    name      = $repo.name
+                    private   = $repo.private
+                    owner     = $repo.owner.login
+                    isOrg     = $true
+                }
+                Log "  ✓ Repo encontrado directamente: $($repo.full_name)" 'Green'
+            } catch {}
+        }
+    }
+    return $found
+}
+
 function Get-PendingRepoInvitations {
     <#
     Lista invitaciones pendientes a repos (caso clasico: Classroom invita al
@@ -2091,7 +2134,10 @@ function Load-UserRepos {
         # profesor). NO usamos type=all porque sobreescribe affiliation.
         # NO usamos --paginate porque puede generar JSON invalido (multiples
         # arrays concatenados). Max 100 repos es suficiente para alumnos.
-        $url = '/user/repos?per_page=100&sort=updated&affiliation=owner%2Ccollaborator%2Corganization_member'
+        # Sin restrictivo de affiliation: GitHub retorna todos los repos accesibles
+        # por default (owner + collaborator + org member). Mas permisivo que
+        # especificar affiliation explicito.
+        $url = '/user/repos?per_page=100&sort=updated'
         $reposJson = gh api $url 2>&1
         if ($LASTEXITCODE -ne 0) {
             Log '✗ Error al listar repositorios.' 'Red'
@@ -2142,15 +2188,14 @@ function Load-UserRepos {
         Set-Status "Repos disponibles: $count"
 
         # Si el alumno no tiene repos:
-        # 1) Chequear si tiene invitaciones de collaborator pendientes (caso comun
-        #    cuando Classroom invita pero el alumno no acepto en notifications).
-        # 2) Si no hay invitaciones, chequear si hay assignments para aceptar.
+        # 1) Chequear invitaciones pendientes (Classroom invita pero alumno no acepto)
+        # 2) Probar acceso directo a repos esperados (fallback si /user/repos no lista)
+        # 3) Si no hay nada, mostrar dialog 'Aceptar tarea' de Classroom
         if ($count -eq 0) {
             $pendingInvites = @(Get-PendingRepoInvitations)
             if ($pendingInvites.Count -gt 0) {
                 Log "⚠ Tienes $($pendingInvites.Count) invitacion(es) pendiente(s) a repos." 'Yellow'
                 if (Accept-PendingInvitations -Invitations $pendingInvites) {
-                    # Recargar lista despues de aceptar
                     Start-Sleep -Seconds 2
                     Load-UserRepos
                     return
@@ -2158,6 +2203,23 @@ function Load-UserRepos {
             }
 
             $assignments = @(Get-ClassroomAssignments)
+
+            # FALLBACK: probar acceso directo a /repos/{org}/{slug}-{username}
+            # Cubre el caso 'alumno ya tiene el repo pero /user/repos no lo lista'
+            if ($assignments.Count -gt 0) {
+                Log '→ Probando acceso directo a repos esperados...' 'Yellow'
+                $directRepos = @(Find-AssignmentRepoDirect -Assignments $assignments -GhUser $ghUser)
+                if ($directRepos.Count -gt 0) {
+                    foreach ($r in $directRepos) {
+                        $vis = if ($r.private) { '[Priv]' } else { '[Pub]' }
+                        [void]$cmbReposExistentes.Items.Add("$vis $($r.full_name)")
+                    }
+                    Log "✓ $($directRepos.Count) repo(s) encontrado(s) via acceso directo." 'Green'
+                    Set-Status "Repos disponibles: $($directRepos.Count)"
+                    return
+                }
+            }
+
             if ($assignments.Count -gt 0) {
                 Log "⚠ Tienes $($assignments.Count) tarea(s) sin aceptar de Classroom." 'Yellow'
                 Show-MustAcceptAssignmentDialog -Assignments $assignments
