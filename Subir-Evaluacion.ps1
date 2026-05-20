@@ -1155,8 +1155,12 @@ function Invoke-CloneRepo {
         }
         Log "→ La carpeta ya existe en: $targetPath (no se reclona)"
     } else {
-        Log "→ Clonando $repoUrl en $targetPath..."
-        $cloneOutput = git clone $repoUrl $targetPath 2>&1
+        # Usar 'gh repo clone' en lugar de 'git clone' para que use el token
+        # autenticado de gh CLI. Sin esto, repos privados fallan con
+        # 'Repository not found' porque git clone no envia auth.
+        $fullName = "$repoOwner/$repoSimpleName"
+        Log "→ Clonando $fullName en $targetPath..."
+        $cloneOutput = gh repo clone $fullName $targetPath 2>&1
         $cloneOutput | ForEach-Object { Log "  $_" }
         if ($LASTEXITCODE -ne 0 -or -not (Test-Path $targetPath)) {
             Log '✗ Falló el clone.' 'Red'
@@ -1517,6 +1521,10 @@ function Save-GhToken {
         Log '→ Estrategia A: gh auth login --with-token --insecure-storage'
         $okA = Save-GhTokenViaProcess -Token $Token -GhPath $ghCmd.Source
         if ($okA) {
+            # Configurar git credential helper para usar gh (sino git push falla
+            # en repos privados con 'Repository not found')
+            $null = gh auth setup-git --hostname github.com 2>&1
+            if ($LASTEXITCODE -eq 0) { Log '  ✓ git configurado para usar gh.' }
             Report-StudentActivity -Action 'login'
             return $true
         }
@@ -1531,6 +1539,7 @@ function Save-GhToken {
         $statusOutput = gh auth status --hostname github.com 2>&1
         if ($LASTEXITCODE -eq 0) {
             Log '✓ Token guardado en hosts.yml correctamente.' 'Green'
+            $null = gh auth setup-git --hostname github.com 2>&1
             Report-StudentActivity -Action 'login'
             return $true
         }
@@ -1545,6 +1554,7 @@ function Save-GhToken {
             $null = gh auth status --hostname github.com 2>&1
             if ($LASTEXITCODE -eq 0) {
                 Log '✓ Token guardado en GH_TOKEN del usuario.' 'Green'
+                $null = gh auth setup-git --hostname github.com 2>&1
                 Report-StudentActivity -Action 'login'
                 return $true
             }
