@@ -334,7 +334,7 @@ function Show-AssignmentsDialog {
     el URL del assignment en el navegador del alumno. Despues de aceptar en
     GitHub, el alumno vuelve al script y usa modo "Repo existente" para clonar.
     #>
-    $assignments = Get-ClassroomAssignments
+    $assignments = @(Get-ClassroomAssignments)
     if ($assignments.Count -eq 0) {
         [System.Windows.Forms.MessageBox]::Show(
             'No hay tareas de Classroom activas en este momento.',
@@ -430,7 +430,7 @@ function Show-AssignmentsDialog {
 
 function Update-AssignmentsBanner {
     if (-not $lnkAssignments) { return }
-    $assignments = Get-ClassroomAssignments
+    $assignments = @(Get-ClassroomAssignments)
     if ($assignments.Count -gt 0) {
         $lnkAssignments.Text = "📚 Tienes $($assignments.Count) tarea(s) de Classroom — Click para aceptarlas"
         $lnkAssignments.Visible = $true
@@ -1968,7 +1968,7 @@ function Load-UserRepos {
         # Si el alumno no tiene repos PERO hay assignments activos para su seccion,
         # significa que no acepto la tarea todavia. Forzar dialog para aceptar.
         if ($count -eq 0) {
-            $assignments = Get-ClassroomAssignments
+            $assignments = @(Get-ClassroomAssignments)
             if ($assignments.Count -gt 0) {
                 Log "⚠ Tienes $($assignments.Count) tarea(s) sin aceptar de Classroom." 'Yellow'
                 Show-MustAcceptAssignmentDialog -Assignments $assignments
