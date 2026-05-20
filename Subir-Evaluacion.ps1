@@ -465,6 +465,67 @@ function Set-StudentSection {
     } catch {}
 }
 
+function Get-PendingRepoInvitations {
+    <#
+    Lista invitaciones pendientes a repos (caso clasico: Classroom invita al
+    alumno como collaborator pero la invitacion queda en
+    github.com/notifications sin aceptar).
+    GET /user/repository_invitations
+    #>
+    try {
+        $resp = gh api '/user/repository_invitations' 2>&1
+        if ($LASTEXITCODE -ne 0) { return @() }
+        if (-not $resp) { return @() }
+        $invites = $resp | ConvertFrom-Json
+        return @($invites)
+    } catch {
+        return @()
+    }
+}
+
+function Accept-PendingInvitations {
+    <#
+    Muestra dialog con invitaciones pendientes. Si el alumno confirma, acepta
+    cada una via PATCH /user/repository_invitations/{id}.
+    Devuelve $true si se acepto al menos una.
+    #>
+    param([Parameter(Mandatory)][object[]]$Invitations)
+
+    $list = ($Invitations | ForEach-Object {
+        "  - $($_.repository.full_name) (invitado por @$($_.inviter.login))"
+    }) -join "`n"
+
+    $r = [System.Windows.Forms.MessageBox]::Show(
+        "Tienes $($Invitations.Count) invitacion(es) pendiente(s) de GitHub:`n`n$list`n`n" +
+        "Estas son las invitaciones que te envio el profesor desde GitHub Classroom.`n`n" +
+        "¿Aceptar todas ahora?",
+        'Invitaciones pendientes', 'YesNo', 'Question')
+    if ($r -ne 'Yes') {
+        Log '  Aceptacion de invitaciones cancelada.' 'Yellow'
+        return $false
+    }
+
+    $accepted = 0
+    foreach ($inv in $Invitations) {
+        Log "→ Aceptando invitacion a $($inv.repository.full_name)..."
+        $null = gh api -X PATCH "/user/repository_invitations/$($inv.id)" 2>&1
+        if ($LASTEXITCODE -eq 0) {
+            Log "  ✓ Aceptada." 'Green'
+            $accepted++
+        } else {
+            Log "  ✗ Fallo." 'Red'
+        }
+    }
+
+    if ($accepted -gt 0) {
+        [System.Windows.Forms.MessageBox]::Show(
+            "Se aceptaron $accepted invitacion(es).`n`nAhora tus repositorios deberian aparecer en la lista.",
+            'Listo', 'OK', 'Information') | Out-Null
+        return $true
+    }
+    return $false
+}
+
 function Get-ClassroomAssignments {
     <#
     Lista las tareas activas de Classroom que aplican a la seccion del alumno.
@@ -1965,9 +2026,22 @@ function Load-UserRepos {
         }
         Set-Status "Repos disponibles: $count"
 
-        # Si el alumno no tiene repos PERO hay assignments activos para su seccion,
-        # significa que no acepto la tarea todavia. Forzar dialog para aceptar.
+        # Si el alumno no tiene repos:
+        # 1) Chequear si tiene invitaciones de collaborator pendientes (caso comun
+        #    cuando Classroom invita pero el alumno no acepto en notifications).
+        # 2) Si no hay invitaciones, chequear si hay assignments para aceptar.
         if ($count -eq 0) {
+            $pendingInvites = @(Get-PendingRepoInvitations)
+            if ($pendingInvites.Count -gt 0) {
+                Log "⚠ Tienes $($pendingInvites.Count) invitacion(es) pendiente(s) a repos." 'Yellow'
+                if (Accept-PendingInvitations -Invitations $pendingInvites) {
+                    # Recargar lista despues de aceptar
+                    Start-Sleep -Seconds 2
+                    Load-UserRepos
+                    return
+                }
+            }
+
             $assignments = @(Get-ClassroomAssignments)
             if ($assignments.Count -gt 0) {
                 Log "⚠ Tienes $($assignments.Count) tarea(s) sin aceptar de Classroom." 'Yellow'
