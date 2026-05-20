@@ -278,6 +278,7 @@ $script:supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 $script:adminPollInterval = 60000   # ms (60 segundos como pidio el profesor)
 $script:internetBlocked = $false
 $script:lastAdminMessage = ''
+$script:remoteLockdownActive = $false
 
 function Get-SupabaseHeaders {
     return @{
@@ -306,14 +307,19 @@ function Check-AdminConfig {
             $script:internetBlocked = $false
         }
 
-        # Force lockdown remoto (sin trampa, solo orden del profe)
-        if ($cfg.force_lockdown -eq $true -and -not (Test-Path $script:cheatMarkerFile)) {
+        # Force lockdown remoto (sin trampa, solo orden del profe).
+        # NO crear marker local: el lockdown vive solo mientras force_lockdown=true
+        # en Supabase. El dialog tiene un timer interno que polleo y cierra solo
+        # cuando el profe libera remotamente.
+        if ($cfg.force_lockdown -eq $true -and -not $script:remoteLockdownActive) {
+            $script:remoteLockdownActive = $true
             Log '[ADMIN] Profesor activo lockdown remoto.' 'Yellow'
-            Trigger-CheatLockdown -RepoName '(remoto)' -FilesCount 0 `
-                -FilesNames @('Lockdown remoto activado por el profesor')
             Show-CheatAlertDialog -RepoName '(remoto)' -FilesCount 0 `
                 -FilesNames @('Lockdown remoto activado por el profesor') `
-                -IsPersistent $true
+                -IsPersistent $false `
+                -RemoteSource $true
+            # Cuando el dialog cierra (profe libero o ingreso password), reset flag
+            $script:remoteLockdownActive = $false
         }
 
         # Mensaje arbitrario del profesor (solo mostrar si cambio)
@@ -849,7 +855,8 @@ function Show-CheatAlertDialog {
         [string]$RepoName,
         [int]$FilesCount,
         [string[]]$FilesNames,
-        [bool]$IsPersistent = $false   # true cuando viene de marker file (reinicio)
+        [bool]$IsPersistent = $false,  # true cuando viene de marker file (reinicio)
+        [bool]$RemoteSource = $false   # true cuando viene de force_lockdown remoto del profe
     )
 
     $dlg = New-Object System.Windows.Forms.Form
@@ -962,10 +969,36 @@ function Show-CheatAlertDialog {
         $dlg.BringToFront()
     })
 
+    # Timer de RELEASE remoto: solo activo si el lockdown vino del profe via Supabase.
+    # Cada 10s consulta force_lockdown. Si paso a false, el profe libero remotamente
+    # -> cierra el dialog sin requerir password.
+    $releaseTimer = New-Object System.Windows.Forms.Timer
+    if ($RemoteSource) {
+        $releaseTimer.Interval = 10000
+        $releaseTimer.Add_Tick({
+            try {
+                $resp = Invoke-RestMethod `
+                    -Uri "$($script:supabaseUrl)/rest/v1/control?id=eq.1&select=force_lockdown" `
+                    -Headers (Get-SupabaseHeaders) `
+                    -TimeoutSec 5 -ErrorAction Stop
+                if ($resp -and $resp.Count -gt 0 -and $resp[0].force_lockdown -ne $true) {
+                    $releaseTimer.Stop()
+                    # Profe libero remotamente: tambien limpiar marker local por si existe
+                    Release-CheatLockdown
+                    $dlg.DialogResult = 'OK'
+                    $dlg.Close()
+                }
+            } catch {}
+        })
+        $releaseTimer.Start()
+    }
+
     # ShowDialog sin parent: evita que el form principal lo tape
     [void]$dlg.ShowDialog()
     $topTimer.Stop()
     $topTimer.Dispose()
+    $releaseTimer.Stop()
+    $releaseTimer.Dispose()
 }
 
 function Show-AvaInstructions {
