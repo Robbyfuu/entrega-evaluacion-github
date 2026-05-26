@@ -1291,6 +1291,11 @@ function Invoke-CloneRepo {
 
     Set-Status "Clonando $repoSimpleName..."
 
+    # Flag: true solo si hicimos clone fresco. Si la carpeta ya existia con
+    # el repo correcto, NO corremos anti-trampa (el alumno puede haber editado
+    # archivos legitimos como parte de su trabajo).
+    $freshClone = $false
+
     if (Test-Path $targetPath) {
         # Verificar que es el mismo repo
         $check = Test-GitOwnership -Folder $targetPath -CurrentGhUser $ghUser
@@ -1301,7 +1306,7 @@ function Invoke-CloneRepo {
                 'Carpeta en conflicto', 'OK', 'Error') | Out-Null
             return $false
         }
-        Log "→ La carpeta ya existe en: $targetPath (no se reclona)"
+        Log "→ La carpeta ya existe en: $targetPath (no se reclona, anti-trampa NO se ejecuta)" 'Cyan'
     } else {
         # Usar 'gh repo clone' en lugar de 'git clone' para que use el token
         # autenticado de gh CLI. Sin esto, repos privados fallan con
@@ -1315,10 +1320,31 @@ function Invoke-CloneRepo {
             return $false
         }
         Log "✓ Repo clonado en: $targetPath" 'Green'
+        $freshClone = $true
     }
 
-    # ANTI-TRAMPA: validar que el repo este limpio (sin archivos pre-existentes)
-    Log '→ Inspeccionando contenido del repo...'
+    # ANTI-TRAMPA solo en clone fresco: si la carpeta ya existia (reutilizada),
+    # el alumno probablemente tiene archivos legitimos de su trabajo previo.
+    # Validar solo cuando el clone es nuevo y el repo viene del servidor.
+    if (-not $freshClone) {
+        Log '  Skip anti-trampa (carpeta reutilizada, no es clone nuevo).' 'Cyan'
+        $txtCarpeta.Text = $targetPath
+        Update-ButtonStates
+        Report-StudentActivity -Action 'clone' -RepoName $RepoName -RepoUrl $repoUrl
+        Open-PythonIDLE -Folder $targetPath | Out-Null
+        [System.Windows.Forms.MessageBox]::Show(
+            "Carpeta existente reutilizada:`n`n$targetPath`n`n" +
+            "Se abrió IDLE de Python en esa carpeta.`n`n" +
+            "Cuando termines de editar:`n" +
+            "1. Guarda los cambios en IDLE (Ctrl+S)`n" +
+            "2. Vuelve a esta ventana`n" +
+            "3. Haz clic en 'Subir Archivos'",
+            'Repositorio listo', 'OK', 'Information') | Out-Null
+        Set-Status "Listo. Edita en IDLE y luego Subir Archivos."
+        return $true
+    }
+
+    Log '→ Inspeccionando contenido del repo (anti-trampa, clone nuevo)...'
     $cleanCheck = Test-RepoIsClean -Folder $targetPath
     if (-not $cleanCheck.IsClean) {
         Log "✗ TRAMPA DETECTADA: el repo contiene $($cleanCheck.FilesCount) archivo(s) no permitido(s)." 'Red'
