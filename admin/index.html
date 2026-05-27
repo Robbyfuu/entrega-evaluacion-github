@@ -153,6 +153,28 @@
       <div id="ctlMsg" class="ok"></div>
     </div>
 
+    <!-- PCs conectados -->
+    <div class="card">
+      <h2>PCs conectados ahora
+        <span style="font-size:12px;color:#8e8e93;">(heartbeat &lt; 90s)</span>
+        <span id="onlineCount" class="pill pill-live" style="margin-left:8px;">0</span>
+      </h2>
+      <table>
+        <thead>
+          <tr>
+            <th>PC</th>
+            <th>Usuario GitHub</th>
+            <th>Sección</th>
+            <th>Última señal</th>
+          </tr>
+        </thead>
+        <tbody id="onlineBody">
+          <tr><td colspan="4" style="text-align:center;color:#8e8e93;">Cargando...</td></tr>
+        </tbody>
+      </table>
+      <button class="btn-secondary" style="margin-top:16px;" onclick="loadOnline()">Refrescar</button>
+    </div>
+
     <!-- Tareas (GitHub Classroom) -->
     <div class="card">
       <h2>Tareas de GitHub Classroom <span style="font-size:12px;color:#8e8e93;">(visibles para los alumnos en su script)</span></h2>
@@ -348,9 +370,10 @@
       loadEvents();
       loadActivity();
       loadAssignments();
+      loadOnline();
       if (pollTimer) clearInterval(pollTimer);
       pollTimer = setInterval(() => {
-        loadState(); loadEvents(); loadActivity();
+        loadState(); loadEvents(); loadActivity(); loadOnline();
       }, 30000);
       $('livePill').classList.remove('hidden');
     }
@@ -684,6 +707,77 @@
       if (!confirm('¿Eliminar esta tarea?')) return;
       await supabase.from('assignments').delete().eq('id', id);
       loadAssignments();
+    };
+
+    // ===== Online clients (heartbeat) =====
+    window.loadOnline = async function() {
+      const cutoff = new Date(Date.now() - 90000).toISOString();
+      const { data, error } = await supabase
+        .from('online_clients')
+        .select('*')
+        .gte('last_seen', cutoff)
+        .order('last_seen', { ascending: false });
+      const tbody = $('onlineBody');
+      while (tbody.firstChild) tbody.removeChild(tbody.firstChild);
+
+      if (error) {
+        const tr = makeEl('tr');
+        const td = makeEl('td', { text: 'Error: ' + error.message, className: 'err' });
+        td.colSpan = 4;
+        tr.appendChild(td);
+        tbody.appendChild(tr);
+        return;
+      }
+      $('onlineCount').textContent = (data?.length || 0);
+      if (!data || data.length === 0) {
+        const tr = makeEl('tr');
+        const td = makeEl('td', {
+          text: 'Sin PCs conectados.',
+          style: { textAlign: 'center', color: '#8e8e93' }
+        });
+        td.colSpan = 4;
+        tr.appendChild(td);
+        tbody.appendChild(tr);
+        return;
+      }
+
+      const now = Date.now();
+      data.forEach(c => {
+        const tr = makeEl('tr');
+        tr.appendChild(makeEl('td', { text: c.pc_name || '-' }));
+
+        const tdUser = makeEl('td');
+        if (c.github_username) {
+          tdUser.appendChild(makeEl('span', {
+            text: '@' + c.github_username,
+            className: 'badge'
+          }));
+          tdUser.lastChild.style.background = '#0071e3';
+          tdUser.lastChild.style.color = 'white';
+        } else {
+          tdUser.textContent = '(sin login)';
+        }
+        tr.appendChild(tdUser);
+
+        const tdSec = makeEl('td');
+        if (c.section) {
+          const sb = makeEl('span', { text: c.section, className: 'badge' });
+          sb.style.background = '#673ab7';
+          sb.style.color = 'white';
+          tdSec.appendChild(sb);
+        } else {
+          tdSec.textContent = '-';
+        }
+        tr.appendChild(tdSec);
+
+        const seenAgoSec = Math.floor((now - new Date(c.last_seen).getTime()) / 1000);
+        const agoText = seenAgoSec < 60
+          ? `hace ${seenAgoSec}s`
+          : `hace ${Math.floor(seenAgoSec / 60)}min`;
+        tr.appendChild(makeEl('td', { text: `${fmt(c.last_seen)} (${agoText})` }));
+
+        tbody.appendChild(tr);
+      });
     };
 
     // ===== Init =====

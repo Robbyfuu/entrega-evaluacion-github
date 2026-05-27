@@ -567,9 +567,24 @@ function Accept-PendingInvitations {
     }
 
     if ($accepted -gt 0) {
+        # Construir URLs de los repos aceptados y copiar al portapapeles
+        $urls = ($Invitations | ForEach-Object {
+            "https://github.com/$($_.repository.full_name)"
+        }) -join "`n"
+
+        try {
+            [System.Windows.Forms.Clipboard]::SetText($urls)
+        } catch {}
+
         [System.Windows.Forms.MessageBox]::Show(
-            "Se aceptaron $accepted invitacion(es).`n`nAhora tus repositorios deberian aparecer en la lista.",
-            'Listo', 'OK', 'Information') | Out-Null
+            "Se aceptaron $accepted invitacion(es).`n`n" +
+            "URL(s) del repo COPIADA(S) al portapapeles:`n`n$urls`n`n" +
+            "PROXIMO PASO:`n" +
+            "1. Abre el AVA (Ambiente Virtual de Aprendizaje).`n" +
+            "2. Ve a la Evaluacion Parcial correspondiente.`n" +
+            "3. En el campo de entrega, pega el enlace (Ctrl+V).`n" +
+            "4. Envia la entrega.",
+            'Listo - URL en portapapeles', 'OK', 'Information') | Out-Null
         return $true
     }
     return $false
@@ -613,6 +628,36 @@ function Get-ClassroomAssignments {
     } catch {
         Log "  [debug] excepcion en Get-ClassroomAssignments: $($_.Exception.Message)" 'Red'
         return @()
+    }
+}
+
+function Send-Heartbeat {
+    <#
+    Reporta presencia del cliente al backend cada 30s. Profe ve en el panel
+    "PCs conectados" en tiempo real con pc_name + github_username + section.
+    UPSERT via PostgREST con Prefer: resolution=merge-duplicates.
+    #>
+    try {
+        $userInfo = gh api user 2>$null | ConvertFrom-Json
+        if (-not $userInfo -or -not $userInfo.login) { return }
+
+        $payload = @{
+            pc_name         = $env:COMPUTERNAME
+            github_username = $userInfo.login
+            github_email    = $userInfo.email
+            section         = (Get-StudentSection)
+            last_seen       = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ss.fffZ')
+        } | ConvertTo-Json -Compress
+
+        $headers = Get-SupabaseHeaders
+        $headers['Prefer'] = 'resolution=merge-duplicates'
+
+        Invoke-RestMethod `
+            -Uri "$($script:supabaseUrl)/rest/v1/online_clients" `
+            -Method Post -Headers $headers -Body $payload `
+            -TimeoutSec 5 -ErrorAction Stop | Out-Null
+    } catch {
+        # Silencioso
     }
 }
 
@@ -3065,13 +3110,14 @@ Update-AssignmentsBanner
 # Reconciliar estado de internet (cubre caso 'alumno cerro con bloqueo, profe desbloqueo, alumno reabre')
 Reconcile-InternetBlock
 
-# Iniciar polling del config remoto del profesor (cada 30s)
+# Iniciar polling del config remoto del profesor + heartbeat
 $adminTimer = New-Object System.Windows.Forms.Timer
 $adminTimer.Interval = $script:adminPollInterval
-$adminTimer.Add_Tick({ Check-AdminConfig; Update-AssignmentsBanner })
+$adminTimer.Add_Tick({ Check-AdminConfig; Update-AssignmentsBanner; Send-Heartbeat })
 $adminTimer.Start()
-# Primer check inmediato
+# Primer check + heartbeat inmediatos
 Check-AdminConfig
+Send-Heartbeat
 
 [void]$form.ShowDialog()
 $adminTimer.Stop()
