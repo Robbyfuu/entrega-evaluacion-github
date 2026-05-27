@@ -78,7 +78,7 @@
     tr:hover { background: #fafafa; }
     .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; }
     .badge-cheat { background: #ffebee; color: #c62828; }
-    .hidden { display: none; }
+    .hidden { display: none !important; }
     .row-flex { display: flex; gap: 12px; align-items: end; margin-bottom: 12px; }
     .row-flex > .field { flex: 1; margin-bottom: 0; }
     .pill { display:inline-block; padding: 4px 12px; border-radius: 999px; font-size: 12px; font-weight: 600; margin-left: 8px; }
@@ -207,11 +207,11 @@
     </div>
 
     <!-- Modal procesos de un PC -->
-    <div id="processModal" class="hidden" style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);z-index:1000;display:flex;align-items:center;justify-content:center;padding:20px;">
+    <div id="processModal" class="hidden" onclick="if(event.target===this)closeProcessModal()" style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);z-index:1000;display:flex;align-items:center;justify-content:center;padding:20px;">
       <div style="background:white;border-radius:12px;padding:24px;max-width:720px;width:100%;max-height:80vh;overflow-y:auto;">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
           <h2 style="margin:0;" id="modalTitle">Programas abiertos</h2>
-          <button class="btn-secondary" onclick="closeProcessModal()">Cerrar</button>
+          <button class="btn-secondary" onclick="closeProcessModal()">Cerrar ✕</button>
         </div>
         <table>
           <thead>
@@ -912,6 +912,13 @@
     window.closeProcessModal = function() {
       $('processModal').classList.add('hidden');
     };
+
+    // Cerrar con tecla Esc
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && !$('processModal').classList.contains('hidden')) {
+        closeProcessModal();
+      }
+    });
 
     window.loadProcessAlerts = async function() {
       const { data, error } = await supabase
