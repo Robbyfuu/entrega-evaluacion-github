@@ -159,6 +159,9 @@
         <span style="font-size:12px;color:#8e8e93;">(heartbeat &lt; 90s)</span>
         <span id="onlineCount" class="pill pill-live" style="margin-left:8px;">0</span>
       </h2>
+      <p style="color:#6e6e73;font-size:12px;margin-bottom:12px;">
+        Click en una fila para ver los programas abiertos en ese PC.
+      </p>
       <table>
         <thead>
           <tr>
@@ -166,13 +169,60 @@
             <th>Usuario GitHub</th>
             <th>Sección</th>
             <th>Última señal</th>
+            <th>Apps abiertas</th>
           </tr>
         </thead>
         <tbody id="onlineBody">
-          <tr><td colspan="4" style="text-align:center;color:#8e8e93;">Cargando...</td></tr>
+          <tr><td colspan="5" style="text-align:center;color:#8e8e93;">Cargando...</td></tr>
         </tbody>
       </table>
       <button class="btn-secondary" style="margin-top:16px;" onclick="loadOnline()">Refrescar</button>
+    </div>
+
+    <!-- Alertas de procesos -->
+    <div class="card">
+      <h2>⚠ Alertas de procesos sospechosos
+        <span style="font-size:12px;color:#8e8e93;">(últimas 50)</span>
+        <span id="alertCount" class="pill" style="background:#ffebee;color:#c62828;margin-left:8px;">0</span>
+      </h2>
+      <p style="color:#6e6e73;font-size:12px;margin-bottom:12px;">
+        Se dispara cuando un alumno abre browsers, mensajeros, IDEs alternos, terminales o software de acceso remoto durante la sesión.
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>Fecha</th>
+            <th>Usuario</th>
+            <th>PC</th>
+            <th>Sección</th>
+            <th>Proceso</th>
+            <th>Título ventana</th>
+          </tr>
+        </thead>
+        <tbody id="alertsBody">
+          <tr><td colspan="6" style="text-align:center;color:#8e8e93;">Cargando...</td></tr>
+        </tbody>
+      </table>
+      <button class="btn-secondary" style="margin-top:16px;" onclick="loadProcessAlerts()">Refrescar</button>
+    </div>
+
+    <!-- Modal procesos de un PC -->
+    <div id="processModal" class="hidden" style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);z-index:1000;display:flex;align-items:center;justify-content:center;padding:20px;">
+      <div style="background:white;border-radius:12px;padding:24px;max-width:720px;width:100%;max-height:80vh;overflow-y:auto;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+          <h2 style="margin:0;" id="modalTitle">Programas abiertos</h2>
+          <button class="btn-secondary" onclick="closeProcessModal()">Cerrar</button>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>Proceso</th>
+              <th>Título de ventana</th>
+            </tr>
+          </thead>
+          <tbody id="modalProcessBody"></tbody>
+        </table>
+      </div>
     </div>
 
     <!-- Tareas (GitHub Classroom) -->
@@ -371,10 +421,11 @@
       loadActivity();
       loadAssignments();
       loadOnline();
+      loadProcessAlerts();
       if (pollTimer) clearInterval(pollTimer);
       pollTimer = setInterval(() => {
-        loadState(); loadEvents(); loadActivity(); loadOnline();
-      }, 30000);
+        loadState(); loadEvents(); loadActivity(); loadOnline(); loadProcessAlerts();
+      }, 20000);
       $('livePill').classList.remove('hidden');
     }
 
@@ -742,8 +793,21 @@
       }
 
       const now = Date.now();
+      const SUSP = new Set([
+        'chrome','msedge','firefox','opera','brave','iexplore','vivaldi','tor',
+        'whatsapp','discord','telegram','slack','teams','skype',
+        'notion','obsidian','evernote','onenote','winword','excel',
+        'code','pycharm','pycharm64','sublime_text','notepad','notepad++','devenv',
+        'cmd','powershell','powershell_ise','wt',
+        'anydesk','teamviewer','rustdesk','msrdc',
+        'chatgpt','claude','copilot'
+      ]);
+
       data.forEach(c => {
         const tr = makeEl('tr');
+        tr.style.cursor = 'pointer';
+        tr.onclick = () => openProcessModal(c);
+
         tr.appendChild(makeEl('td', { text: c.pc_name || '-' }));
 
         const tdUser = makeEl('td');
@@ -776,6 +840,135 @@
           : `hace ${Math.floor(seenAgoSec / 60)}min`;
         tr.appendChild(makeEl('td', { text: `${fmt(c.last_seen)} (${agoText})` }));
 
+        // Columna apps: contador + flag sospechosos
+        const tdApps = makeEl('td');
+        const procs = Array.isArray(c.processes) ? c.processes : [];
+        const suspCount = procs.filter(p => p.name && SUSP.has(p.name.toLowerCase())).length;
+        tdApps.textContent = `${procs.length}`;
+        if (suspCount > 0) {
+          const badge = makeEl('span', {
+            text: `⚠ ${suspCount} sosp.`,
+            className: 'badge'
+          });
+          badge.style.background = '#c62828';
+          badge.style.color = 'white';
+          badge.style.marginLeft = '8px';
+          tdApps.appendChild(badge);
+        }
+        tr.appendChild(tdApps);
+
+        tbody.appendChild(tr);
+      });
+    };
+
+    window.openProcessModal = function(client) {
+      const SUSP = new Set([
+        'chrome','msedge','firefox','opera','brave','iexplore','vivaldi','tor',
+        'whatsapp','discord','telegram','slack','teams','skype',
+        'notion','obsidian','evernote','onenote','winword','excel',
+        'code','pycharm','pycharm64','sublime_text','notepad','notepad++','devenv',
+        'cmd','powershell','powershell_ise','wt',
+        'anydesk','teamviewer','rustdesk','msrdc',
+        'chatgpt','claude','copilot'
+      ]);
+      $('modalTitle').textContent = `Programas abiertos en ${client.pc_name} (@${client.github_username || '?'})`;
+      const tbody = $('modalProcessBody');
+      while (tbody.firstChild) tbody.removeChild(tbody.firstChild);
+      const procs = Array.isArray(client.processes) ? client.processes : [];
+      if (procs.length === 0) {
+        const tr = makeEl('tr');
+        const td = makeEl('td', {
+          text: 'Sin procesos con ventana visible.',
+          style: { textAlign: 'center', color: '#8e8e93' }
+        });
+        td.colSpan = 2;
+        tr.appendChild(td);
+        tbody.appendChild(tr);
+      } else {
+        procs.forEach(p => {
+          const tr = makeEl('tr');
+          const isSusp = p.name && SUSP.has(p.name.toLowerCase());
+          if (isSusp) {
+            tr.style.background = '#ffebee';
+          }
+
+          const tdName = makeEl('td');
+          if (isSusp) {
+            tdName.appendChild(makeEl('span', { text: '⚠ ' + p.name }));
+            tdName.style.color = '#c62828';
+            tdName.style.fontWeight = '600';
+          } else {
+            tdName.textContent = p.name || '-';
+          }
+          tr.appendChild(tdName);
+
+          tr.appendChild(makeEl('td', { text: p.title || '-' }));
+          tbody.appendChild(tr);
+        });
+      }
+      $('processModal').classList.remove('hidden');
+    };
+
+    window.closeProcessModal = function() {
+      $('processModal').classList.add('hidden');
+    };
+
+    window.loadProcessAlerts = async function() {
+      const { data, error } = await supabase
+        .from('process_alerts')
+        .select('*')
+        .order('detected_at', { ascending: false })
+        .limit(50);
+      const tbody = $('alertsBody');
+      while (tbody.firstChild) tbody.removeChild(tbody.firstChild);
+      if (error) {
+        const tr = makeEl('tr');
+        const td = makeEl('td', { text: 'Error: ' + error.message, className: 'err' });
+        td.colSpan = 6;
+        tr.appendChild(td);
+        tbody.appendChild(tr);
+        return;
+      }
+      $('alertCount').textContent = (data?.length || 0);
+      if (!data || data.length === 0) {
+        const tr = makeEl('tr');
+        const td = makeEl('td', {
+          text: 'Sin alertas.',
+          style: { textAlign: 'center', color: '#8e8e93' }
+        });
+        td.colSpan = 6;
+        tr.appendChild(td);
+        tbody.appendChild(tr);
+        return;
+      }
+      data.forEach(a => {
+        const tr = makeEl('tr');
+        tr.appendChild(makeEl('td', { text: fmt(a.detected_at) }));
+
+        const tdUser = makeEl('td');
+        if (a.github_username) {
+          tdUser.appendChild(makeEl('span', {
+            text: '@' + a.github_username,
+            className: 'badge'
+          }));
+          tdUser.lastChild.style.background = '#0071e3';
+          tdUser.lastChild.style.color = 'white';
+        } else {
+          tdUser.textContent = '-';
+        }
+        tr.appendChild(tdUser);
+
+        tr.appendChild(makeEl('td', { text: a.pc_name || '-' }));
+        tr.appendChild(makeEl('td', { text: a.section || '-' }));
+
+        const tdProc = makeEl('td');
+        const badge = makeEl('span', { text: a.process_name, className: 'badge' });
+        badge.style.background = '#c62828';
+        badge.style.color = 'white';
+        tdProc.appendChild(badge);
+        tr.appendChild(tdProc);
+
+        tr.appendChild(makeEl('td', { text: a.window_title || '-' }));
         tbody.appendChild(tr);
       });
     };

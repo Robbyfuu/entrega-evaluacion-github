@@ -631,15 +631,91 @@ function Get-ClassroomAssignments {
     }
 }
 
+# Procesos considerados sospechosos durante una evaluacion (case-insensitive)
+$script:suspiciousProcesses = @(
+    # Browsers
+    'chrome', 'msedge', 'firefox', 'opera', 'brave', 'iexplore', 'vivaldi', 'tor',
+    # Mensajeria
+    'whatsapp', 'discord', 'telegram', 'slack', 'teams', 'skype',
+    # Notas / docs
+    'notion', 'obsidian', 'evernote', 'onenote', 'winword', 'excel',
+    # IDEs alternos (IDLE/python.exe NO esta porque es lo que usan)
+    'code', 'pycharm', 'pycharm64', 'sublime_text', 'notepad', 'notepad++', 'devenv',
+    # Terminales
+    'cmd', 'powershell', 'powershell_ise', 'wt',
+    # Acceso remoto (alguien remotamente puede estar ayudando)
+    'anydesk', 'teamviewer', 'rustdesk', 'msrdc',
+    # IA
+    'chatgpt', 'claude', 'copilot'
+)
+
+# Cache de procesos vistos previamente para diff
+$script:lastProcessSet = @{}
+
+function Get-OpenWindows {
+    <#
+    Lista procesos con ventana visible (MainWindowTitle no vacio).
+    Devuelve array de hashtables {name, title, pid}.
+    #>
+    try {
+        Get-Process -ErrorAction SilentlyContinue |
+            Where-Object { $_.MainWindowTitle -and $_.MainWindowTitle.Trim() -ne '' } |
+            ForEach-Object {
+                @{
+                    name  = $_.ProcessName
+                    title = $_.MainWindowTitle
+                    pid   = $_.Id
+                }
+            }
+    } catch {
+        return @()
+    }
+}
+
+function Report-ProcessAlert {
+    param([Parameter(Mandatory)][hashtable]$Process)
+    try {
+        $userInfo = gh api user 2>$null | ConvertFrom-Json
+        $payload = @{
+            pc_name         = $env:COMPUTERNAME
+            github_username = if ($userInfo) { $userInfo.login } else { $null }
+            section         = (Get-StudentSection)
+            process_name    = $Process.name
+            window_title    = $Process.title
+        } | ConvertTo-Json -Compress
+        Invoke-RestMethod `
+            -Uri "$($script:supabaseUrl)/rest/v1/process_alerts" `
+            -Method Post -Headers (Get-SupabaseHeaders) -Body $payload `
+            -TimeoutSec 5 -ErrorAction Stop | Out-Null
+    } catch {}
+}
+
 function Send-Heartbeat {
     <#
-    Reporta presencia del cliente al backend cada 30s. Profe ve en el panel
-    "PCs conectados" en tiempo real con pc_name + github_username + section.
+    Reporta presencia + procesos abiertos al backend cada N segundos. Detecta
+    nuevos procesos sospechosos vs ultimo snapshot y dispara alerta.
     UPSERT via PostgREST con Prefer: resolution=merge-duplicates.
     #>
     try {
         $userInfo = gh api user 2>$null | ConvertFrom-Json
         if (-not $userInfo -or -not $userInfo.login) { return }
+
+        $procs = @(Get-OpenWindows)
+
+        # Detectar nuevos procesos sospechosos (no estaban en el snapshot anterior)
+        $currentSet = @{}
+        foreach ($p in $procs) {
+            $key = "$($p.name):$($p.pid)"
+            $currentSet[$key] = $p
+
+            if (-not $script:lastProcessSet.ContainsKey($key)) {
+                # Proceso nuevo: chequear si es sospechoso
+                if ($script:suspiciousProcesses -contains $p.name.ToLower()) {
+                    Report-ProcessAlert -Process $p
+                }
+            }
+        }
+        $script:lastProcessSet = $currentSet
 
         $payload = @{
             pc_name         = $env:COMPUTERNAME
@@ -647,7 +723,8 @@ function Send-Heartbeat {
             github_email    = $userInfo.email
             section         = (Get-StudentSection)
             last_seen       = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ss.fffZ')
-        } | ConvertTo-Json -Compress
+            processes       = $procs
+        } | ConvertTo-Json -Compress -Depth 4
 
         $headers = Get-SupabaseHeaders
         $headers['Prefer'] = 'resolution=merge-duplicates'
