@@ -2738,32 +2738,49 @@ function Invoke-UploadFiles {
 
     # Validar ownership del .git ANTES de tocar nada
     $ownerCheck = Test-GitOwnership -Folder $folder -CurrentGhUser $ghUser
-    switch ($ownerCheck.Status) {
-        'OtherUser' {
-            Log "✗ La carpeta tiene un .git asociado a '@$($ownerCheck.Owner)' (no a @$ghUser)." 'Red'
-            [System.Windows.Forms.MessageBox]::Show(
-                "Esta carpeta esta vinculada a la cuenta de GitHub '@$($ownerCheck.Owner)', pero tu sesion actual es '@$ghUser'.`n`n" +
-                "Por seguridad, no se permite subir desde esta carpeta. Opciones:`n" +
-                "  - Selecciona otra carpeta`n" +
-                "  - Cierra sesion y entra con la cuenta '@$($ownerCheck.Owner)'`n" +
-                "  - Elimina manualmente la subcarpeta .git de:`n    $folder",
-                'Conflicto de cuenta detectado', 'OK', 'Error') | Out-Null
-            return $false
-        }
-        'NotGitHub' {
-            $r = [System.Windows.Forms.MessageBox]::Show(
-                "Esta carpeta tiene un repositorio git apuntando a:`n$($ownerCheck.Url)`n`n" +
-                "No es de GitHub. Si continuas, se eliminara la subcarpeta .git existente y se reinicializara apuntando a tu repo de GitHub.`n`n" +
-                "¿Continuar?",
-                'Repo no-GitHub detectado', 'YesNo', 'Warning')
-            if ($r -ne 'Yes') { return $false }
-            Remove-Item (Join-Path $folder '.git') -Recurse -Force -ErrorAction SilentlyContinue
-            Log '→ Subcarpeta .git eliminada.' 'Yellow'
-        }
-        'SameUser' {
-            # Si el remote ya apunta al repo destino, perfecto. Si no, reinit.
-            $expectedUrl = "https://github.com/$ghUser/$($repo).git"
-            if ($ownerCheck.Url -notlike "*$ghUser/$repo*") {
+
+    # Primero chequear si el remote ya apunta al repo destino esperado.
+    # Si matchea, OK independiente del status (cubre el caso Classroom donde
+    # el owner es la org y no el ghUser).
+    $expectedUrlBase = "github.com/$repoOwner/$repoSimpleName"
+    $remoteMatchesExpected = $ownerCheck.Url -and (
+        ($ownerCheck.Url -like "*$expectedUrlBase.git*") -or
+        ($ownerCheck.Url -like "*$expectedUrlBase") -or
+        ($ownerCheck.Url -like "*$expectedUrlBase/*")
+    )
+
+    if ($remoteMatchesExpected) {
+        Log "→ Remote ya apunta al repo destino ($repoOwner/$repoSimpleName). Reutilizando." 'Green'
+    } else {
+        switch ($ownerCheck.Status) {
+            'OtherUser' {
+                # Solo bloquear si el owner real NO es el esperado (org del repo destino)
+                if ($repoOwner -ieq $ownerCheck.Owner) {
+                    Log "→ Remote es de la org esperada ($repoOwner) con repo distinto. Reinit." 'Yellow'
+                    Remove-Item (Join-Path $folder '.git') -Recurse -Force -ErrorAction SilentlyContinue
+                } else {
+                    Log "✗ La carpeta tiene un .git asociado a '@$($ownerCheck.Owner)' (no a '$repoOwner')." 'Red'
+                    [System.Windows.Forms.MessageBox]::Show(
+                        "Esta carpeta esta vinculada a '$($ownerCheck.Owner)' pero el repo destino es de '$repoOwner'.`n`n" +
+                        "Por seguridad, no se permite subir desde esta carpeta. Opciones:`n" +
+                        "  - Selecciona otra carpeta`n" +
+                        "  - Elimina manualmente la subcarpeta .git de:`n    $folder",
+                        'Conflicto de cuenta/org detectado', 'OK', 'Error') | Out-Null
+                    return $false
+                }
+            }
+            'NotGitHub' {
+                $r = [System.Windows.Forms.MessageBox]::Show(
+                    "Esta carpeta tiene un repositorio git apuntando a:`n$($ownerCheck.Url)`n`n" +
+                    "No es de GitHub. Si continuas, se eliminara la subcarpeta .git existente y se reinicializara apuntando a tu repo de GitHub.`n`n" +
+                    "¿Continuar?",
+                    'Repo no-GitHub detectado', 'YesNo', 'Warning')
+                if ($r -ne 'Yes') { return $false }
+                Remove-Item (Join-Path $folder '.git') -Recurse -Force -ErrorAction SilentlyContinue
+                Log '→ Subcarpeta .git eliminada.' 'Yellow'
+            }
+            'SameUser' {
+                $expectedUrl = "https://$expectedUrlBase.git"
                 $r = [System.Windows.Forms.MessageBox]::Show(
                     "Esta carpeta ya tiene un .git de tu cuenta pero apunta a otro repo:`n$($ownerCheck.Url)`n`n" +
                     "Si continuas, se eliminara y se reinicializara apuntando a:`n$expectedUrl`n`n" +
@@ -2772,16 +2789,14 @@ function Invoke-UploadFiles {
                 if ($r -ne 'Yes') { return $false }
                 Remove-Item (Join-Path $folder '.git') -Recurse -Force -ErrorAction SilentlyContinue
                 Log '→ Subcarpeta .git eliminada (era de tu cuenta, otro repo).' 'Yellow'
-            } else {
-                Log "→ .git existente de tu cuenta apunta al repo correcto. Se reutiliza." 'Green'
             }
-        }
-        'NoRemote' {
-            Log '→ Subcarpeta .git sin remote, se elimina para reinicializar.' 'Yellow'
-            Remove-Item (Join-Path $folder '.git') -Recurse -Force -ErrorAction SilentlyContinue
-        }
-        'NoGit' {
-            # Caso normal: carpeta limpia
+            'NoRemote' {
+                Log '→ Subcarpeta .git sin remote, se elimina para reinicializar.' 'Yellow'
+                Remove-Item (Join-Path $folder '.git') -Recurse -Force -ErrorAction SilentlyContinue
+            }
+            'NoGit' {
+                # Caso normal: carpeta limpia
+            }
         }
     }
 
@@ -2845,12 +2860,34 @@ function Invoke-UploadFiles {
             git commit -m $msg 2>&1 | ForEach-Object { Log "  $_" }
         }
 
-        # Push
-        Log '→ git push -u origin main'
-        $pushOutput = git push -u origin main 2>&1
-        $pushOutput | ForEach-Object { Log "  $_" }
+        # Detectar branch actual (puede ser 'main', 'master' u otro si el repo
+        # de Classroom usa nombre custom)
+        $currentBranch = (git rev-parse --abbrev-ref HEAD 2>$null).Trim()
+        if (-not $currentBranch -or $currentBranch -eq 'HEAD') { $currentBranch = 'main' }
 
-        if ($LASTEXITCODE -eq 0) {
+        # Push
+        Log "→ git push -u origin $currentBranch"
+        $pushOutput = git push -u origin $currentBranch 2>&1
+        $pushOutput | ForEach-Object { Log "  $_" }
+        $pushOk = ($LASTEXITCODE -eq 0)
+
+        # Manejo de divergencia: si remote tiene commits que local no tiene
+        # (caso clasico: repo de Classroom tiene README inicial), pull --rebase
+        # + retry push.
+        if (-not $pushOk -and ($pushOutput -join "`n") -match 'non-fast-forward|fetch first|rejected') {
+            Log '→ Push rechazado por divergencia. Intentando pull --rebase + retry...' 'Yellow'
+            $pullOutput = git pull --rebase origin $currentBranch 2>&1
+            $pullOutput | ForEach-Object { Log "  $_" }
+            if ($LASTEXITCODE -eq 0) {
+                $pushOutput = git push -u origin $currentBranch 2>&1
+                $pushOutput | ForEach-Object { Log "  $_" }
+                $pushOk = ($LASTEXITCODE -eq 0)
+            } else {
+                Log '✗ pull --rebase tambien fallo (posible conflicto). Necesitas resolver manualmente.' 'Red'
+            }
+        }
+
+        if ($pushOk) {
             $script:lastPushSuccess = $true
             # Construir URL final usando el owner correcto (puede ser org de Classroom)
             $script:lastPushUrl = "https://github.com/$repoOwner/$repoSimpleName"
