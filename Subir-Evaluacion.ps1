@@ -717,21 +717,19 @@ function Send-Heartbeat {
         }
         $script:lastProcessSet = $currentSet
 
+        # Usar RPC heartbeat (SECURITY DEFINER en Postgres bypassea RLS de
+        # online_clients para anon). Mas seguro que dar INSERT/UPDATE a anon.
         $payload = @{
-            pc_name         = $env:COMPUTERNAME
-            github_username = $userInfo.login
-            github_email    = $userInfo.email
-            section         = (Get-StudentSection)
-            last_seen       = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ss.fffZ')
-            processes       = $procs
+            p_pc_name         = $env:COMPUTERNAME
+            p_github_username = $userInfo.login
+            p_github_email    = $userInfo.email
+            p_section         = (Get-StudentSection)
+            p_processes       = $procs
         } | ConvertTo-Json -Compress -Depth 4
 
-        $headers = Get-SupabaseHeaders
-        $headers['Prefer'] = 'resolution=merge-duplicates'
-
         Invoke-RestMethod `
-            -Uri "$($script:supabaseUrl)/rest/v1/online_clients" `
-            -Method Post -Headers $headers -Body $payload `
+            -Uri "$($script:supabaseUrl)/rest/v1/rpc/heartbeat" `
+            -Method Post -Headers (Get-SupabaseHeaders) -Body $payload `
             -TimeoutSec 5 -ErrorAction Stop | Out-Null
     } catch {
         # Silencioso
