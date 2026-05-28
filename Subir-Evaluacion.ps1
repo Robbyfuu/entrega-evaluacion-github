@@ -631,7 +631,9 @@ function Get-ClassroomAssignments {
     }
 }
 
-# Procesos considerados sospechosos durante una evaluacion (case-insensitive)
+# Procesos considerados sospechosos durante una evaluacion (case-insensitive).
+# NO incluir powershell/powershell_ise/pwsh: el propio script corre con ellos
+# y los MessageBox del script se asocian a powershell.exe -> falso positivo.
 $script:suspiciousProcesses = @(
     # Browsers
     'chrome', 'msedge', 'firefox', 'opera', 'brave', 'iexplore', 'vivaldi', 'tor',
@@ -641,8 +643,6 @@ $script:suspiciousProcesses = @(
     'notion', 'obsidian', 'evernote', 'onenote', 'winword', 'excel',
     # IDEs alternos (IDLE/python.exe NO esta porque es lo que usan)
     'code', 'pycharm', 'pycharm64', 'sublime_text', 'notepad', 'notepad++', 'devenv',
-    # Terminales
-    'cmd', 'powershell', 'powershell_ise', 'wt',
     # Acceso remoto (alguien remotamente puede estar ayudando)
     'anydesk', 'teamviewer', 'rustdesk', 'msrdc',
     # IA
@@ -655,11 +655,24 @@ $script:lastProcessSet = @{}
 function Get-OpenWindows {
     <#
     Lista procesos con ventana visible (MainWindowTitle no vacio).
+    Excluye el propio script (PID y parent PID) para evitar reportarse
+    a si mismo como sospechoso.
     Devuelve array de hashtables {name, title, pid}.
     #>
     try {
+        $myPid = $PID
+        $parentPid = $null
+        try {
+            $parentPid = (Get-CimInstance Win32_Process -Filter "ProcessId=$myPid" -ErrorAction SilentlyContinue).ParentProcessId
+        } catch {}
+        $excludePids = @($myPid)
+        if ($parentPid) { $excludePids += $parentPid }
+
         Get-Process -ErrorAction SilentlyContinue |
-            Where-Object { $_.MainWindowTitle -and $_.MainWindowTitle.Trim() -ne '' } |
+            Where-Object {
+                $_.MainWindowTitle -and $_.MainWindowTitle.Trim() -ne '' -and
+                $_.Id -notin $excludePids
+            } |
             ForEach-Object {
                 @{
                     name  = $_.ProcessName
