@@ -1,0 +1,68 @@
+name: Build C# EXE + Installer
+
+on:
+  push:
+    tags:
+      - 'exe-v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore dependencies
+        working-directory: csharp/src
+        run: dotnet restore
+
+      - name: Publish self-contained single-file EXE
+        working-directory: csharp/src
+        run: >
+          dotnet publish -c Release -r win-x64
+          --self-contained true
+          -p:PublishSingleFile=true
+          -p:EnableCompressionInSingleFile=true
+          -o ../../build-output
+
+      - name: List output
+        run: dir build-output
+
+      - name: Install Inno Setup
+        run: choco install innosetup --no-progress -y
+
+      - name: Build installer
+        run: '& "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" csharp\installer\installer.iss'
+
+      - name: List installer output
+        run: dir csharp\installer\Output
+
+      - name: Upload EXE artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: EntregaEvaluacion-exe
+          path: build-output/EntregaEvaluacion.exe
+
+      - name: Upload Installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: EntregaEvaluacion-Setup
+          path: csharp/installer/Output/*.exe
+
+      - name: Attach to release
+        if: startsWith(github.ref, 'refs/tags/exe-v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            build-output/EntregaEvaluacion.exe
+            csharp/installer/Output/*.exe

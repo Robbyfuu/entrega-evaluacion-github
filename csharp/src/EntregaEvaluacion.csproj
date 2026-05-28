@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>EntregaEvaluacion</AssemblyName>
+    <RootNamespace>EntregaEvaluacion</RootNamespace>
+    <Version>2.0.0</Version>
+    <Company>DUOC UC - FPY1101</Company>
+    <Product>Entrega de Evaluacion a GitHub</Product>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!-- self-contained single-file: no requiere .NET runtime instalado -->
+    <SelfContained>true</SelfContained>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <PublishSingleFile>true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <!-- Permite compilar (validar) WinForms en macOS/Linux. No afecta build Windows. -->
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Git nativo: no requiere git CLI instalado -->
+    <PackageReference Include="LibGit2Sharp" Version="0.30.0" />
+    <!-- System.Text.Json viene incluido en el runtime .NET 8, no necesita paquete -->
+
+  </ItemGroup>
+
+</Project>
