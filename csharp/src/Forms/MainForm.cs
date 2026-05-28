@@ -623,7 +623,10 @@ public class MainForm : Form
         _lastProcSet.Clear();
         foreach (var k in current) _lastProcSet.Add(k);
 
-        await _sb.SendHeartbeatAsync(Environment.MachineName, _user.Login, _user.Email, StudentSection.Get(), procs);
+        var internetState = InternetBlockService.IsBlocked() ? "blocked" : "free";
+        var lockdownState = (_remoteLockdownActive || _targetedLockdownActive) ? "active" : "none";
+        await _sb.SendHeartbeatAsync(Environment.MachineName, _user.Login, _user.Email,
+            StudentSection.Get(), procs, internetState, lockdownState);
     }
 
     // ===================== Helpers =====================

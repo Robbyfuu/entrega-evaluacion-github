@@ -21,7 +21,12 @@ public class SupabaseClient
 
     public SupabaseClient()
     {
-        _http = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
+        // CRITICO: UseProxy=false. Sin esto, cuando bloqueamos internet (proxy
+        // 127.0.0.1:1), el propio cliente perderia conexion a Supabase y nunca
+        // recibiria la orden de desbloquear (catch-22). Ignorar el proxy del
+        // sistema garantiza comunicacion con el backend siempre.
+        var handler = new HttpClientHandler { UseProxy = false, Proxy = null };
+        _http = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(10) };
         _http.DefaultRequestHeaders.Add("apikey", Config.SupabaseAnonKey);
         _http.DefaultRequestHeaders.Authorization =
             new AuthenticationHeaderValue("Bearer", Config.SupabaseAnonKey);
@@ -56,7 +61,8 @@ public class SupabaseClient
     // ===== Heartbeat (RPC SECURITY DEFINER) =====
     public async Task SendHeartbeatAsync(
         string pcName, string githubUsername, string? githubEmail,
-        string? section, List<ProcessInfo> processes)
+        string? section, List<ProcessInfo> processes,
+        string internetState = "free", string lockdownState = "none")
     {
         try
         {
@@ -66,7 +72,9 @@ public class SupabaseClient
                 p_github_username = githubUsername,
                 p_github_email = githubEmail,
                 p_section = section,
-                p_processes = processes
+                p_processes = processes,
+                p_internet_state = internetState,
+                p_lockdown_state = lockdownState
             }, JsonOpts);
             var content = new StringContent(payload, Encoding.UTF8, "application/json");
             await _http.PostAsync(Rest("rpc/heartbeat"), content);

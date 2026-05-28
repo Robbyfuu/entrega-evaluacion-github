@@ -170,6 +170,8 @@
             <th>Sección</th>
             <th>Última señal</th>
             <th>Apps abiertas</th>
+            <th>Internet</th>
+            <th>Lockdown</th>
             <th>Acción</th>
           </tr>
         </thead>
@@ -774,7 +776,7 @@
           className: 'err',
           style: { textAlign: 'center' }
         });
-        td.colSpan = 6;
+        td.colSpan = 8;
         tr.appendChild(td);
         tbody.appendChild(tr);
         return;
@@ -792,7 +794,7 @@
       if (error) {
         const tr = makeEl('tr');
         const td = makeEl('td', { text: 'Error: ' + error.message, className: 'err' });
-        td.colSpan = 6;
+        td.colSpan = 8;
         tr.appendChild(td);
         tbody.appendChild(tr);
         return;
@@ -814,7 +816,7 @@
           text: totalText,
           style: { textAlign: 'center', color: '#8e8e93' }
         });
-        td.colSpan = 6;
+        td.colSpan = 8;
         tr.appendChild(td);
         tbody.appendChild(tr);
         return;
@@ -883,6 +885,28 @@
           tdApps.appendChild(badge);
         }
         tr.appendChild(tdApps);
+
+        // Columna Internet (estado confirmado por el cliente)
+        const tdNet = makeEl('td');
+        const netBadge = makeEl('span', {
+          text: c.internet_state === 'blocked' ? 'BLOQUEADO' : 'libre',
+          className: 'badge'
+        });
+        netBadge.style.background = c.internet_state === 'blocked' ? '#c62828' : '#4caf50';
+        netBadge.style.color = 'white';
+        tdNet.appendChild(netBadge);
+        tr.appendChild(tdNet);
+
+        // Columna Lockdown (estado confirmado por el cliente)
+        const tdLock = makeEl('td');
+        const lockBadge = makeEl('span', {
+          text: c.lockdown_state === 'active' ? 'ACTIVO' : 'no',
+          className: 'badge'
+        });
+        lockBadge.style.background = c.lockdown_state === 'active' ? '#b71c1c' : '#9e9e9e';
+        lockBadge.style.color = 'white';
+        tdLock.appendChild(lockBadge);
+        tr.appendChild(tdLock);
 
         // Columna Accion: boton rojo Lockdown dirigido
         const tdAction = makeEl('td');

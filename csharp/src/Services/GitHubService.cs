@@ -27,7 +27,10 @@ public class GitHubService
 
     public GitHubService()
     {
-        _http = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
+        // UseProxy=false: ignorar el proxy del sistema (ver SupabaseClient).
+        // GitHub API y device flow funcionan aunque el internet "bloqueado".
+        var handler = new HttpClientHandler { UseProxy = false, Proxy = null };
+        _http = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(15) };
         _http.DefaultRequestHeaders.UserAgent.ParseAdd("EntregaEvaluacion/2.0");
         _http.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");
         LoadToken();
