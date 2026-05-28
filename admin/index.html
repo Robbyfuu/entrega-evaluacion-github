@@ -762,36 +762,62 @@
 
     // ===== Online clients (heartbeat) =====
     window.loadOnline = async function() {
-      const cutoff = new Date(Date.now() - 90000).toISOString();
+      // Verificar sesion antes de query
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        const tbody = $('onlineBody');
+        while (tbody.firstChild) tbody.removeChild(tbody.firstChild);
+        const tr = makeEl('tr');
+        const td = makeEl('td', {
+          text: 'Sesion expirada. Recarga la pagina y vuelve a iniciar sesion.',
+          className: 'err',
+          style: { textAlign: 'center' }
+        });
+        td.colSpan = 5;
+        tr.appendChild(td);
+        tbody.appendChild(tr);
+        return;
+      }
+
+      // Filtrar en cliente para evitar desfases de reloj
       const { data, error } = await supabase
         .from('online_clients')
         .select('*')
-        .gte('last_seen', cutoff)
-        .order('last_seen', { ascending: false });
+        .order('last_seen', { ascending: false })
+        .limit(100);
       const tbody = $('onlineBody');
       while (tbody.firstChild) tbody.removeChild(tbody.firstChild);
 
       if (error) {
         const tr = makeEl('tr');
         const td = makeEl('td', { text: 'Error: ' + error.message, className: 'err' });
-        td.colSpan = 4;
-        tr.appendChild(td);
-        tbody.appendChild(tr);
-        return;
-      }
-      $('onlineCount').textContent = (data?.length || 0);
-      if (!data || data.length === 0) {
-        const tr = makeEl('tr');
-        const td = makeEl('td', {
-          text: 'Sin PCs conectados.',
-          style: { textAlign: 'center', color: '#8e8e93' }
-        });
-        td.colSpan = 4;
+        td.colSpan = 5;
         tr.appendChild(td);
         tbody.appendChild(tr);
         return;
       }
 
+      // Filtrar online en cliente: last_seen dentro de los ultimos 90s
+      const cutoff = Date.now() - 90000;
+      const onlineData = (data || []).filter(c =>
+        new Date(c.last_seen).getTime() >= cutoff
+      );
+
+      $('onlineCount').textContent = onlineData.length;
+      if (onlineData.length === 0) {
+        const tr = makeEl('tr');
+        const totalText = (data?.length || 0) > 0
+          ? `Sin PCs conectados ahora (${data.length} en total, ninguno con heartbeat reciente).`
+          : 'Sin PCs conectados.';
+        const td = makeEl('td', {
+          text: totalText,
+          style: { textAlign: 'center', color: '#8e8e93' }
+        });
+        td.colSpan = 5;
+        tr.appendChild(td);
+        tbody.appendChild(tr);
+        return;
+      }
       const now = Date.now();
       const SUSP = new Set([
         'chrome','msedge','firefox','opera','brave','iexplore','vivaldi','tor',
@@ -803,7 +829,7 @@
         'chatgpt','claude','copilot'
       ]);
 
-      data.forEach(c => {
+      onlineData.forEach(c => {
         const tr = makeEl('tr');
         tr.style.cursor = 'pointer';
         tr.onclick = () => openProcessModal(c);
