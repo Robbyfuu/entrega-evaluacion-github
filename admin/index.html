@@ -170,6 +170,7 @@
             <th>Sección</th>
             <th>Última señal</th>
             <th>Apps abiertas</th>
+            <th>Acción</th>
           </tr>
         </thead>
         <tbody id="onlineBody">
@@ -773,7 +774,7 @@
           className: 'err',
           style: { textAlign: 'center' }
         });
-        td.colSpan = 5;
+        td.colSpan = 6;
         tr.appendChild(td);
         tbody.appendChild(tr);
         return;
@@ -791,7 +792,7 @@
       if (error) {
         const tr = makeEl('tr');
         const td = makeEl('td', { text: 'Error: ' + error.message, className: 'err' });
-        td.colSpan = 5;
+        td.colSpan = 6;
         tr.appendChild(td);
         tbody.appendChild(tr);
         return;
@@ -813,7 +814,7 @@
           text: totalText,
           style: { textAlign: 'center', color: '#8e8e93' }
         });
-        td.colSpan = 5;
+        td.colSpan = 6;
         tr.appendChild(td);
         tbody.appendChild(tr);
         return;
@@ -883,8 +884,69 @@
         }
         tr.appendChild(tdApps);
 
+        // Columna Accion: boton rojo Lockdown dirigido
+        const tdAction = makeEl('td');
+        tdAction.onclick = (e) => e.stopPropagation();  // no abrir modal
+        const btnLock = makeEl('button', { text: '🔴 Lockdown' });
+        btnLock.className = 'btn-danger';
+        btnLock.style.padding = '4px 10px';
+        btnLock.style.fontSize = '12px';
+        btnLock.onclick = (e) => {
+          e.stopPropagation();
+          targetLockdown(c.pc_name, c.github_username);
+        };
+        tdAction.appendChild(btnLock);
+
+        const btnRelease = makeEl('button', { text: '🔓' });
+        btnRelease.className = 'btn-secondary';
+        btnRelease.style.padding = '4px 8px';
+        btnRelease.style.fontSize = '12px';
+        btnRelease.style.marginLeft = '6px';
+        btnRelease.title = 'Liberar lockdown dirigido';
+        btnRelease.onclick = (e) => {
+          e.stopPropagation();
+          releaseTargetLockdown(c.pc_name, c.github_username);
+        };
+        tdAction.appendChild(btnRelease);
+
+        tr.appendChild(tdAction);
+
         tbody.appendChild(tr);
       });
+    };
+
+    window.targetLockdown = async function(pc_name, github_username) {
+      if (!github_username) {
+        alert('Este PC no tiene usuario GitHub registrado.');
+        return;
+      }
+      const reason = prompt(`Lockdown DIRIGIDO a ${pc_name} (@${github_username}).\nMotivo (opcional):`, 'Trampa detectada por el profesor');
+      if (reason === null) return;
+      const { error } = await supabase
+        .from('targeted_lockdowns')
+        .upsert({
+          pc_name, github_username,
+          active: true,
+          reason: reason || 'Bloqueo del profesor',
+          released_at: null
+        }, { onConflict: 'pc_name,github_username' });
+      if (error) {
+        alert('Error: ' + error.message);
+      } else {
+        alert(`✓ Lockdown enviado a ${pc_name}. Se aplicara en <20s.`);
+      }
+    };
+
+    window.releaseTargetLockdown = async function(pc_name, github_username) {
+      const { error } = await supabase
+        .from('targeted_lockdowns')
+        .update({ active: false, released_at: new Date().toISOString() })
+        .match({ pc_name, github_username });
+      if (error) {
+        alert('Error: ' + error.message);
+      } else {
+        alert(`✓ Lockdown liberado para ${pc_name}.`);
+      }
     };
 
     window.openProcessModal = function(client) {

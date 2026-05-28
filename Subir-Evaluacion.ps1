@@ -279,6 +279,7 @@ $script:adminPollInterval = 20000   # ms (20 segundos - balance entre responsivi
 $script:internetBlocked = $false
 $script:lastAdminMessage = ''
 $script:remoteLockdownActive = $false
+$script:targetedLockdownActive = $false
 
 function Get-SupabaseHeaders {
     return @{
@@ -700,6 +701,35 @@ function Report-ProcessAlert {
             -Uri "$($script:supabaseUrl)/rest/v1/process_alerts" `
             -Method Post -Headers (Get-SupabaseHeaders) -Body $payload `
             -TimeoutSec 5 -ErrorAction Stop | Out-Null
+    } catch {}
+}
+
+function Check-TargetedLockdown {
+    <#
+    Polleo lockdown dirigido por (pc_name + github_username). Si profe lo
+    activo desde el panel admin para este alumno especifico, dispara
+    Show-CheatAlertDialog con RemoteSource=true. El dialog tiene timer que
+    detecta cuando profe libera y se cierra solo.
+    #>
+    if ($script:targetedLockdownActive) { return }
+    try {
+        $userInfo = gh api user 2>$null | ConvertFrom-Json
+        if (-not $userInfo -or -not $userInfo.login) { return }
+        $pcName = [System.Uri]::EscapeDataString($env:COMPUTERNAME)
+        $ghUser = [System.Uri]::EscapeDataString($userInfo.login)
+        $url = "$($script:supabaseUrl)/rest/v1/targeted_lockdowns?pc_name=eq.$pcName&github_username=eq.$ghUser&active=eq.true&select=*"
+        $resp = Invoke-RestMethod -Uri $url -Headers (Get-SupabaseHeaders) `
+                                  -TimeoutSec 5 -ErrorAction Stop
+        if ($resp -and @($resp).Count -gt 0) {
+            $script:targetedLockdownActive = $true
+            $reason = if ($resp[0].reason) { $resp[0].reason } else { 'El profesor te bloqueo individualmente' }
+            Log "[ADMIN] Lockdown DIRIGIDO activo en tu PC. Razon: $reason" 'Red'
+            Show-CheatAlertDialog -RepoName '(remoto-dirigido)' -FilesCount 0 `
+                -FilesNames @($reason) `
+                -IsPersistent $false `
+                -RemoteSource $true
+            $script:targetedLockdownActive = $false
+        }
     } catch {}
 }
 
@@ -1166,21 +1196,37 @@ function Show-CheatAlertDialog {
         $dlg.BringToFront()
     })
 
-    # Timer de RELEASE remoto: solo activo si el lockdown vino del profe via Supabase.
-    # Cada 10s consulta force_lockdown. Si paso a false, el profe libero remotamente
-    # -> cierra el dialog sin requerir password.
+    # Timer de RELEASE remoto: chequea cada 10s force_lockdown (global) Y
+    # targeted_lockdowns (dirigido a este PC+user). Si profe libero cualquiera
+    # de los dos, cierra el dialog sin password.
     $releaseTimer = New-Object System.Windows.Forms.Timer
     if ($RemoteSource) {
         $releaseTimer.Interval = 10000
         $releaseTimer.Add_Tick({
             try {
+                # Chequear force_lockdown global
                 $resp = Invoke-RestMethod `
                     -Uri "$($script:supabaseUrl)/rest/v1/control?id=eq.1&select=force_lockdown" `
                     -Headers (Get-SupabaseHeaders) `
                     -TimeoutSec 5 -ErrorAction Stop
-                if ($resp -and $resp.Count -gt 0 -and $resp[0].force_lockdown -ne $true) {
+                $globalActive = ($resp -and $resp.Count -gt 0 -and $resp[0].force_lockdown -eq $true)
+
+                # Chequear targeted_lockdowns para este PC+user
+                $targetedActive = $false
+                try {
+                    $userInfo = gh api user 2>$null | ConvertFrom-Json
+                    if ($userInfo) {
+                        $pcName = [System.Uri]::EscapeDataString($env:COMPUTERNAME)
+                        $ghUser = [System.Uri]::EscapeDataString($userInfo.login)
+                        $turl = "$($script:supabaseUrl)/rest/v1/targeted_lockdowns?pc_name=eq.$pcName&github_username=eq.$ghUser&active=eq.true&select=id"
+                        $tresp = Invoke-RestMethod -Uri $turl -Headers (Get-SupabaseHeaders) -TimeoutSec 5 -ErrorAction Stop
+                        $targetedActive = ($tresp -and @($tresp).Count -gt 0)
+                    }
+                } catch {}
+
+                # Si NINGUNO esta activo, cerrar
+                if (-not $globalActive -and -not $targetedActive) {
                     $releaseTimer.Stop()
-                    # Profe libero remotamente: tambien limpiar marker local por si existe
                     Release-CheatLockdown
                     $dlg.DialogResult = 'OK'
                     $dlg.Close()
@@ -3238,11 +3284,12 @@ Reconcile-InternetBlock
 # Iniciar polling del config remoto del profesor + heartbeat
 $adminTimer = New-Object System.Windows.Forms.Timer
 $adminTimer.Interval = $script:adminPollInterval
-$adminTimer.Add_Tick({ Check-AdminConfig; Update-AssignmentsBanner; Send-Heartbeat })
+$adminTimer.Add_Tick({ Check-AdminConfig; Update-AssignmentsBanner; Send-Heartbeat; Check-TargetedLockdown })
 $adminTimer.Start()
 # Primer check + heartbeat inmediatos
 Check-AdminConfig
 Send-Heartbeat
+Check-TargetedLockdown
 
 [void]$form.ShowDialog()
 $adminTimer.Stop()
