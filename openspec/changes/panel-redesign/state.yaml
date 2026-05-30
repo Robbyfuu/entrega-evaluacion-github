@@ -1,0 +1,20 @@
+change: panel-redesign
+title: Rediseño del Panel Docente (Consola Ops)
+status: planned
+created: 2026-05-29
+artifacts:
+  proposal: done
+  spec: done
+  design: done
+  tasks: done
+  apply: pending
+  verify: pending
+  archive: pending
+design_system:
+  name: Consola Ops
+  pattern: dashboard
+  theme: light-default-dark-toggle
+  fonts: [Inter, JetBrains Mono]
+  source: ui-ux-pro-max skill v2.5.0
+phases_total: 6
+tasks_total: 28
