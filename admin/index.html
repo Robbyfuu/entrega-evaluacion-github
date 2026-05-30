@@ -5,86 +5,179 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Panel del Profesor - Entrega Evaluación</title>
   <meta name="robots" content="noindex, nofollow" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
+    /* ===== Design System: Consola Ops ===== */
+    :root {
+      --bg:#F7F8FA; --surface:#FFFFFF; --surface-2:#F0F2F5;
+      --border:#E2E5EA; --border-strong:#CBD0D8;
+      --text:#1A1D23; --text-muted:#6B7280; --text-faint:#9CA3AF;
+      --primary:#2563EB; --primary-fg:#FFFFFF;
+      --danger:#DC2626; --danger-bg:#FEF2F2;
+      --success:#16A34A; --success-bg:#F0FDF4;
+      --warning:#D97706; --warning-bg:#FFFBEB;
+      --info:#7C3AED;
+      --font-ui:'Inter',-apple-system,'Segoe UI',system-ui,sans-serif;
+      --font-mono:'JetBrains Mono',ui-monospace,'SF Mono',Consolas,monospace;
+      --sp-1:4px; --sp-2:8px; --sp-3:12px; --sp-4:16px; --sp-5:24px; --sp-6:32px;
+      --radius-sm:6px; --radius-md:8px; --radius-lg:12px;
+      --shadow-sm:0 1px 2px rgba(0,0,0,0.04);
+      --shadow-md:0 2px 8px rgba(0,0,0,0.06);
+      --sidebar-w:240px; --topbar-h:56px;
+    }
+    [data-theme="dark"] {
+      --bg:#0D0E14; --surface:#1A1B26; --surface-2:#22232F;
+      --border:#2A2C3A; --border-strong:#3A3D4D;
+      --text:#E0E0E6; --text-muted:#9CA3AF; --text-faint:#6B7280;
+      --primary:#5E6AD2; --primary-fg:#FFFFFF;
+      --danger:#F87171; --danger-bg:#2A1416;
+      --success:#4ADE80; --success-bg:#0F2417;
+      --warning:#FBBF24; --warning-bg:#2A1F0A;
+      --info:#A78BFA;
+      --shadow-sm:0 1px 2px rgba(0,0,0,0.3);
+      --shadow-md:0 2px 8px rgba(0,0,0,0.4);
+    }
+    * { box-sizing:border-box; margin:0; padding:0; }
     body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
-      background: #f5f5f7;
-      color: #1d1d1f;
-      padding: 24px;
-      line-height: 1.5;
+      font-family:var(--font-ui); background:var(--bg); color:var(--text);
+      line-height:1.5; font-size:14px;
+      transition:background .2s,color .2s;
     }
-    .container { max-width: 960px; margin: 0 auto; }
-    h1 { font-size: 28px; margin-bottom: 8px; }
-    h2 { font-size: 18px; margin: 24px 0 12px; color: #424245; }
-    .subtitle { color: #6e6e73; margin-bottom: 24px; }
+    h1 { font-size:20px; font-weight:600; }
+    h2 { font-size:15px; font-weight:600; color:var(--text); margin-bottom:var(--sp-3); display:flex; align-items:center; }
+    .subtitle { color:var(--text-muted); margin-bottom:var(--sp-5); font-size:13px; }
+
+    /* ===== Login ===== */
+    #loginView { display:flex; align-items:center; justify-content:center; min-height:100vh; padding:var(--sp-4); }
+    .login-card { max-width:400px; width:100%; }
+
+    /* ===== Layout shell ===== */
+    .topbar {
+      position:sticky; top:0; z-index:40; height:var(--topbar-h);
+      display:flex; align-items:center; justify-content:space-between;
+      padding:0 var(--sp-5); background:var(--surface);
+      border-bottom:1px solid var(--border);
+    }
+    .topbar-brand { display:flex; align-items:center; gap:var(--sp-3); font-weight:600; }
+    .topbar-brand .logo { width:28px; height:28px; border-radius:var(--radius-sm); background:var(--primary); color:#fff; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:14px; }
+    .topbar-right { display:flex; align-items:center; gap:var(--sp-3); }
+    .shell { display:flex; min-height:calc(100vh - var(--topbar-h)); }
+    .sidebar {
+      width:var(--sidebar-w); flex-shrink:0; background:var(--surface);
+      border-right:1px solid var(--border); padding:var(--sp-4) var(--sp-3);
+      position:sticky; top:var(--topbar-h); height:calc(100vh - var(--topbar-h));
+      overflow-y:auto;
+    }
+    .nav-item {
+      display:flex; align-items:center; gap:var(--sp-3); padding:var(--sp-2) var(--sp-3);
+      border-radius:var(--radius-md); color:var(--text-muted); font-size:13px; font-weight:500;
+      cursor:pointer; text-decoration:none; margin-bottom:2px; border:none; background:none; width:100%; text-align:left;
+    }
+    .nav-item:hover { background:var(--surface-2); color:var(--text); }
+    .nav-item.active { background:var(--surface-2); color:var(--primary); font-weight:600; }
+    .nav-item .dot { width:8px; height:8px; border-radius:50%; flex-shrink:0; }
+    .content { flex:1; padding:var(--sp-5); max-width:1400px; }
+
+    /* ===== Cards ===== */
     .card {
-      background: white;
-      border-radius: 12px;
-      padding: 24px;
-      margin-bottom: 16px;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+      background:var(--surface); border:1px solid var(--border);
+      border-radius:var(--radius-lg); padding:var(--sp-5);
+      margin-bottom:var(--sp-4); box-shadow:var(--shadow-sm);
+      scroll-margin-top:calc(var(--topbar-h) + var(--sp-4));
     }
-    .login-card { max-width: 420px; margin: 80px auto; }
-    .field { margin-bottom: 16px; }
-    label {
-      display: block;
-      font-size: 13px;
-      font-weight: 600;
-      margin-bottom: 6px;
-      color: #424245;
+
+    /* ===== KPI cards ===== */
+    .kpi-row { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:var(--sp-3); margin-bottom:var(--sp-4); }
+    .kpi {
+      background:var(--surface); border:1px solid var(--border); border-left:3px solid var(--text-faint);
+      border-radius:var(--radius-md); padding:var(--sp-4); box-shadow:var(--shadow-sm);
     }
-    input[type=email], input[type=password], input[type=text] {
-      width: 100%;
-      padding: 10px 14px;
-      border: 1px solid #d2d2d7;
-      border-radius: 8px;
-      font-size: 15px;
-      font-family: inherit;
+    .kpi .kpi-label { font-size:12px; color:var(--text-muted); font-weight:500; margin-bottom:var(--sp-1); }
+    .kpi .kpi-value { font-size:26px; font-weight:700; font-family:var(--font-mono); font-variant-numeric:tabular-nums; }
+    .kpi.is-danger { border-left-color:var(--danger); }
+    .kpi.is-success { border-left-color:var(--success); }
+    .kpi.is-warning { border-left-color:var(--warning); }
+    .kpi.is-primary { border-left-color:var(--primary); }
+
+    /* ===== Forms ===== */
+    .field { margin-bottom:var(--sp-4); }
+    label { display:block; font-size:12px; font-weight:600; margin-bottom:var(--sp-1); color:var(--text-muted); }
+    input[type=email], input[type=password], input[type=text], select {
+      width:100%; padding:9px 12px; border:1px solid var(--border-strong);
+      border-radius:var(--radius-md); font-size:14px; font-family:inherit;
+      background:var(--surface); color:var(--text);
     }
-    input:focus { outline: none; border-color: #0071e3; box-shadow: 0 0 0 3px rgba(0,113,227,0.2); }
+    input:focus, select:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 3px color-mix(in srgb,var(--primary) 20%,transparent); }
+
+    /* ===== Buttons ===== */
     button {
-      padding: 10px 20px;
-      border: none;
-      border-radius: 8px;
-      font-size: 14px;
-      font-weight: 600;
-      cursor: pointer;
-      transition: all 0.15s;
-      font-family: inherit;
+      padding:8px 16px; border:none; border-radius:var(--radius-md);
+      font-size:13px; font-weight:600; cursor:pointer; font-family:inherit;
+      transition:filter .12s,background .12s; height:36px;
     }
-    button:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
-    button:active { transform: translateY(0); }
-    button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
-    .btn-primary { background: #0071e3; color: white; }
-    .btn-danger { background: #c62828; color: white; }
-    .btn-success { background: #4caf50; color: white; }
-    .btn-warning { background: #ff9800; color: white; }
-    .btn-secondary { background: #8e8e93; color: white; }
-    .btn-row { display: flex; gap: 12px; flex-wrap: wrap; }
-    .btn-row > button { flex: 1; min-width: 160px; padding: 16px 20px; }
-    .status-grid { display: grid; grid-template-columns: auto 1fr; gap: 12px 20px; }
-    .status-label { font-weight: 600; color: #6e6e73; }
-    .status-value { font-family: 'SF Mono', Consolas, monospace; }
-    .status-on { color: #c62828; font-weight: 700; }
-    .status-off { color: #4caf50; }
-    .header-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
-    .header-bar h1 { margin-bottom: 0; }
-    .err { color: #c62828; font-size: 13px; margin-top: 8px; }
-    .ok { color: #4caf50; font-size: 13px; margin-top: 8px; }
-    table { width: 100%; border-collapse: collapse; font-size: 13px; }
-    th { text-align: left; padding: 10px 8px; border-bottom: 2px solid #d2d2d7; font-weight: 600; color: #424245; }
-    td { padding: 8px; border-bottom: 1px solid #f0f0f0; }
-    tr:hover { background: #fafafa; }
-    .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; }
-    .badge-cheat { background: #ffebee; color: #c62828; }
-    .hidden { display: none !important; }
-    .row-flex { display: flex; gap: 12px; align-items: end; margin-bottom: 12px; }
-    .row-flex > .field { flex: 1; margin-bottom: 0; }
-    .pill { display:inline-block; padding: 4px 12px; border-radius: 999px; font-size: 12px; font-weight: 600; margin-left: 8px; }
-    .pill-live { background: #e8f5e9; color: #2e7d32; }
-    .footer { text-align: center; color: #8e8e93; font-size: 12px; margin-top: 32px; }
-    code { font-family: 'SF Mono', Consolas, monospace; background: #f5f5f7; padding: 2px 6px; border-radius: 4px; }
+    button:hover { filter:brightness(0.95); }
+    button:active { filter:brightness(0.9); }
+    button:disabled { opacity:0.45; cursor:not-allowed; filter:none; }
+    .btn-primary { background:var(--primary); color:var(--primary-fg); }
+    .btn-danger { background:var(--danger); color:#fff; }
+    .btn-success { background:var(--success); color:#fff; }
+    .btn-warning { background:var(--warning); color:#fff; }
+    .btn-secondary { background:transparent; color:var(--text); border:1px solid var(--border-strong); }
+    .btn-secondary:hover { background:var(--surface-2); filter:none; }
+    .btn-icon { background:transparent; border:1px solid var(--border-strong); color:var(--text); width:36px; padding:0; display:inline-flex; align-items:center; justify-content:center; }
+    .btn-row { display:flex; gap:var(--sp-3); flex-wrap:wrap; }
+    .btn-row > button { flex:1; min-width:160px; }
+
+    /* ===== Danger zone ===== */
+    .danger-zone {
+      background:var(--danger-bg); border:1px solid color-mix(in srgb,var(--danger) 30%,transparent);
+      border-radius:var(--radius-md); padding:var(--sp-4); margin-top:var(--sp-4);
+    }
+    .danger-zone .dz-title { font-size:12px; font-weight:700; color:var(--danger); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:var(--sp-3); }
+
+    /* ===== Status grid ===== */
+    .status-grid { display:grid; grid-template-columns:auto 1fr; gap:var(--sp-3) var(--sp-5); }
+    .status-label { font-weight:600; color:var(--text-muted); font-size:13px; }
+    .status-value { font-family:var(--font-mono); font-variant-numeric:tabular-nums; font-size:13px; }
+    .status-on { color:var(--danger); font-weight:700; }
+    .status-off { color:var(--success); }
+
+    /* ===== Tables ===== */
+    table { width:100%; border-collapse:collapse; font-size:13px; }
+    th { text-align:left; padding:var(--sp-2) var(--sp-3); border-bottom:2px solid var(--border); font-weight:600; color:var(--text-muted); font-size:12px; position:sticky; top:0; background:var(--surface); }
+    td { padding:var(--sp-2) var(--sp-3); border-bottom:1px solid var(--border); height:36px; }
+    tbody tr:hover { background:var(--surface-2); }
+    .mono { font-family:var(--font-mono); font-variant-numeric:tabular-nums; }
+
+    /* ===== Badges ===== */
+    .badge { display:inline-block; padding:2px 8px; border-radius:var(--radius-sm); font-size:11px; font-weight:600; }
+    .badge-cheat, .badge-danger { background:var(--danger-bg); color:var(--danger); }
+    .badge-success { background:var(--success-bg); color:var(--success); }
+    .badge-warn { background:var(--warning-bg); color:var(--warning); }
+    .badge-info { background:color-mix(in srgb,var(--info) 12%,transparent); color:var(--info); }
+    .badge-neutral { background:var(--surface-2); color:var(--text-muted); }
+
+    /* ===== Misc ===== */
+    .err { color:var(--danger); font-size:13px; margin-top:var(--sp-2); }
+    .ok { color:var(--success); font-size:13px; margin-top:var(--sp-2); }
+    .hidden { display:none !important; }
+    .row-flex { display:flex; gap:var(--sp-3); align-items:end; margin-bottom:var(--sp-3); flex-wrap:wrap; }
+    .row-flex > .field { flex:1; margin-bottom:0; }
+    .pill { display:inline-block; padding:3px 10px; border-radius:999px; font-size:11px; font-weight:600; margin-left:8px; }
+    .pill-live { background:var(--success-bg); color:var(--success); }
+    .footer { text-align:center; color:var(--text-faint); font-size:12px; margin:var(--sp-6) 0 var(--sp-4); }
+    code { font-family:var(--font-mono); background:var(--surface-2); padding:2px 6px; border-radius:var(--radius-sm); font-size:12px; }
+    .theme-toggle { background:transparent; border:1px solid var(--border-strong); color:var(--text); width:36px; padding:0; font-size:15px; }
+    a { color:var(--primary); }
+
+    @media (prefers-reduced-motion:reduce) {
+      *, body, button { transition:none !important; }
+    }
+    @media (max-width:1024px) {
+      .sidebar { display:none; }
+    }
   </style>
 </head>
 <body>
@@ -107,13 +200,42 @@
   </div>
 
   <!-- ============ PANEL ============ -->
-  <div id="panelView" class="container hidden">
-    <div class="header-bar">
-      <h1>Panel del Profesor <span id="livePill" class="pill pill-live hidden">EN VIVO</span></h1>
-      <div>
-        <span id="userBadge" style="margin-right:12px;color:#6e6e73;font-size:14px;"></span>
+  <div id="panelView" class="hidden">
+    <!-- Topbar -->
+    <div class="topbar">
+      <div class="topbar-brand">
+        <span class="logo">D</span>
+        <span>Panel Docente</span>
+        <span id="livePill" class="pill pill-live hidden">● EN VIVO</span>
+      </div>
+      <div class="topbar-right">
+        <button class="theme-toggle" onclick="toggleTheme()" title="Cambiar tema" aria-label="Cambiar tema claro/oscuro">◐</button>
+        <span id="userBadge" style="color:var(--text-muted);font-size:13px;"></span>
         <button class="btn-secondary" onclick="doLogout()">Cerrar sesión</button>
       </div>
+    </div>
+
+    <div class="shell">
+      <!-- Sidebar -->
+      <nav class="sidebar">
+        <button class="nav-item active" data-target="sec-kpi"><span class="dot" style="background:var(--primary)"></span>Resumen</button>
+        <button class="nav-item" data-target="sec-control"><span class="dot" style="background:var(--danger)"></span>Controles</button>
+        <button class="nav-item" data-target="sec-pcs"><span class="dot" style="background:var(--success)"></span>PCs conectados</button>
+        <button class="nav-item" data-target="sec-alerts"><span class="dot" style="background:var(--warning)"></span>Alertas</button>
+        <button class="nav-item" data-target="sec-tareas"><span class="dot" style="background:var(--info)"></span>Tareas Classroom</button>
+        <button class="nav-item" data-target="sec-activity"><span class="dot" style="background:var(--text-faint)"></span>Actividad</button>
+        <button class="nav-item" data-target="sec-cheat"><span class="dot" style="background:var(--danger)"></span>Trampas</button>
+      </nav>
+
+      <!-- Content -->
+      <main class="content">
+
+    <!-- KPIs -->
+    <div id="sec-kpi" class="kpi-row">
+      <div class="kpi is-primary"><div class="kpi-label">PCs conectados</div><div class="kpi-value" id="kpiPcs">0</div></div>
+      <div class="kpi is-warning"><div class="kpi-label">Alertas (50)</div><div class="kpi-value" id="kpiAlerts">0</div></div>
+      <div class="kpi" id="kpiNetCard"><div class="kpi-label">Internet</div><div class="kpi-value" id="kpiNet" style="font-size:18px;">—</div></div>
+      <div class="kpi" id="kpiLockCard"><div class="kpi-label">Lockdown</div><div class="kpi-value" id="kpiLock" style="font-size:18px;">—</div></div>
     </div>
 
     <!-- Estado actual -->
@@ -133,7 +255,7 @@
     </div>
 
     <!-- Controles -->
-    <div class="card">
+    <div class="card" id="sec-control">
       <h2>Controles remotos (afectan a todos los alumnos en menos de 60s)</h2>
       <div class="btn-row">
         <button class="btn-danger" onclick="setControl({internet_block:true})">Bloquear internet</button>
@@ -154,7 +276,7 @@
     </div>
 
     <!-- PCs conectados -->
-    <div class="card">
+    <div class="card" id="sec-pcs">
       <h2>PCs conectados ahora
         <span style="font-size:12px;color:#8e8e93;">(heartbeat &lt; 90s)</span>
         <span id="onlineCount" class="pill pill-live" style="margin-left:8px;">0</span>
@@ -176,14 +298,14 @@
           </tr>
         </thead>
         <tbody id="onlineBody">
-          <tr><td colspan="5" style="text-align:center;color:#8e8e93;">Cargando...</td></tr>
+          <tr><td colspan="8" style="text-align:center;color:#8e8e93;">Cargando...</td></tr>
         </tbody>
       </table>
       <button class="btn-secondary" style="margin-top:16px;" onclick="loadOnline()">Refrescar</button>
     </div>
 
     <!-- Alertas de procesos -->
-    <div class="card">
+    <div class="card" id="sec-alerts">
       <h2>⚠ Alertas de procesos sospechosos
         <span style="font-size:12px;color:#8e8e93;">(últimas 50)</span>
         <span id="alertCount" class="pill" style="background:#ffebee;color:#c62828;margin-left:8px;">0</span>
@@ -229,7 +351,7 @@
     </div>
 
     <!-- Tareas (GitHub Classroom) -->
-    <div class="card">
+    <div class="card" id="sec-tareas">
       <h2>Tareas de GitHub Classroom <span style="font-size:12px;color:#8e8e93;">(visibles para los alumnos en su script)</span></h2>
       <p style="color:#6e6e73;font-size:13px;margin-bottom:16px;">
         Pegá los links de assignment de
@@ -279,7 +401,7 @@
     </div>
 
     <!-- Actividad de alumnos -->
-    <div class="card">
+    <div class="card" id="sec-activity">
       <h2>Actividad de alumnos
         <span style="font-size:12px;color:#8e8e93;">(últimos 100)</span>
       </h2>
@@ -326,7 +448,7 @@
     </div>
 
     <!-- Eventos de trampa -->
-    <div class="card">
+    <div class="card" id="sec-cheat">
       <h2>Eventos de trampa detectados <span style="font-size:12px;color:#8e8e93;">(últimos 50)</span></h2>
       <table>
         <thead>
@@ -346,7 +468,10 @@
     </div>
 
     <div class="footer">
-      Polling cada 30s · Backend: Supabase
+      Polling cada 20s · Backend: Supabase · Consola Ops
+    </div>
+
+      </main>
     </div>
   </div>
 
@@ -447,6 +572,7 @@
       setStatusEl('estLockdown', data.force_lockdown ? 'ACTIVO' : 'inactivo', data.force_lockdown);
       $('estMessage').textContent = data.message || '(ninguno)';
       $('estUpdated').textContent = fmt(data.updated_at) + (data.updated_by ? ` por ${data.updated_by}` : '');
+      try{ updateKpis(data,null,null); }catch(e){}
     };
 
     window.setControl = async function(patch) {
@@ -806,7 +932,7 @@
         new Date(c.last_seen).getTime() >= cutoff
       );
 
-      $('onlineCount').textContent = onlineData.length;
+      $('onlineCount').textContent = onlineData.length; try{updateKpis(null,onlineData.length,null);}catch(e){}
       if (onlineData.length === 0) {
         const tr = makeEl('tr');
         const totalText = (data?.length || 0) > 0
@@ -1048,7 +1174,7 @@
         tbody.appendChild(tr);
         return;
       }
-      $('alertCount').textContent = (data?.length || 0);
+      $('alertCount').textContent = (data?.length || 0); try{updateKpis(null,null,(data?.length||0));}catch(e){}
       if (!data || data.length === 0) {
         const tr = makeEl('tr');
         const td = makeEl('td', {
