@@ -30,6 +30,9 @@ public class LoginDialog : Form
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
         MinimizeBox = false;
+        BackColor = Theme.Surface;
+        ForeColor = Theme.Text;
+        Font = Theme.FontBody;
 
         var lblP1 = new Label
         {

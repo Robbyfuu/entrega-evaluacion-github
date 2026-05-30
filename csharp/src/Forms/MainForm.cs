@@ -158,6 +158,65 @@ public class MainForm : Form
 
         _lblStatus = new Label { Text = "Listo.", Location = new Point(20, 640), Size = new Size(600, 20) };
         Controls.Add(_lblStatus);
+
+        ApplyTheme();
+    }
+
+    private void ApplyTheme()
+    {
+        BackColor = Theme.Bg;
+        Font = Theme.FontBody;
+        ForeColor = Theme.Text;
+
+        foreach (var c in AllControls(this))
+        {
+            switch (c)
+            {
+                case GroupBox g:
+                    g.BackColor = Theme.Surface;
+                    g.ForeColor = Theme.TextMuted;
+                    g.Font = Theme.FontLabel;
+                    break;
+                case Button b:
+                    b.FlatStyle = FlatStyle.Flat;
+                    b.FlatAppearance.BorderSize = (b.BackColor == Color.Empty || b == _btnBuscar || b == _btnRefresh) ? 1 : 0;
+                    if (b == _btnBuscar || b == _btnRefresh) Theme.StyleSecondary(b);
+                    else { b.Cursor = Cursors.Hand; b.Font = new Font("Segoe UI Semibold", 9f, FontStyle.Bold); }
+                    break;
+                case TextBox t when t != _txtLog:
+                    if (!t.ReadOnly || t == _txtCarpeta) Theme.StyleInput(t);
+                    break;
+                case ComboBox cb:
+                    Theme.StyleCombo(cb);
+                    break;
+                case LinkLabel ll:
+                    ll.LinkColor = Theme.Primary;
+                    ll.Font = new Font("Segoe UI", 8.5f, FontStyle.Underline);
+                    break;
+            }
+        }
+
+        // Titulo
+        if (Controls.Count > 0 && Controls[0] is Label title)
+        { title.Font = Theme.FontTitle; title.ForeColor = Theme.Text; }
+
+        // Consola de log
+        _txtLog.BackColor = Theme.ConsoleBg;
+        _txtLog.ForeColor = Theme.ConsoleFg;
+        _txtLog.Font = Theme.FontMono;
+        _txtLog.BorderStyle = BorderStyle.FixedSingle;
+
+        _lblStatus.ForeColor = Theme.TextMuted;
+        _lblRepoDestino.Font = Theme.FontMono;
+    }
+
+    private static IEnumerable<Control> AllControls(Control root)
+    {
+        foreach (Control c in root.Controls)
+        {
+            yield return c;
+            foreach (var child in AllControls(c)) yield return child;
+        }
     }
 
     // ===================== Init =====================
