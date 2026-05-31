@@ -245,14 +245,57 @@ public class MainForm : Form
 
     private void PromptSection()
     {
-        using var dlg = new Form { Text = "Selecciona tu seccion", Size = new Size(340, 200), StartPosition = FormStartPosition.CenterScreen, FormBorderStyle = FormBorderStyle.FixedDialog, ControlBox = false };
-        dlg.Controls.Add(new Label { Text = "Elige tu seccion:", Font = new Font("Segoe UI", 10, FontStyle.Bold), Location = new Point(20, 20), Size = new Size(280, 22) });
-        var cmb = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Location = new Point(20, 55), Size = new Size(280, 25), Font = new Font("Segoe UI", 11) };
+        using var dlg = new Form {
+            Text = "Selecciona tu seccion",
+            StartPosition = FormStartPosition.CenterScreen,
+            FormBorderStyle = FormBorderStyle.FixedDialog,
+            ControlBox = false,
+            AutoScaleMode = AutoScaleMode.Dpi,
+            ClientSize = new Size(380, 220),
+            BackColor = Theme.Surface,
+            Font = Theme.FontBody,
+            Padding = new Padding(24)
+        };
+
+        // Layout vertical que se adapta al DPI/contenido
+        var layout = new TableLayoutPanel {
+            Dock = DockStyle.Fill,
+            ColumnCount = 1,
+            RowCount = 3,
+            AutoSize = true
+        };
+        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+
+        var lbl = new Label {
+            Text = "Elige tu seccion:",
+            Font = new Font("Segoe UI Semibold", 11, FontStyle.Bold),
+            ForeColor = Theme.Text,
+            AutoSize = true,
+            Margin = new Padding(0, 0, 0, 12)
+        };
+        var cmb = new ComboBox {
+            DropDownStyle = ComboBoxStyle.DropDownList,
+            Font = new Font("Segoe UI", 12),
+            Width = 320,
+            Margin = new Padding(0, 0, 0, 20)
+        };
         cmb.Items.AddRange(Config.Sections);
         cmb.SelectedIndex = 0;
-        dlg.Controls.Add(cmb);
-        var btn = new Button { Text = "Continuar", Location = new Point(110, 120), Size = new Size(110, 32), BackColor = Color.FromArgb(33, 150, 243), ForeColor = Color.White, FlatStyle = FlatStyle.Flat, DialogResult = DialogResult.OK };
-        dlg.Controls.Add(btn);
+
+        var btn = new Button {
+            Text = "Continuar",
+            Size = new Size(140, 40),
+            DialogResult = DialogResult.OK,
+            Anchor = AnchorStyles.None
+        };
+        Theme.StylePrimary(btn);
+
+        layout.Controls.Add(lbl, 0, 0);
+        layout.Controls.Add(cmb, 0, 1);
+        layout.Controls.Add(btn, 0, 2);
+        dlg.Controls.Add(layout);
         dlg.AcceptButton = btn;
         dlg.ShowDialog();
         var sel = (string)cmb.SelectedItem!;
