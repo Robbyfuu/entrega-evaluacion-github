@@ -9,16 +9,14 @@
     <LangVersion>latest</LangVersion>
     <AssemblyName>EntregaEvaluacion</AssemblyName>
     <RootNamespace>EntregaEvaluacion</RootNamespace>
-    <Version>2.0.0</Version>
+    <Version>2.2.0</Version>
     <Company>DUOC UC - FPY1101</Company>
     <Product>Entrega de Evaluacion a GitHub</Product>
     <ApplicationManifest>app.manifest</ApplicationManifest>
-    <!-- self-contained single-file: no requiere .NET runtime instalado -->
+    <!-- Velopack: NO usar PublishSingleFile. Velopack empaqueta el folder
+         publish completo y maneja install + auto-update. -->
     <SelfContained>true</SelfContained>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
-    <PublishSingleFile>true</PublishSingleFile>
-    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
-    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
     <!-- Permite compilar (validar) WinForms en macOS/Linux. No afecta build Windows. -->
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
   </PropertyGroup>
@@ -28,6 +26,8 @@
     <PackageReference Include="LibGit2Sharp" Version="0.30.0" />
     <!-- DPAPI para cifrar el token en disco (per-user) -->
     <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="8.0.0" />
+    <!-- Velopack: auto-update framework (instalador + delta updates) -->
+    <PackageReference Include="Velopack" Version="0.0.1053" />
     <!-- System.Text.Json viene incluido en el runtime .NET 8, no necesita paquete -->
 
   </ItemGroup>

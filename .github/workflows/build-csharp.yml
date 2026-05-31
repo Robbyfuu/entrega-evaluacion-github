@@ -1,4 +1,4 @@
-name: Build C# EXE + Installer
+name: Build C# (Velopack auto-update)
 
 on:
   push:
@@ -16,54 +16,69 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup .NET 8
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x'
 
-      - name: Restore dependencies
+      - name: Derive version from tag
+        id: ver
+        shell: bash
+        run: |
+          TAG="${GITHUB_REF_NAME#exe-v}"
+          if [ -z "$TAG" ] || [ "$TAG" = "$GITHUB_REF_NAME" ]; then TAG="2.2.0"; fi
+          echo "version=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Building version $TAG"
+
+      - name: Restore
         working-directory: csharp/src
         run: dotnet restore
 
-      - name: Publish self-contained single-file EXE
+      - name: Publish (folder, NOT single-file — Velopack empaqueta)
         working-directory: csharp/src
+        run: dotnet publish -c Release -r win-x64 --self-contained true -o ../../publish
+
+      - name: Install Velopack CLI
+        run: dotnet tool install -g vpk
+
+      - name: Download previous releases (for delta updates)
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p releases
+          vpk download github --repoUrl "https://github.com/${{ github.repository }}" --token "$GH_TOKEN" --outputDir releases || echo "No previous releases (first run)"
+
+      - name: Pack with Velopack
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
         run: >
-          dotnet publish -c Release -r win-x64
-          --self-contained true
-          -p:PublishSingleFile=true
-          -p:EnableCompressionInSingleFile=true
-          -o ../../build-output
+          vpk pack
+          --packId EntregaEvaluacion
+          --packVersion "%VERSION%"
+          --packDir publish
+          --mainExe EntregaEvaluacion.exe
+          --packTitle "Entrega de Evaluacion a GitHub"
+          --packAuthors "DUOC UC - FPY1101"
+          --outputDir releases
+        shell: cmd
 
-      - name: List output
-        run: dir build-output
+      - name: List releases output
+        run: dir releases
 
-      - name: Install Inno Setup
-        run: choco install innosetup --no-progress -y
-
-      - name: Build installer
-        run: '& "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" csharp\installer\installer.iss'
-
-      - name: List installer output
-        run: dir csharp\installer\Output
-
-      - name: Upload EXE artifact
+      - name: Upload Velopack artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: EntregaEvaluacion-exe
-          path: build-output/EntregaEvaluacion.exe
+          name: velopack-release
+          path: releases/*
 
-      - name: Upload Installer artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: EntregaEvaluacion-Setup
-          path: csharp/installer/Output/*.exe
-
-      - name: Attach to release
+      - name: Attach to GitHub Release
         if: startsWith(github.ref, 'refs/tags/exe-v')
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            build-output/EntregaEvaluacion.exe
-            csharp/installer/Output/*.exe
+            releases/*
             docs/Instructivo-Instalacion.pdf

@@ -224,6 +224,13 @@ public class MainForm : Form
     {
         Log("Listo. Completa los datos y elige una accion.");
 
+        // Chequear update en background (no bloquea el arranque). Si hay update,
+        // descarga + reinicia. Silencioso si no hay o sin internet.
+        _ = Task.Run(async () =>
+        {
+            await UpdateService.CheckAndApplyAsync(msg => Log(msg));
+        });
+
         // Seccion guardada o pedir
         var saved = StudentSection.Get();
         if (!string.IsNullOrEmpty(saved) && Config.Sections.Contains(saved))

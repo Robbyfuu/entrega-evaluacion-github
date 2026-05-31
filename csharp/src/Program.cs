@@ -9,8 +9,12 @@ internal static class Program
     private static Mutex? _mutex;
 
     [STAThread]
-    static void Main()
+    static void Main(string[] args)
     {
+        // Velopack DEBE correr antes que nada. Maneja hooks de install/update/
+        // uninstall y sale del proceso si corresponde.
+        try { UpdateService.HandleStartup(args); } catch { }
+
         // Single-instance: si ya corre (demonio re-lanzo), salir.
         _mutex = new Mutex(initiallyOwned: true, "EntregaEvaluacion_SingleInstance", out bool isNew);
         if (!isNew)
