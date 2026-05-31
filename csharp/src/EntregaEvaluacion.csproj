@@ -3,13 +3,13 @@
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net8.0-windows</TargetFramework>
-    <UseWindowsForms>true</UseWindowsForms>
+    <UseWPF>true</UseWPF>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>latest</LangVersion>
     <AssemblyName>EntregaEvaluacion</AssemblyName>
     <RootNamespace>EntregaEvaluacion</RootNamespace>
-    <Version>2.2.0</Version>
+    <Version>2.3.0</Version>
     <Company>DUOC UC - FPY1101</Company>
     <Product>Entrega de Evaluacion a GitHub</Product>
     <ApplicationManifest>app.manifest</ApplicationManifest>
@@ -17,9 +17,17 @@
          publish completo y maneja install + auto-update. -->
     <SelfContained>true</SelfContained>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
-    <!-- Permite compilar (validar) WinForms en macOS/Linux. No afecta build Windows. -->
+    <!-- Permite compilar (validar) WPF en macOS/Linux. No afecta build Windows. -->
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
   </PropertyGroup>
+
+  <ItemGroup>
+    <!-- El SDK de WinForms agregaba System.IO / System.Linq a los implicit
+         usings; el de WPF no. Los Services (que NO se tocan) los usan, asi que
+         los re-declaramos como global usings sin editar esos archivos. -->
+    <Using Include="System.IO" />
+    <Using Include="System.Linq" />
+  </ItemGroup>
 
   <ItemGroup>
     <!-- Git nativo: no requiere git CLI instalado -->
@@ -28,6 +36,8 @@
     <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="8.0.0" />
     <!-- Velopack: auto-update framework (instalador + delta updates) -->
     <PackageReference Include="Velopack" Version="0.0.1053" />
+    <!-- WPF-UI: controles Fluent (look Windows 11) -->
+    <PackageReference Include="WPF-UI" Version="3.0.5" />
     <!-- System.Text.Json viene incluido en el runtime .NET 8, no necesita paquete -->
 
   </ItemGroup>

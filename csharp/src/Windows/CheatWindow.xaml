@@ -1,0 +1,69 @@
+<Window
+    x:Class="EntregaEvaluacion.Windows.CheatWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    Title="ALERTA DE INTEGRIDAD ACADEMICA"
+    WindowStyle="None"
+    WindowState="Maximized"
+    ResizeMode="NoResize"
+    Topmost="True"
+    ShowInTaskbar="False"
+    Background="#B71C1C">
+
+    <Grid Margin="40">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <TextBlock
+            Grid.Row="0"
+            Text="! ALERTA !"
+            FontFamily="Segoe UI"
+            FontSize="64"
+            FontWeight="Bold"
+            Foreground="White"
+            HorizontalAlignment="Center"
+            Margin="0,20,0,0" />
+
+        <TextBlock
+            Grid.Row="1"
+            Text="POSIBLE TRAMPA ACADEMICA DETECTADA"
+            FontFamily="Segoe UI"
+            FontSize="24"
+            FontWeight="Bold"
+            Foreground="White"
+            HorizontalAlignment="Center"
+            Margin="0,12,0,0" />
+
+        <TextBlock
+            x:Name="MsgText"
+            Grid.Row="2"
+            FontFamily="Segoe UI"
+            FontSize="16"
+            Foreground="White"
+            TextWrapping="Wrap"
+            HorizontalAlignment="Center"
+            VerticalAlignment="Center"
+            MaxWidth="900"
+            TextAlignment="Center" />
+
+        <Button
+            x:Name="UnlockButton"
+            Grid.Row="3"
+            Content="Desbloquear (clave del profesor)"
+            Width="320"
+            Height="56"
+            FontFamily="Segoe UI"
+            FontSize="16"
+            FontWeight="Bold"
+            Foreground="#B71C1C"
+            Background="White"
+            BorderThickness="0"
+            HorizontalAlignment="Center"
+            Margin="0,0,0,30"
+            Click="UnlockButton_Click" />
+    </Grid>
+</Window>

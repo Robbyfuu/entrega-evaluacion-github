@@ -1,0 +1,19 @@
+<Application
+    x:Class="EntregaEvaluacion.App"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml">
+    <!-- El ShutdownMode lo controla OnStartup en App.xaml.cs: OnExplicitShutdown
+         mientras se muestra el CheatWindow persistente, luego OnMainWindowClose. -->
+    <Application.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <!-- WPF-UI: tema Fluent (claro) + control templates -->
+                <ui:ThemesDictionary Theme="Light" />
+                <ui:ControlsDictionary />
+                <!-- Tokens "Consola Ops" propios -->
+                <ResourceDictionary Source="Resources/ConsolaOps.xaml" />
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </Application.Resources>
+</Application>
