@@ -66,3 +66,4 @@ jobs:
           files: |
             build-output/EntregaEvaluacion.exe
             csharp/installer/Output/*.exe
+            docs/Instructivo-Instalacion.pdf

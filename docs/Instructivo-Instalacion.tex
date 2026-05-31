@@ -1,0 +1,279 @@
+% !TEX program = lualatex
+% Instructivo de instalacion del .exe - DUOC FPY1101
+% Compilar: lualatex Instructivo-Instalacion.tex (dos veces para TOC)
+\DocumentMetadata{
+  pdfstandard   = ua-2,
+  pdfversion    = 2.0,
+  lang          = es-CL,
+  tagging       = on,
+  testphase     = {phase-III,tagpdf,table,firstaid}
+}
+
+\documentclass[11pt,a4paper,oneside]{report}
+
+\usepackage{fontspec}
+\usepackage{polyglossia}
+\setdefaultlanguage{spanish}
+
+\usepackage[a4paper,margin=2.5cm,top=2.8cm,bottom=2.8cm]{geometry}
+\usepackage{xcolor}
+
+% Colores contraste WCAG AA (>= 4.5:1 sobre blanco)
+\definecolor{primary}{HTML}{0050A0}
+\definecolor{accent}{HTML}{8B4500}
+\definecolor{success}{HTML}{1B5E20}
+\definecolor{danger}{HTML}{B71C1C}
+\definecolor{boxBg}{HTML}{F4F6FA}
+\definecolor{boxBorder}{HTML}{C5D0E0}
+\definecolor{codeBg}{HTML}{F0F0F0}
+
+\usepackage{hyperref}
+\hypersetup{
+  pdftitle    = {Instructivo de Instalacion - Entrega de Evaluacion},
+  pdfauthor   = {DUOC UC - Roberto Arce - FPY1101},
+  pdfsubject  = {Como instalar y ejecutar la aplicacion de entrega de evaluaciones},
+  pdfkeywords = {instalacion, Windows, SmartScreen, exe, DUOC, FPY1101},
+  pdflang     = {es-CL},
+  colorlinks  = true, linkcolor = primary, urlcolor = primary,
+  citecolor   = primary, bookmarksnumbered = true
+}
+
+\usepackage{titlesec}
+\titleformat{\chapter}[display]
+  {\normalfont\Huge\bfseries\color{primary}}
+  {\filright\Large\MakeUppercase{\chaptertitlename}\ \thechapter}
+  {1ex}{\filright}
+\titlespacing*{\chapter}{0pt}{-30pt}{20pt}
+\titleformat{\section}{\normalfont\Large\bfseries\color{primary}}{\thesection}{1em}{}
+\titleformat{\subsection}{\normalfont\large\bfseries\color{accent}}{\thesubsection}{1em}{}
+
+\usepackage{enumitem}
+\setlist{itemsep=2pt,parsep=2pt}
+
+\usepackage{tcolorbox}
+\tcbuselibrary{skins,breakable}
+\newtcolorbox{notebox}[1][]{enhanced,breakable,colback=boxBg,colframe=boxBorder,boxrule=0.5pt,arc=3pt,left=8pt,right=8pt,top=6pt,bottom=6pt,title=#1,fonttitle=\bfseries\color{primary},coltitle=primary,colbacktitle=boxBg,attach boxed title to top left={xshift=8pt,yshift=-9pt},boxed title style={size=small,colback=white,colframe=white}}
+\newtcolorbox{warnbox}[1][]{enhanced,breakable,colback=boxBg,colframe=danger,boxrule=1pt,arc=3pt,left=8pt,right=8pt,top=6pt,bottom=6pt,title=#1,fonttitle=\bfseries\color{white},coltitle=white,colbacktitle=danger,attach boxed title to top left={xshift=8pt,yshift=-9pt},boxed title style={size=small,colback=danger,colframe=danger}}
+\newtcolorbox{successbox}[1][]{enhanced,breakable,colback=boxBg,colframe=success,boxrule=1pt,arc=3pt,left=8pt,right=8pt,top=6pt,bottom=6pt,title=#1,fonttitle=\bfseries\color{white},coltitle=white,colbacktitle=success,attach boxed title to top left={xshift=8pt,yshift=-9pt},boxed title style={size=small,colback=success,colframe=success}}
+
+\usepackage{fancyhdr}
+\pagestyle{fancy}
+\fancyhf{}
+\renewcommand{\headrulewidth}{0.4pt}
+\fancyhead[L]{\small\color{primary}Instalacion}
+\fancyhead[R]{\small\color{primary}Entrega de Evaluacion}
+\fancyfoot[C]{\thepage}
+
+\renewcommand{\contentsname}{Indice}
+\renewcommand{\chaptername}{Capitulo}
+
+\begin{document}
+\sloppy
+
+\begin{titlepage}
+\centering
+\vspace*{2cm}
+{\color{primary}\Huge\bfseries Instructivo de Instalacion}\\[8pt]
+{\color{accent}\LARGE Aplicacion de Entrega de Evaluaciones}\\[2.5cm]
+\rule{0.7\textwidth}{0.8pt}\\[10pt]
+{\large DUOC UC\,---\,FPY1101 Programacion en Python}\\[10pt]
+\rule{0.7\textwidth}{0.8pt}\\[3cm]
+{\large Profesor: Roberto Arce}\\[8pt]
+{\large Secciones 001D \textbullet{} 002D \textbullet{} 003D}\\[3cm]
+{\small \href{https://github.com/Robbyfuu/entrega-evaluacion-github/releases/latest}{Descarga oficial en GitHub Releases}}\\
+\vfill
+\end{titlepage}
+
+\tableofcontents
+\clearpage
+
+% ============================================================
+\chapter{Que vas a instalar}
+
+La aplicacion \textbf{Entrega de Evaluacion} es un programa de Windows que te
+permite subir tus evaluaciones de programacion a GitHub de forma automatica.
+
+\begin{notebox}[Ventaja]
+No necesitas instalar Git, GitHub CLI ni Python por separado para subir tu
+codigo: la aplicacion trae todo lo necesario incorporado. Solo necesitas
+Python para programar (IDLE).
+\end{notebox}
+
+\section{Requisitos}
+\begin{itemize}
+  \item Windows 10 o 11 (64 bits)
+  \item Conexion a internet
+  \item Cuenta de GitHub (gratuita)
+  \item Python instalado (para programar en IDLE)
+\end{itemize}
+
+\section{Dos formas de instalar}
+
+\begin{itemize}
+  \item \textbf{Instalador} (\texttt{EntregaEvaluacion-Setup.exe}):
+    recomendado. Crea acceso directo y permite inicio automatico.
+  \item \textbf{Ejecutable directo} (\texttt{EntregaEvaluacion.exe}):
+    sin instalar, doble-click y listo. Util si no tienes permisos.
+\end{itemize}
+
+% ============================================================
+\chapter{Descarga}
+
+\section{Paso 1: Abrir la pagina de descargas}
+
+Abre en tu navegador el enlace oficial:
+
+\begin{center}
+\texttt{github.com/Robbyfuu/entrega-evaluacion-github/releases/latest}
+\end{center}
+
+\section{Paso 2: Descargar el instalador}
+
+En la seccion \textbf{Assets} descarga:
+
+\begin{center}
+\textbf{EntregaEvaluacion-Setup.exe}
+\end{center}
+
+\begin{notebox}[Si tu navegador advierte de la descarga]
+Chrome o Edge pueden decir que el archivo "se descarga con poca frecuencia"
+o "puede ser peligroso". Es normal en programas nuevos sin firma comercial.
+
+Haz clic en la flecha junto a la descarga y elige \textbf{Conservar} o
+\textbf{Mantener de todos modos}.
+\end{notebox}
+
+% ============================================================
+\chapter{Instalacion y la advertencia de Windows}
+
+\section{Paso 1: Ejecutar el instalador}
+
+Haz doble-click en \texttt{EntregaEvaluacion-Setup.exe}.
+
+\section{Paso 2: "Windows protegio su PC" (IMPORTANTE)}
+
+\begin{warnbox}[Esta pantalla azul es NORMAL]
+Como la aplicacion es nueva y no tiene una firma comercial de pago, Windows
+muestra una pantalla azul llamada \textbf{SmartScreen}:
+
+\vspace{4pt}
+\textit{"Windows protegio su PC. Microsoft Defender SmartScreen impidio el
+inicio de una aplicacion no reconocida."}
+\vspace{4pt}
+
+NO significa que el programa tenga virus. Solo significa que es nuevo.
+\end{warnbox}
+
+\textbf{Para continuar:}
+
+\begin{enumerate}
+  \item Haz clic en el texto \textbf{"Mas informacion"}.
+  \item Aparece un boton nuevo abajo: \textbf{"Ejecutar de todas formas"}.
+  \item Haz clic en \textbf{"Ejecutar de todas formas"}.
+\end{enumerate}
+
+\begin{notebox}[Por que es seguro]
+El codigo fuente completo de la aplicacion es publico y revisable en GitHub.
+Puedes verlo en el mismo repositorio desde donde descargaste el programa.
+\end{notebox}
+
+\section{Paso 3: Completar la instalacion}
+
+\begin{enumerate}
+  \item Elige la carpeta de instalacion (deja la que viene por defecto).
+  \item Marca \textbf{"Crear acceso directo en el Escritorio"}.
+  \item Si tu profesor lo indica, marca \textbf{"Iniciar automaticamente al
+    encender el PC"}.
+  \item Clic en \textbf{Instalar} y luego \textbf{Finalizar}.
+\end{enumerate}
+
+\begin{successbox}[Listo]
+La aplicacion queda instalada con un icono en tu Escritorio.
+\end{successbox}
+
+\section{Alternativa: ejecutable directo (sin instalar)}
+
+Si no puedes instalar (sin permisos de administrador):
+
+\begin{enumerate}
+  \item Descarga \texttt{EntregaEvaluacion.exe} (no el Setup).
+  \item Guardalo en una carpeta facil de encontrar (ej: Escritorio).
+  \item Doble-click. Aparece la misma pantalla azul de SmartScreen:
+    \textbf{Mas informacion} $\rightarrow$ \textbf{Ejecutar de todas formas}.
+\end{enumerate}
+
+% ============================================================
+\chapter{Primer uso}
+
+\section{Paso 1: Elegir tu seccion}
+
+La primera vez, la aplicacion pregunta tu seccion. Elige \textbf{001D},
+\textbf{002D} o \textbf{003D} segun tu inscripcion.
+
+\section{Paso 2: Iniciar sesion en GitHub}
+
+\begin{enumerate}
+  \item Clic en \textbf{Iniciar sesion}.
+  \item Aparece un codigo grande tipo \texttt{XXXX-XXXX}.
+  \item Abre en tu navegador (o celular): \url{https://github.com/login/device}
+  \item Ingresa el codigo, inicia sesion en GitHub y autoriza.
+  \item La aplicacion detecta la autorizacion automaticamente.
+\end{enumerate}
+
+\begin{notebox}[Una sola vez]
+La sesion queda guardada. No tendras que volver a iniciar sesion en ese PC.
+\end{notebox}
+
+\section{Paso 3: Aceptar tu tarea}
+
+Si tu profesor asigno tareas por GitHub Classroom, veras un aviso en la
+aplicacion. Haz clic, acepta la tarea en el navegador, y vuelve.
+
+% ============================================================
+\chapter{Problemas comunes}
+
+\section{No veo el boton "Ejecutar de todas formas"}
+
+El texto \textbf{"Mas informacion"} es un enlace pequeno en la pantalla azul.
+Haz clic ahi primero; el boton aparece despues.
+
+\section{El antivirus borro el archivo}
+
+Algunos antivirus muy estrictos mueven el \texttt{.exe} a cuarentena.
+Restauralo desde el antivirus o pide ayuda a tu profesor. La descarga oficial
+de GitHub es segura.
+
+\section{Dice que falta un componente de Windows}
+
+La aplicacion es autocontenida y no deberia faltar nada. Si aparece un error,
+descarga la version mas reciente del enlace oficial.
+
+\section{No se abre nada al hacer doble-click}
+
+Espera unos segundos (la primera apertura descomprime archivos internos).
+Si sigue sin abrir, prueba el instalador en lugar del ejecutable directo.
+
+\section{Quiero desinstalar}
+
+Panel de Control $\rightarrow$ Programas $\rightarrow$ Entrega de Evaluacion
+$\rightarrow$ Desinstalar. O borra la carpeta si usaste el ejecutable directo.
+
+% ============================================================
+\chapter{Resumen rapido}
+
+\begin{enumerate}
+  \item Descargar \texttt{EntregaEvaluacion-Setup.exe} del enlace oficial.
+  \item Doble-click. En la pantalla azul: \textbf{Mas informacion}
+    $\rightarrow$ \textbf{Ejecutar de todas formas}.
+  \item Instalar (acceso directo en Escritorio).
+  \item Abrir, elegir seccion, iniciar sesion con codigo.
+  \item Aceptar tarea (si el profesor la asigno).
+  \item Programar, subir, entregar el enlace en el AVA.
+\end{enumerate}
+
+\begin{successbox}[Recuerda]
+La pantalla azul de Windows es normal en programas nuevos. \textbf{Mas
+informacion} $\rightarrow$ \textbf{Ejecutar de todas formas}. No es virus.
+\end{successbox}
+
+\end{document}

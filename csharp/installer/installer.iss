@@ -37,6 +37,7 @@ Name: "autostart"; Description: "Iniciar automaticamente al encender el PC (reco
 Source: "..\..\build-output\EntregaEvaluacion.exe"; DestDir: "{app}"; Flags: ignoreversion
 ; Incluir la guia PDF si existe
 Source: "..\..\docs\Guia-Alumno.pdf"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
+Source: "..\..\docs\Instructivo-Instalacion.pdf"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
 
 [Icons]
 Name: "{group}\Entrega Evaluacion"; Filename: "{app}\{#MyAppExeName}"
