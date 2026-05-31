@@ -53,18 +53,18 @@ jobs:
           vpk download github --repoUrl "https://github.com/${{ github.repository }}" --token "$GH_TOKEN" --outputDir releases || echo "No previous releases (first run)"
 
       - name: Pack with Velopack
+        shell: bash
         env:
           VERSION: ${{ steps.ver.outputs.version }}
-        run: >
-          vpk pack
-          --packId EntregaEvaluacion
-          --packVersion "%VERSION%"
-          --packDir publish
-          --mainExe EntregaEvaluacion.exe
-          --packTitle "Entrega de Evaluacion a GitHub"
-          --packAuthors "DUOC UC - FPY1101"
-          --outputDir releases
-        shell: cmd
+        run: |
+          vpk pack \
+            --packId EntregaEvaluacion \
+            --packVersion "$VERSION" \
+            --packDir publish \
+            --mainExe EntregaEvaluacion.exe \
+            --packTitle "Entrega de Evaluacion a GitHub" \
+            --packAuthors "DUOC UC - FPY1101" \
+            --outputDir releases
 
       - name: List releases output
         run: dir releases
