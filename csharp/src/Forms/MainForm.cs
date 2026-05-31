@@ -51,6 +51,13 @@ public class MainForm : Form
     // ===================== UI =====================
     private void BuildUi()
     {
+        // CRITICO: AutoScaleMode.Dpi. El manifest es PerMonitorV2 (la app maneja
+        // su propio scaling). Sin esto, en Windows con escala 125%/150% la fuente
+        // crece pero las cajas quedan en tamano 96dpi -> texto recortado.
+        // Dpi escala Location+Size de todos los hijos proporcionalmente.
+        AutoScaleMode = AutoScaleMode.Dpi;
+        AutoScaleDimensions = new SizeF(96F, 96F);
+
         Text = "Subir Evaluacion a GitHub";
         Size = new Size(640, 705);
         StartPosition = FormStartPosition.CenterScreen;
