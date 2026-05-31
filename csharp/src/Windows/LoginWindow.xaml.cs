@@ -1,7 +1,7 @@
-using System.Diagnostics;
 using System.Windows;
 using System.Windows.Media;
 using System.Windows.Threading;
+using EntregaEvaluacion.Models;
 using EntregaEvaluacion.Services;
 
 namespace EntregaEvaluacion.Windows;
@@ -101,37 +101,38 @@ public partial class LoginWindow : Window
         try { Clipboard.SetText(CodeText.Text); CopyCodeButton.Content = "Copiado!"; } catch { }
     }
 
-    // Opcion principal: abrir el device flow en el navegador embebido (WebView2).
-    // El polling del token NO cambia: sigue corriendo en PollAsync. El alumno
-    // solo pega el codigo dentro de esta ventana. Si WebView2 falla, la propia
-    // WebBrowserWindow hace fallback al navegador externo.
+    // Unica opcion: abrir el device flow en el navegador embebido (WebView2)
+    // endurecido. El polling del token NO cambia: sigue corriendo en PollAsync.
+    // El alumno solo pega el codigo dentro de esta ventana. NO hay fallback al
+    // navegador externo: github.com/login/device esta en la whitelist y, si
+    // WebView2 falla, la propia ventana avisa y se cierra.
     private void OpenEmbedded_Click(object sender, RoutedEventArgs e)
     {
         if (string.IsNullOrEmpty(_verifyUri)) return;
-        try
+        var ctx = new BrowseContext
         {
-            var win = new WebBrowserWindow(_verifyUri, "Iniciar sesion en GitHub") { Owner = this };
-            win.Show();
-        }
-        catch
-        {
-            OpenUrl(_verifyUri);
-        }
+            GithubUsername = "(login)",
+            PcName = Environment.MachineName,
+            Section = StudentSection.Get()
+        };
+        var win = new WebBrowserWindow(_verifyUri, "Iniciar sesion en GitHub", ctx, OnForbiddenNavigation) { Owner = this };
+        win.Show();
     }
 
-    // Opcion secundaria (fallback manual): navegador externo del sistema.
-    private void Open_Click(object sender, RoutedEventArgs e) => OpenUrl(_verifyUri);
+    // Trampa por navegacion fuera de la whitelist durante el login. El device
+    // flow solo deberia tocar dominios permitidos (github / microsoft / google),
+    // asi que salir de ahi se trata como intento de evasion.
+    private void OnForbiddenNavigation(string host)
+    {
+        LockdownService.Trigger($"Navegacion prohibida: {host}", 0, new[] { $"Navegacion prohibida: {host}" });
+        var alert = new CheatWindow($"Navegacion prohibida: {host}", 0, new[] { $"Navegacion prohibida: {host}" }) { Owner = this };
+        alert.ShowDialog();
+    }
 
     private void Cancel_Click(object sender, RoutedEventArgs e)
     {
         _pollTimer?.Stop();
         DialogResult = false;
         Close();
-    }
-
-    private static void OpenUrl(string url)
-    {
-        try { Process.Start(new ProcessStartInfo { FileName = url, UseShellExecute = true }); }
-        catch { }
     }
 }

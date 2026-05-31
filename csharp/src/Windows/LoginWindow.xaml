@@ -89,23 +89,12 @@
         </Grid>
 
         <Grid Grid.Row="4" Margin="0,0,0,16">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="Auto" />
-            </Grid.ColumnDefinitions>
             <ui:Button
                 x:Name="OpenEmbeddedButton"
-                Grid.Column="0"
-                Content="Abrir aqui (recomendado)"
+                Content="Abrir aqui para iniciar sesion"
                 Appearance="Primary"
                 HorizontalAlignment="Stretch"
-                Margin="0,0,8,0"
                 Click="OpenEmbedded_Click" />
-            <ui:Button
-                x:Name="OpenButton"
-                Grid.Column="1"
-                Content="Abrir en navegador externo"
-                Click="Open_Click" />
         </Grid>
 
         <TextBlock

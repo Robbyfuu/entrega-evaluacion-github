@@ -222,6 +222,7 @@
         <button class="nav-item" data-target="sec-control"><span class="dot" style="background:var(--danger)"></span>Controles</button>
         <button class="nav-item" data-target="sec-pcs"><span class="dot" style="background:var(--success)"></span>PCs conectados</button>
         <button class="nav-item" data-target="sec-alerts"><span class="dot" style="background:var(--warning)"></span>Alertas</button>
+        <button class="nav-item" data-target="sec-browsing"><span class="dot" style="background:var(--info)"></span>Navegación</button>
         <button class="nav-item" data-target="sec-tareas"><span class="dot" style="background:var(--info)"></span>Tareas Classroom</button>
         <button class="nav-item" data-target="sec-activity"><span class="dot" style="background:var(--text-faint)"></span>Actividad</button>
         <button class="nav-item" data-target="sec-cheat"><span class="dot" style="background:var(--danger)"></span>Trampas</button>
@@ -329,6 +330,43 @@
         </tbody>
       </table>
       <button class="btn-secondary" style="margin-top:16px;" onclick="loadProcessAlerts()">Refrescar</button>
+    </div>
+
+    <!-- Historial de navegacion -->
+    <div class="card" id="sec-browsing">
+      <h2>Historial de navegación
+        <span style="font-size:12px;color:#8e8e93;">(últimos 100)</span>
+        <span id="browseBlockedCount" class="pill" style="background:#ffebee;color:#c62828;margin-left:8px;">0 bloqueos</span>
+      </h2>
+      <p style="color:#6e6e73;font-size:12px;margin-bottom:12px;">
+        Navegación del navegador interno del alumno. Solo se permiten GitHub, Microsoft (login) y Google (login/Gmail). Las filas rojas son intentos a sitios prohibidos (disparan trampa).
+      </p>
+      <div class="row-flex" style="margin-bottom:12px;">
+        <div class="field" style="flex:0 0 200px;">
+          <label for="browseFilter">Filtrar</label>
+          <select id="browseFilter" onchange="loadBrowsing()"
+                  style="width:100%;padding:10px 14px;border:1px solid var(--border-strong);border-radius:8px;font-size:14px;">
+            <option value="">Todo</option>
+            <option value="blocked">Solo bloqueados</option>
+          </select>
+        </div>
+        <button class="btn-secondary" onclick="loadBrowsing()">Refrescar</button>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>Fecha</th>
+            <th>Usuario</th>
+            <th>PC</th>
+            <th>Sección</th>
+            <th>Estado</th>
+            <th>URL</th>
+          </tr>
+        </thead>
+        <tbody id="browsingBody">
+          <tr><td colspan="6" style="text-align:center;color:#8e8e93;">Cargando...</td></tr>
+        </tbody>
+      </table>
     </div>
 
     <!-- Modal procesos de un PC -->
@@ -550,9 +588,10 @@
       loadAssignments();
       loadOnline();
       loadProcessAlerts();
+      loadBrowsing();
       if (pollTimer) clearInterval(pollTimer);
       pollTimer = setInterval(() => {
-        loadState(); loadEvents(); loadActivity(); loadOnline(); loadProcessAlerts();
+        loadState(); loadEvents(); loadActivity(); loadOnline(); loadProcessAlerts(); loadBrowsing();
       }, 20000);
       $('livePill').classList.remove('hidden');
     }
@@ -1214,6 +1253,61 @@
         tr.appendChild(tdProc);
 
         tr.appendChild(makeEl('td', { text: a.window_title || '-' }));
+        tbody.appendChild(tr);
+      });
+    };
+
+    // ===== Historial de navegacion =====
+    window.loadBrowsing = async function() {
+      const onlyBlocked = $('browseFilter') && $('browseFilter').value === 'blocked';
+      let q = supabase
+        .from('browser_history')
+        .select('*')
+        .order('visited_at', { ascending: false })
+        .limit(100);
+      if (onlyBlocked) q = q.eq('allowed', false);
+      const { data, error } = await q;
+      const tbody = $('browsingBody');
+      while (tbody.firstChild) tbody.removeChild(tbody.firstChild);
+      if (error) {
+        const tr = makeEl('tr');
+        const td = makeEl('td', { text: 'Error: ' + error.message, className: 'err' });
+        td.colSpan = 6; tr.appendChild(td); tbody.appendChild(tr); return;
+      }
+      // contador de bloqueos (sobre lo cargado)
+      const blocked = (data || []).filter(r => r.allowed === false).length;
+      if ($('browseBlockedCount')) $('browseBlockedCount').textContent = blocked + ' bloqueos';
+      if (!data || data.length === 0) {
+        const tr = makeEl('tr');
+        const td = makeEl('td', { text: 'Sin navegación registrada.', style: { textAlign:'center', color:'#8e8e93' } });
+        td.colSpan = 6; tr.appendChild(td); tbody.appendChild(tr); return;
+      }
+      data.forEach(r => {
+        const tr = makeEl('tr');
+        if (r.allowed === false) tr.style.background = '#ffebee';
+        tr.appendChild(makeEl('td', { text: fmt(r.visited_at) }));
+        const tdU = makeEl('td');
+        if (r.github_username) {
+          const b = makeEl('span', { text: '@' + r.github_username, className: 'badge' });
+          b.style.background = '#0071e3'; b.style.color = '#fff';
+          tdU.appendChild(b);
+        } else tdU.textContent = '-';
+        tr.appendChild(tdU);
+        tr.appendChild(makeEl('td', { text: r.pc_name || '-' }));
+        tr.appendChild(makeEl('td', { text: r.section || '-' }));
+        const tdS = makeEl('td');
+        const sb = makeEl('span', { text: r.allowed ? 'permitido' : 'BLOQUEADO', className: 'badge' });
+        sb.style.background = r.allowed ? '#e8f5e9' : '#ffebee';
+        sb.style.color = r.allowed ? '#2e7d32' : '#c62828';
+        tdS.appendChild(sb);
+        tr.appendChild(tdS);
+        const tdUrl = makeEl('td');
+        tdUrl.style.maxWidth = '360px'; tdUrl.style.overflow = 'hidden';
+        tdUrl.style.textOverflow = 'ellipsis'; tdUrl.style.whiteSpace = 'nowrap';
+        tdUrl.style.fontFamily = 'var(--font-mono)'; tdUrl.style.fontSize = '12px';
+        tdUrl.textContent = r.url || '';
+        tdUrl.title = r.url || '';
+        tr.appendChild(tdUrl);
         tbody.appendChild(tr);
       });
     };

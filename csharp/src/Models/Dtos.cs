@@ -68,6 +68,15 @@ public class TargetedLockdown
     [JsonPropertyName("reason")] public string? Reason { get; set; }
 }
 
+// Contexto que el navegador embebido necesita para registrar la navegacion
+// (tracking a browser_history) y para disparar la trampa con datos del alumno.
+public sealed class BrowseContext
+{
+    public string GithubUsername { get; set; } = "";
+    public string PcName { get; set; } = "";
+    public string? Section { get; set; }
+}
+
 public class ProcessInfo
 {
     [JsonPropertyName("name")] public string Name { get; set; } = "";

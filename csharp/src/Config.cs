@@ -45,4 +45,48 @@ public static class Config
         "LICENSE", "LICENSE.txt", "LICENSE.md",
         ".gitignore", ".gitattributes", ".git"
     };
+
+    // ===== Whitelist de dominios para el navegador embebido =====
+    // Solo se permite navegar a estos dominios (y sus subdominios). Cualquier
+    // navegacion fuera de esta lista dispara la trampa (lockdown). El match es
+    // por sufijo de host, case-insensitive (ver IsDomainAllowed).
+    public static readonly string[] AllowedBrowseDomains =
+    {
+        // GitHub (cubre www, classroom, codeload, etc.). El alumno necesita
+        // navegar github, asi que se permite todo el dominio.
+        "github.com",
+        "githubusercontent.com",
+
+        // Entra ID / Microsoft login. Acotado a hosts de auth (no microsoft.com
+        // entero, que abriria docs/office/etc).
+        "login.microsoftonline.com",
+        "login.live.com",
+        "login.microsoft.com",
+        "msftauth.net",
+        "aadcdn.msftauth.net",
+
+        // Google login + Gmail (aceptar invitacion). Acotado: NO google.com
+        // entero (que permitiria Search/Translate/Docs y seria un escape).
+        "accounts.google.com",
+        "mail.google.com",
+        "googleusercontent.com"
+    };
+
+    /// <summary>
+    /// True si el host pertenece a un dominio permitido: coincide exactamente
+    /// con un dominio de la whitelist o es un subdominio de el (termina en
+    /// "." + dominio). Comparacion case-insensitive.
+    /// </summary>
+    public static bool IsDomainAllowed(string host)
+    {
+        if (string.IsNullOrWhiteSpace(host)) return false;
+        host = host.Trim().TrimEnd('.').ToLowerInvariant();
+        foreach (var domain in AllowedBrowseDomains)
+        {
+            var d = domain.ToLowerInvariant();
+            if (host == d || host.EndsWith("." + d, StringComparison.Ordinal))
+                return true;
+        }
+        return false;
+    }
 }

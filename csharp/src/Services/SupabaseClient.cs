@@ -192,6 +192,22 @@ public class SupabaseClient
         });
     }
 
+    /// <summary>
+    /// Registra una navegacion del alumno en el navegador embebido. INSERT
+    /// directo (RLS anon insert), silencioso. allowed=true cuando el dominio
+    /// estaba en la whitelist; allowed=false cuando se bloqueo (trampa).
+    /// </summary>
+    public async Task ReportBrowsingAsync(
+        string githubUsername, string pcName, string? section,
+        string url, string domain, bool allowed)
+    {
+        await PostInsertAsync("browser_history", new
+        {
+            github_username = githubUsername, pc_name = pcName, section,
+            url, domain, allowed
+        });
+    }
+
     private async Task PostInsertAsync(string table, object payload)
     {
         try

@@ -878,19 +878,42 @@ public partial class MainWindow : Window
         }
     }
 
-    // Abre la URL en el navegador embebido (WebView2). Si el runtime falla,
-    // WebBrowserWindow hace fallback al navegador externo por su cuenta.
+    // Abre la URL en el navegador embebido (WebView2) endurecido. NO hay
+    // fallback al navegador externo: si WebView2 falla, la propia ventana avisa
+    // y se cierra. El navegador filtra por whitelist y, ante un dominio
+    // prohibido, llama a OnForbiddenNavigation para disparar la trampa.
     private void OpenUrl(string url)
     {
-        try
+        var ctx = new BrowseContext
         {
-            var win = new WebBrowserWindow(url, "Navegador") { Owner = this };
-            win.Show();
-        }
-        catch
-        {
-            try { Process.Start(new ProcessStartInfo { FileName = url, UseShellExecute = true }); } catch { }
-        }
+            GithubUsername = _user?.Login ?? "",
+            PcName = Environment.MachineName,
+            Section = StudentSection.Get()
+        };
+        var win = new WebBrowserWindow(url, "Navegador", ctx, OnForbiddenNavigation) { Owner = this };
+        win.Show();
+    }
+
+    /// <summary>
+    /// Trampa por navegacion fuera de la whitelist. Mismo flujo que cuando se
+    /// detecta un repo sucio: persiste el lockdown, lo reporta a BD y muestra la
+    /// pantalla roja (CheatWindow). Se ejecuta en el contexto del MainWindow,
+    /// que tiene acceso a _sb, _user y la seccion.
+    /// </summary>
+    private async void OnForbiddenNavigation(string host)
+    {
+        var reason = $"Navegacion prohibida: {host}";
+        Log($"TRAMPA: {reason}");
+
+        LockdownService.Trigger(reason, 0, new[] { reason });
+
+        var user = _user?.Login ?? "(sin sesion)";
+        try { await _sb.ReportCheatEventAsync(user, Environment.MachineName, reason, 0, new[] { reason }); }
+        catch { }
+
+        var alert = new CheatWindow(reason, 0, new[] { reason }) { Owner = this };
+        alert.ShowDialog();
+        UpdateButtonStates();
     }
 
     private void OpenFolder(string folder)
