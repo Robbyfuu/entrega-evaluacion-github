@@ -58,6 +58,48 @@ public class SupabaseClient
         catch { return new(); }
     }
 
+    // ===== Aceptaciones de tareas =====
+
+    /// <summary>
+    /// Registra (upsert) que un alumno acepto una tarea de Classroom via RPC
+    /// SECURITY DEFINER. Mismo patron silencioso que SendHeartbeatAsync.
+    /// </summary>
+    public async Task RecordAcceptanceAsync(
+        string githubUsername, long assignmentId, string? title,
+        string? section, string? repoName, string? repoUrl)
+    {
+        try
+        {
+            var payload = JsonSerializer.Serialize(new
+            {
+                p_github_username = githubUsername,
+                p_assignment_id = assignmentId,
+                p_assignment_title = title,
+                p_section = section,
+                p_repo_name = repoName,
+                p_repo_url = repoUrl
+            }, JsonOpts);
+            var content = new StringContent(payload, Encoding.UTF8, "application/json");
+            await _http.PostAsync(Rest("rpc/record_acceptance"), content);
+        }
+        catch { }
+    }
+
+    /// <summary>
+    /// Devuelve las aceptaciones registradas de un alumno. Lista vacia si falla.
+    /// </summary>
+    public async Task<List<Acceptance>> GetAcceptancesAsync(string githubUsername)
+    {
+        try
+        {
+            var user = Uri.EscapeDataString(githubUsername);
+            var json = await _http.GetStringAsync(
+                Rest($"assignment_acceptances?github_username=eq.{user}&select=*"));
+            return JsonSerializer.Deserialize<List<Acceptance>>(json, JsonOpts) ?? new();
+        }
+        catch { return new(); }
+    }
+
     // ===== Heartbeat (RPC SECURITY DEFINER) =====
     public async Task SendHeartbeatAsync(
         string pcName, string githubUsername, string? githubEmail,

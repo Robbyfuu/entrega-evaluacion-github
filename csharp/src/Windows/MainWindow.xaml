@@ -43,7 +43,7 @@
                     <TextBlock x:Name="SessionEmailText" Text="" Style="{StaticResource MutedText}" FontSize="11" TextTrimming="CharacterEllipsis" />
                     <ui:Button x:Name="LoginButton" Content="Iniciar sesion" Appearance="Primary" HorizontalAlignment="Stretch" Margin="0,12,0,0" Click="LoginButton_Click" />
                     <ui:Button x:Name="LogoutButton" Content="Cerrar sesion" Appearance="Danger" HorizontalAlignment="Stretch" Margin="0,6,0,0" IsEnabled="False" Click="LogoutButton_Click" />
-                    <ui:HyperlinkButton Content="No tienes cuenta? Creala aqui" NavigateUri="https://github.com/signup" FontSize="11" Margin="0,6,0,0" HorizontalAlignment="Left" />
+                    <ui:HyperlinkButton x:Name="SignupLink" Content="No tienes cuenta? Creala aqui" FontSize="11" Margin="0,6,0,0" HorizontalAlignment="Left" Click="SignupLink_Click" />
                 </StackPanel>
 
                 <!-- ===== Indicador de pasos ===== -->

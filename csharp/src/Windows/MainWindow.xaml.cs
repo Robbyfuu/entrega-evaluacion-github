@@ -105,6 +105,8 @@ public partial class MainWindow : Window
 
     private async void AssignmentsLink_Click(object sender, RoutedEventArgs e) => await ShowAssignmentsDialog();
 
+    private void SignupLink_Click(object sender, RoutedEventArgs e) => OpenUrl("https://github.com/signup");
+
     private async void LoginButton_Click(object sender, RoutedEventArgs e) => await DoLoginAsync();
 
     private async void LogoutButton_Click(object sender, RoutedEventArgs e) => await DoLogoutAsync();
@@ -518,6 +520,7 @@ public partial class MainWindow : Window
         CarpetaBox.Text = target;
         OpenPythonIdle(target);
         await _sb.ReportStudentActivityAsync("clone", _user!.Login, _user.Email, Environment.MachineName, StudentSection.Get(), repo, $"https://github.com/{owner}/{name}");
+        await RecordAcceptanceIfClassroomRepoAsync(name, $"https://github.com/{owner}/{name}");
         MessageBox.Show($"Repo clonado en:\n{target}\n\nSe abrio IDLE de Python.\n\nEdita, guarda (Ctrl+S), y luego 'Subir Archivos'.", "Listo", MessageBoxButton.OK, MessageBoxImage.Information);
         Status("Edita en IDLE y luego Subir Archivos.");
         UpdateButtonStates();
@@ -577,12 +580,85 @@ public partial class MainWindow : Window
         }).ToList();
     }
 
+    /// <summary>
+    /// Nombre de repo esperado para una tarea de Classroom: {slug-del-titulo}-{username}.
+    /// Reusa la misma normalizacion (Sanitize) que el resto de la app.
+    /// </summary>
+    private static string ExpectedClassroomRepo(string title, string username)
+        => $"{Sanitize(title)}-{username.ToLowerInvariant()}";
+
+    /// <summary>
+    /// Determina, para cada assignment de la seccion, si el alumno ya lo acepto.
+    /// Una tarea esta ACEPTADA si existe el repo esperado en su cuenta
+    /// ({slug}-{username}) O hay un registro en assignment_acceptances.
+    /// Devuelve el estado por assignment (incluye el repo encontrado si lo hay).
+    /// </summary>
+    private async Task<List<AssignmentStatus>> ComputeAssignmentStatusesAsync(List<Assignment> asg)
+    {
+        var result = new List<AssignmentStatus>();
+        if (asg.Count == 0) return result;
+
+        // Sin sesion no podemos cruzar contra repos; usamos solo acceptances
+        // si hubiera username, pero sin user todo queda pendiente.
+        var me = _user?.Login;
+
+        // Repos del alumno (para detectar el repo esperado de cada tarea).
+        var repoNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var reposByName = new Dictionary<string, GitHubRepo>(StringComparer.OrdinalIgnoreCase);
+        if (!string.IsNullOrEmpty(me) && _gh.IsAuthenticated)
+        {
+            foreach (var r in await _gh.ListReposAsync())
+            {
+                repoNames.Add(r.Name);
+                reposByName[r.Name] = r;
+            }
+        }
+
+        // Aceptaciones registradas en BD.
+        var acceptedIds = new HashSet<long>();
+        if (!string.IsNullOrEmpty(me))
+            foreach (var a in await _sb.GetAcceptancesAsync(me))
+                acceptedIds.Add(a.AssignmentId);
+
+        foreach (var a in asg)
+        {
+            string? repoName = null;
+            string? repoUrl = null;
+            bool hasRepo = false;
+
+            if (!string.IsNullOrEmpty(me))
+            {
+                var expected = ExpectedClassroomRepo(a.Title, me);
+                if (repoNames.Contains(expected))
+                {
+                    hasRepo = true;
+                    repoName = expected;
+                    var owner = reposByName.TryGetValue(expected, out var r) && r.Owner != null
+                        ? r.Owner.Login : me;
+                    repoUrl = $"https://github.com/{owner}/{expected}";
+                }
+            }
+
+            var accepted = hasRepo || acceptedIds.Contains(a.Id);
+            result.Add(new AssignmentStatus
+            {
+                Assignment = a,
+                Accepted = accepted,
+                RepoName = repoName,
+                RepoUrl = repoUrl
+            });
+        }
+        return result;
+    }
+
     private async Task UpdateAssignmentsBanner()
     {
         var asg = FilterBySection(await _sb.GetActiveAssignmentsAsync());
-        if (asg.Count > 0)
+        var statuses = await ComputeAssignmentStatusesAsync(asg);
+        var pending = statuses.Count(s => !s.Accepted);
+        if (pending > 0)
         {
-            AssignmentsBannerText.Text = $"Tienes {asg.Count} tarea(s) de Classroom";
+            AssignmentsBannerText.Text = $"Tienes {pending} tarea(s) de Classroom";
             AssignmentsBanner.Visibility = Visibility.Visible;
         }
         else AssignmentsBanner.Visibility = Visibility.Collapsed;
@@ -593,8 +669,48 @@ public partial class MainWindow : Window
         var asg = FilterBySection(await _sb.GetActiveAssignmentsAsync());
         if (asg.Count == 0) { MessageBox.Show("No hay tareas activas.", "Sin tareas", MessageBoxButton.OK, MessageBoxImage.Information); return; }
 
-        var dlg = new AssignmentsWindow(asg, OpenUrl) { Owner = this };
+        var statuses = await ComputeAssignmentStatusesAsync(asg);
+        var dlg = new AssignmentsWindow(statuses, OpenAcceptUrl, OpenUrl) { Owner = this };
         dlg.ShowDialog();
+        // Al cerrar, refrescar el banner por si el alumno acepto algo.
+        await UpdateAssignmentsBanner();
+    }
+
+    /// <summary>
+    /// Si el repo clonado corresponde a una tarea activa de Classroom de la
+    /// seccion del alumno ({slug}-{username}), registra la aceptacion en BD.
+    /// Asi queda registro aunque el alumno clone directo sin pasar por el banner.
+    /// </summary>
+    private async Task RecordAcceptanceIfClassroomRepoAsync(string repoName, string repoUrl)
+    {
+        var me = _user?.Login;
+        if (string.IsNullOrEmpty(me)) return;
+        var asg = FilterBySection(await _sb.GetActiveAssignmentsAsync());
+        foreach (var a in asg)
+        {
+            if (string.Equals(ExpectedClassroomRepo(a.Title, me), repoName, StringComparison.OrdinalIgnoreCase))
+            {
+                await _sb.RecordAcceptanceAsync(me, a.Id, a.Title, StudentSection.Get(), repoName, repoUrl);
+                break;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Abre la URL de aceptacion de una tarea en el navegador embebido y, en
+    /// paralelo, registra la aceptacion en BD para que el profesor la vea.
+    /// </summary>
+    private void OpenAcceptUrl(AssignmentStatus status)
+    {
+        var a = status.Assignment;
+        var me = _user?.Login;
+        if (!string.IsNullOrEmpty(me))
+        {
+            var repoName = status.RepoName ?? ExpectedClassroomRepo(a.Title, me);
+            var repoUrl = status.RepoUrl ?? $"https://github.com/{me}/{repoName}";
+            _ = _sb.RecordAcceptanceAsync(me, a.Id, a.Title, StudentSection.Get(), repoName, repoUrl);
+        }
+        OpenUrl(a.ClassroomUrl);
     }
 
     // ===================== Admin polling =====================
@@ -762,9 +878,19 @@ public partial class MainWindow : Window
         }
     }
 
-    private static void OpenUrl(string url)
+    // Abre la URL en el navegador embebido (WebView2). Si el runtime falla,
+    // WebBrowserWindow hace fallback al navegador externo por su cuenta.
+    private void OpenUrl(string url)
     {
-        try { Process.Start(new ProcessStartInfo { FileName = url, UseShellExecute = true }); } catch { }
+        try
+        {
+            var win = new WebBrowserWindow(url, "Navegador") { Owner = this };
+            win.Show();
+        }
+        catch
+        {
+            try { Process.Start(new ProcessStartInfo { FileName = url, UseShellExecute = true }); } catch { }
+        }
     }
 
     private void OpenFolder(string folder)

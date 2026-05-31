@@ -101,6 +101,25 @@ public partial class LoginWindow : Window
         try { Clipboard.SetText(CodeText.Text); CopyCodeButton.Content = "Copiado!"; } catch { }
     }
 
+    // Opcion principal: abrir el device flow en el navegador embebido (WebView2).
+    // El polling del token NO cambia: sigue corriendo en PollAsync. El alumno
+    // solo pega el codigo dentro de esta ventana. Si WebView2 falla, la propia
+    // WebBrowserWindow hace fallback al navegador externo.
+    private void OpenEmbedded_Click(object sender, RoutedEventArgs e)
+    {
+        if (string.IsNullOrEmpty(_verifyUri)) return;
+        try
+        {
+            var win = new WebBrowserWindow(_verifyUri, "Iniciar sesion en GitHub") { Owner = this };
+            win.Show();
+        }
+        catch
+        {
+            OpenUrl(_verifyUri);
+        }
+    }
+
+    // Opcion secundaria (fallback manual): navegador externo del sistema.
     private void Open_Click(object sender, RoutedEventArgs e) => OpenUrl(_verifyUri);
 
     private void Cancel_Click(object sender, RoutedEventArgs e)

@@ -21,6 +21,44 @@ public class Assignment
     [JsonPropertyName("active")] public bool Active { get; set; }
 }
 
+// Registro de aceptacion de una tarea de Classroom por parte de un alumno.
+// Se persiste via RPC record_acceptance y se lee de assignment_acceptances.
+public class Acceptance
+{
+    [JsonPropertyName("github_username")] public string GithubUsername { get; set; } = "";
+    [JsonPropertyName("assignment_id")] public long AssignmentId { get; set; }
+    [JsonPropertyName("assignment_title")] public string? AssignmentTitle { get; set; }
+    [JsonPropertyName("section")] public string? Section { get; set; }
+    [JsonPropertyName("repo_name")] public string? RepoName { get; set; }
+    [JsonPropertyName("repo_url")] public string? RepoUrl { get; set; }
+    [JsonPropertyName("accepted_at")] public string? AcceptedAt { get; set; }
+}
+
+// Estado calculado de una tarea para el alumno actual (cruce repo + acceptances).
+// No mapea a ninguna tabla; es un view-model para la lista de tareas.
+public class AssignmentStatus
+{
+    public Assignment Assignment { get; set; } = new();
+    public bool Accepted { get; set; }
+    public string? RepoName { get; set; }
+    public string? RepoUrl { get; set; }
+
+    // Bindings para la UI (DataTemplate de AssignmentsWindow).
+    public string Title => Assignment.Title;
+    public string ClassroomUrl => Assignment.ClassroomUrl;
+    public string StatusLabel => Accepted ? "Aceptada ✓" : "Pendiente";
+    public bool IsPending => !Accepted;
+    public bool HasRepoLink => Accepted && !string.IsNullOrEmpty(RepoUrl);
+
+    // Naranja para pendiente, verde para aceptada (tema Consola Ops).
+    [JsonIgnore]
+    public System.Windows.Media.Brush BadgeBrush => Accepted
+        ? new System.Windows.Media.SolidColorBrush(
+            (System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#16A34A"))
+        : new System.Windows.Media.SolidColorBrush(
+            (System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#D97706"));
+}
+
 public class TargetedLockdown
 {
     [JsonPropertyName("id")] public long Id { get; set; }
