@@ -3,150 +3,236 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
-    Title="Subir Evaluacion a GitHub"
-    Width="720"
-    Height="760"
-    MinWidth="640"
-    MinHeight="700"
+    Title="Entrega de Evaluacion a GitHub"
+    Width="960"
+    Height="680"
+    MinWidth="860"
+    MinHeight="620"
     WindowStartupLocation="CenterScreen"
     Background="{DynamicResource BgBrush}">
 
-    <Grid Margin="20">
-        <Grid.RowDefinitions>
-            <RowDefinition Height="Auto" />
-            <!-- header (titulo + cuenta) -->
-            <RowDefinition Height="Auto" />
-            <!-- seccion + banner -->
-            <RowDefinition Height="Auto" />
-            <!-- modo de subida -->
-            <RowDefinition Height="Auto" />
-            <!-- formulario -->
-            <RowDefinition Height="Auto" />
-            <!-- botones accion -->
-            <RowDefinition Height="*" />
-            <!-- log -->
-            <RowDefinition Height="Auto" />
-            <!-- status -->
-        </Grid.RowDefinitions>
+    <!-- ZIndex base: contenido en 0, toast en 100 -->
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="220" />
+            <!-- sidebar -->
+            <ColumnDefinition Width="*" />
+            <!-- contenido -->
+        </Grid.ColumnDefinitions>
 
-        <!-- ===== Header: titulo + panel cuenta ===== -->
-        <Grid Grid.Row="0" Margin="0,0,0,12">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="Auto" />
-            </Grid.ColumnDefinitions>
+        <!-- =====================================================
+             SIDEBAR
+             ===================================================== -->
+        <Border Grid.Column="0" Background="{DynamicResource SurfaceBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,1,0">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <!-- cuenta -->
+                    <RowDefinition Height="Auto" />
+                    <!-- pasos -->
+                    <RowDefinition Height="*" />
+                    <!-- spacer -->
+                    <RowDefinition Height="Auto" />
+                    <!-- seccion + banner -->
+                </Grid.RowDefinitions>
 
-            <StackPanel Grid.Column="0" VerticalAlignment="Center">
-                <TextBlock Text="Evaluacion -&gt; GitHub" Style="{StaticResource TitleText}" />
-            </StackPanel>
-
-            <ui:Card Grid.Column="1" Padding="12">
-                <StackPanel MinWidth="220">
-                    <TextBlock Text="Cuenta de GitHub" Style="{StaticResource MutedText}" FontWeight="SemiBold" />
-                    <TextBlock x:Name="SessionUserText" Text="Verificando..." Style="{StaticResource LabelText}" FontWeight="Bold" Margin="0,4,0,0" />
-                    <TextBlock x:Name="SessionEmailText" Text="" Style="{StaticResource MutedText}" FontSize="12" />
-                    <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
-                        <ui:Button x:Name="LoginButton" Content="Iniciar sesion" Appearance="Primary" Margin="0,0,8,0" Click="LoginButton_Click" />
-                        <ui:Button x:Name="LogoutButton" Content="Cerrar sesion" Appearance="Danger" IsEnabled="False" Click="LogoutButton_Click" />
-                    </StackPanel>
-                    <ui:HyperlinkButton Content="No tienes cuenta? Creala aqui" NavigateUri="https://github.com/signup" Margin="0,4,0,0" HorizontalAlignment="Left" />
+                <!-- ===== Panel cuenta GitHub ===== -->
+                <StackPanel Grid.Row="0" Margin="16,20,16,8">
+                    <TextBlock Text="Cuenta de GitHub" Style="{StaticResource MutedText}" FontWeight="SemiBold" FontSize="12" />
+                    <TextBlock x:Name="SessionUserText" Text="Verificando..." Style="{StaticResource LabelText}" FontWeight="Bold" Margin="0,6,0,0" />
+                    <TextBlock x:Name="SessionEmailText" Text="" Style="{StaticResource MutedText}" FontSize="11" TextTrimming="CharacterEllipsis" />
+                    <ui:Button x:Name="LoginButton" Content="Iniciar sesion" Appearance="Primary" HorizontalAlignment="Stretch" Margin="0,12,0,0" Click="LoginButton_Click" />
+                    <ui:Button x:Name="LogoutButton" Content="Cerrar sesion" Appearance="Danger" HorizontalAlignment="Stretch" Margin="0,6,0,0" IsEnabled="False" Click="LogoutButton_Click" />
+                    <ui:HyperlinkButton Content="No tienes cuenta? Creala aqui" NavigateUri="https://github.com/signup" FontSize="11" Margin="0,6,0,0" HorizontalAlignment="Left" />
                 </StackPanel>
-            </ui:Card>
-        </Grid>
 
-        <!-- ===== Seccion + banner Classroom ===== -->
-        <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,12" VerticalAlignment="Center">
-            <TextBlock Text="Tu seccion:" Style="{StaticResource LabelText}" FontWeight="Bold" Margin="0,0,8,0" />
-            <ComboBox x:Name="SectionCombo" Width="100" SelectionChanged="SectionCombo_SelectionChanged" />
-            <ui:HyperlinkButton x:Name="AssignmentsLink" Content="" Visibility="Collapsed" Margin="16,0,0,0" Click="AssignmentsLink_Click" />
-        </StackPanel>
+                <!-- ===== Indicador de pasos ===== -->
+                <StackPanel Grid.Row="1" Margin="16,12,16,8">
+                    <TextBlock Text="PROGRESO" Style="{StaticResource MutedText}" FontWeight="SemiBold" FontSize="11" Margin="0,0,0,8" />
 
-        <!-- ===== Modo de subida ===== -->
-        <ui:Card Grid.Row="2" Margin="0,0,0,12" Padding="12">
-            <StackPanel>
-                <TextBlock Text="Modo de subida" Style="{StaticResource MutedText}" FontWeight="SemiBold" Margin="0,0,0,8" />
-                <StackPanel Orientation="Horizontal">
-                    <RadioButton x:Name="ModoNuevo" Content="Crear repositorio nuevo" IsChecked="True" GroupName="Modo" Margin="0,0,24,0" Checked="ModoNuevo_Checked" />
-                    <RadioButton x:Name="ModoExistente" Content="Usar repositorio existente de mi cuenta" GroupName="Modo" Checked="ModoExistente_Checked" />
+                    <!-- Paso 1 -->
+                    <Border x:Name="Step1Border" Style="{StaticResource StepCard}">
+                        <StackPanel Orientation="Horizontal">
+                            <Border x:Name="Step1Dot" Style="{StaticResource StepDot}">
+                                <TextBlock x:Name="Step1Num" Text="1" Style="{StaticResource StepDotText}" />
+                            </Border>
+                            <StackPanel VerticalAlignment="Center">
+                                <TextBlock x:Name="Step1Title" Text="Conectar" Style="{StaticResource StepTitle}" />
+                                <TextBlock Text="Inicia sesion" Style="{StaticResource StepSub}" />
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Paso 2 -->
+                    <Border x:Name="Step2Border" Style="{StaticResource StepCard}">
+                        <StackPanel Orientation="Horizontal">
+                            <Border x:Name="Step2Dot" Style="{StaticResource StepDot}">
+                                <TextBlock x:Name="Step2Num" Text="2" Style="{StaticResource StepDotText}" />
+                            </Border>
+                            <StackPanel VerticalAlignment="Center">
+                                <TextBlock x:Name="Step2Title" Text="Configurar" Style="{StaticResource StepTitle}" />
+                                <TextBlock Text="Repositorio" Style="{StaticResource StepSub}" />
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Paso 3 -->
+                    <Border x:Name="Step3Border" Style="{StaticResource StepCard}">
+                        <StackPanel Orientation="Horizontal">
+                            <Border x:Name="Step3Dot" Style="{StaticResource StepDot}">
+                                <TextBlock x:Name="Step3Num" Text="3" Style="{StaticResource StepDotText}" />
+                            </Border>
+                            <StackPanel VerticalAlignment="Center">
+                                <TextBlock x:Name="Step3Title" Text="Entregar" Style="{StaticResource StepTitle}" />
+                                <TextBlock Text="Carpeta y subir" Style="{StaticResource StepSub}" />
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
                 </StackPanel>
-            </StackPanel>
-        </ui:Card>
 
-        <!-- ===== Formulario ===== -->
-        <Grid Grid.Row="3" Margin="0,0,0,12">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="170" />
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="Auto" />
-            </Grid.ColumnDefinitions>
+                <!-- ===== Seccion + banner (abajo) ===== -->
+                <StackPanel Grid.Row="3" Margin="16,8,16,16">
+                    <Border Background="{DynamicResource Surface2Brush}" CornerRadius="8" Padding="12">
+                        <StackPanel>
+                            <TextBlock Text="Tu seccion" Style="{StaticResource MutedText}" FontWeight="SemiBold" FontSize="11" Margin="0,0,0,6" />
+                            <ComboBox x:Name="SectionCombo" HorizontalAlignment="Stretch" SelectionChanged="SectionCombo_SelectionChanged" />
+                        </StackPanel>
+                    </Border>
+                    <Border x:Name="AssignmentsBanner" Background="#F3EEFF" BorderBrush="{DynamicResource InfoBrush}" BorderThickness="1" CornerRadius="8" Padding="10" Margin="0,8,0,0" Visibility="Collapsed">
+                        <StackPanel>
+                            <TextBlock x:Name="AssignmentsBannerText" Text="" Foreground="{DynamicResource InfoBrush}" FontWeight="SemiBold" FontSize="12" TextWrapping="Wrap" />
+                            <ui:HyperlinkButton x:Name="AssignmentsLink" Content="Aceptar tareas" FontSize="12" Margin="0,2,0,0" HorizontalAlignment="Left" Click="AssignmentsLink_Click" />
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- =====================================================
+             CONTENIDO
+             ===================================================== -->
+        <Grid Grid.Column="1">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
-                <RowDefinition Height="Auto" />
-                <RowDefinition Height="Auto" />
-                <RowDefinition Height="Auto" />
-                <RowDefinition Height="Auto" />
-                <RowDefinition Height="Auto" />
-            </Grid.RowDefinitions>
-
-            <!-- Nombre completo -->
-            <TextBlock Grid.Row="0" Grid.Column="0" Text="Nombre completo:" Style="{StaticResource LabelText}" Margin="0,0,0,8" />
-            <ui:TextBox x:Name="NombreBox" Grid.Row="0" Grid.Column="1" Grid.ColumnSpan="2" Margin="0,0,0,8" TextChanged="NombreBox_TextChanged" />
-
-            <!-- Tipo de evaluacion -->
-            <TextBlock Grid.Row="1" Grid.Column="0" Text="Tipo de evaluacion:" Style="{StaticResource LabelText}" Margin="0,0,0,8" />
-            <ComboBox x:Name="TipoCombo" Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" Margin="0,0,0,8" HorizontalAlignment="Stretch" SelectionChanged="TipoCombo_SelectionChanged" />
-
-            <!-- Tu repositorio -->
-            <TextBlock Grid.Row="2" Grid.Column="0" Text="Tu repositorio:" Style="{StaticResource LabelText}" Margin="0,0,0,8" />
-            <ComboBox x:Name="ReposCombo" Grid.Row="2" Grid.Column="1" Margin="0,0,8,8" IsEnabled="False" HorizontalAlignment="Stretch" SelectionChanged="ReposCombo_SelectionChanged" />
-            <ui:Button x:Name="RefreshButton" Grid.Row="2" Grid.Column="2" Content="Refrescar" IsEnabled="False" Margin="0,0,0,8" Click="RefreshButton_Click" />
-
-            <!-- Carpeta del proyecto -->
-            <TextBlock Grid.Row="3" Grid.Column="0" Text="Carpeta del proyecto:" Style="{StaticResource LabelText}" Margin="0,0,0,8" />
-            <ui:TextBox x:Name="CarpetaBox" Grid.Row="3" Grid.Column="1" IsReadOnly="True" Margin="0,0,8,8" />
-            <ui:Button x:Name="BuscarButton" Grid.Row="3" Grid.Column="2" Content="Buscar..." Margin="0,0,0,8" Click="BuscarButton_Click" />
-
-            <!-- Repo destino (preview) -->
-            <TextBlock Grid.Row="4" Grid.Column="0" Text="Repo destino:" Style="{StaticResource LabelText}" Margin="0,0,0,4" />
-            <TextBlock x:Name="RepoDestinoText" Grid.Row="4" Grid.Column="1" Grid.ColumnSpan="2" Text="(rellenar nombre y tipo)" Style="{StaticResource MonoText}" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,4" />
-
-            <!-- Nota -->
-            <TextBlock Grid.Row="5" Grid.Column="0" Grid.ColumnSpan="3" Text="Los repositorios se crean publicos para que el profesor pueda verlos." Style="{StaticResource MutedText}" FontStyle="Italic" FontSize="12" />
-        </Grid>
-
-        <!-- ===== Botones accion ===== -->
-        <Grid Grid.Row="4" Margin="0,0,0,12">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="*" />
-            </Grid.ColumnDefinitions>
-            <ui:Button x:Name="CrearButton" Grid.Column="0" Content="1. Crear Repo" Appearance="Primary" Height="40" HorizontalAlignment="Stretch" Margin="0,0,6,0" IsEnabled="False" Click="CrearButton_Click" />
-            <ui:Button x:Name="SubirButton" Grid.Column="1" Content="2. Subir Archivos" Appearance="Success" Height="40" HorizontalAlignment="Stretch" Margin="6,0,0,0" IsEnabled="False" Click="SubirButton_Click" />
-        </Grid>
-
-        <!-- ===== Log (consola) ===== -->
-        <Grid Grid.Row="5">
-            <Grid.RowDefinitions>
-                <RowDefinition Height="Auto" />
+                <!-- header -->
                 <RowDefinition Height="*" />
+                <!-- formulario (scroll) -->
+                <RowDefinition Height="Auto" />
+                <!-- accion primaria -->
+                <RowDefinition Height="Auto" />
+                <!-- barra de estado -->
             </Grid.RowDefinitions>
-            <TextBlock Grid.Row="0" Text="Salida:" Style="{StaticResource LabelText}" Margin="0,0,0,4" />
-            <Border Grid.Row="1" Background="{DynamicResource ConsoleBgBrush}" CornerRadius="6">
-                <TextBox
-                    x:Name="LogBox"
-                    Background="Transparent"
-                    Foreground="{DynamicResource ConsoleFgBrush}"
-                    FontFamily="{DynamicResource MonoFont}"
-                    FontSize="13"
-                    BorderThickness="0"
-                    IsReadOnly="True"
-                    TextWrapping="Wrap"
-                    VerticalScrollBarVisibility="Auto"
-                    Padding="8" />
+
+            <!-- ===== Header ===== -->
+            <StackPanel Grid.Row="0" Margin="24,20,24,0">
+                <TextBlock Text="Evaluacion &#8594; GitHub" Style="{StaticResource TitleText}" />
+                <TextBlock Text="Crea o conecta tu repositorio y sube tu entrega." Style="{StaticResource MutedText}" FontSize="13" Margin="0,2,0,0" />
+            </StackPanel>
+
+            <!-- ===== Formulario ===== -->
+            <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Padding="24,16,24,0">
+                <StackPanel>
+
+                    <!-- Modo de subida -->
+                    <ui:Card Padding="16" Margin="0,0,0,16">
+                        <StackPanel>
+                            <TextBlock Text="Modo de subida" Style="{StaticResource H2Text}" Margin="0,0,0,10" />
+                            <StackPanel Orientation="Horizontal">
+                                <RadioButton x:Name="ModoNuevo" Content="Crear repositorio nuevo" IsChecked="True" GroupName="Modo" Margin="0,0,24,0" Checked="ModoNuevo_Checked" />
+                                <RadioButton x:Name="ModoExistente" Content="Usar repositorio existente de mi cuenta" GroupName="Modo" Checked="ModoExistente_Checked" />
+                            </StackPanel>
+                        </StackPanel>
+                    </ui:Card>
+
+                    <!-- Datos del repositorio -->
+                    <ui:Card Padding="16" Margin="0,0,0,16">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="170" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+
+                            <!-- Nombre completo -->
+                            <TextBlock Grid.Row="0" Grid.Column="0" Text="Nombre completo:" Style="{StaticResource LabelText}" Margin="0,0,0,10" />
+                            <ui:TextBox x:Name="NombreBox" Grid.Row="0" Grid.Column="1" Grid.ColumnSpan="2" Margin="0,0,0,10" TextChanged="NombreBox_TextChanged" />
+
+                            <!-- Tipo de evaluacion -->
+                            <TextBlock Grid.Row="1" Grid.Column="0" Text="Tipo de evaluacion:" Style="{StaticResource LabelText}" Margin="0,0,0,10" />
+                            <ComboBox x:Name="TipoCombo" Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" Margin="0,0,0,10" HorizontalAlignment="Stretch" SelectionChanged="TipoCombo_SelectionChanged" />
+
+                            <!-- Tu repositorio -->
+                            <TextBlock Grid.Row="2" Grid.Column="0" Text="Tu repositorio:" Style="{StaticResource LabelText}" Margin="0,0,0,10" />
+                            <ComboBox x:Name="ReposCombo" Grid.Row="2" Grid.Column="1" Margin="0,0,8,10" IsEnabled="False" HorizontalAlignment="Stretch" SelectionChanged="ReposCombo_SelectionChanged" />
+                            <ui:Button x:Name="RefreshButton" Grid.Row="2" Grid.Column="2" Content="Refrescar" IsEnabled="False" Margin="0,0,0,10" Click="RefreshButton_Click" />
+
+                            <!-- Carpeta del proyecto -->
+                            <TextBlock Grid.Row="3" Grid.Column="0" Text="Carpeta del proyecto:" Style="{StaticResource LabelText}" Margin="0,0,0,10" />
+                            <ui:TextBox x:Name="CarpetaBox" Grid.Row="3" Grid.Column="1" IsReadOnly="True" Margin="0,0,8,10" />
+                            <ui:Button x:Name="BuscarButton" Grid.Row="3" Grid.Column="2" Content="Buscar..." Margin="0,0,0,10" Click="BuscarButton_Click" />
+
+                            <!-- Repo destino -->
+                            <TextBlock Grid.Row="4" Grid.Column="0" Text="Repo destino:" Style="{StaticResource LabelText}" Margin="0,0,0,4" />
+                            <TextBlock x:Name="RepoDestinoText" Grid.Row="4" Grid.Column="1" Grid.ColumnSpan="2" Text="(rellenar nombre y tipo)" Style="{StaticResource MonoText}" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,4" TextTrimming="CharacterEllipsis" />
+
+                            <!-- Nota -->
+                            <TextBlock Grid.Row="5" Grid.Column="0" Grid.ColumnSpan="3" Text="Los repositorios se crean publicos para que el profesor pueda verlos." Style="{StaticResource MutedText}" FontStyle="Italic" FontSize="12" Margin="0,4,0,0" />
+                        </Grid>
+                    </ui:Card>
+                </StackPanel>
+            </ScrollViewer>
+
+            <!-- ===== Accion primaria contextual ===== -->
+            <Border Grid.Row="2" Background="{DynamicResource SurfaceBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,1,0,0" Padding="24,12,24,12">
+                <ui:Button x:Name="PrimaryButton" Content="Inicia sesion primero" Appearance="Primary" Height="44" FontSize="14" FontWeight="SemiBold" HorizontalAlignment="Stretch" IsEnabled="False" Click="PrimaryButton_Click" />
+            </Border>
+
+            <!-- ===== Barra de estado ===== -->
+            <Border Grid.Row="3" Background="{DynamicResource Surface2Brush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,1,0,0" Padding="24,6,24,6">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock x:Name="StatusText" Grid.Column="0" Text="Listo." Style="{StaticResource MutedText}" FontSize="12" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                    <ui:HyperlinkButton x:Name="LogDetailsLink" Grid.Column="1" Content="Ver detalles" FontSize="12" Click="LogDetailsLink_Click" />
+                </Grid>
             </Border>
         </Grid>
 
-        <!-- ===== Status ===== -->
-        <TextBlock x:Name="StatusText" Grid.Row="6" Text="Listo." Style="{StaticResource MutedText}" Margin="0,8,0,0" />
+        <!-- =====================================================
+             TOAST (encima de todo, bottom-right)
+             ===================================================== -->
+        <Border
+            x:Name="ToastBorder"
+            Grid.Column="1"
+            Panel.ZIndex="100"
+            HorizontalAlignment="Right"
+            VerticalAlignment="Bottom"
+            Margin="0,0,24,64"
+            MinWidth="240"
+            MaxWidth="380"
+            CornerRadius="10"
+            Padding="14,12"
+            Opacity="0"
+            Visibility="Collapsed"
+            Background="{DynamicResource SurfaceBrush}"
+            BorderThickness="1">
+            <Border.Effect>
+                <DropShadowEffect BlurRadius="16" ShadowDepth="2" Opacity="0.25" Color="#000000" />
+            </Border.Effect>
+            <StackPanel Orientation="Horizontal">
+                <Border x:Name="ToastAccent" Width="4" CornerRadius="2" Margin="0,0,12,0" />
+                <TextBlock x:Name="ToastText" Text="" Foreground="{DynamicResource TextBrush}" FontSize="13" TextWrapping="Wrap" VerticalAlignment="Center" />
+            </StackPanel>
+        </Border>
     </Grid>
 </Window>

@@ -34,6 +34,14 @@ public partial class MainWindow : Window
     // Evita disparar handlers durante la carga inicial de combos.
     private bool _initializing = true;
 
+    // ===== UI: log en memoria, toast, accion primaria =====
+    private readonly System.Text.StringBuilder _logBuffer = new();
+    private DispatcherTimer? _toastTimer;
+    private LogDetailWindow? _logWindow;
+
+    // El handler que el boton primario debe disparar segun el estado actual.
+    private Func<Task>? _primaryAction;
+
     public MainWindow()
     {
         InitializeComponent();
@@ -139,9 +147,8 @@ public partial class MainWindow : Window
 
     private void BuscarButton_Click(object sender, RoutedEventArgs e) => BuscarCarpeta();
 
-    private async void CrearButton_Click(object sender, RoutedEventArgs e) => await CrearRepoAsync();
-
-    private async void SubirButton_Click(object sender, RoutedEventArgs e) => await SubirArchivosAsync();
+    // Las acciones Crear/Clonar/Subir ahora se disparan desde el boton primario
+    // contextual (PrimaryButton_Click -> _primaryAction). Ver UpdatePrimaryAction().
 
     // ===================== Sesion =====================
     private async Task UpdateSessionPanel()
@@ -198,13 +205,11 @@ public partial class MainWindow : Window
         {
             ReposCombo.IsEnabled = true; RefreshButton.IsEnabled = true;
             NombreBox.IsEnabled = false; TipoCombo.IsEnabled = false;
-            CrearButton.Content = "1. Clonar Repo";
         }
         else
         {
             ReposCombo.IsEnabled = false; RefreshButton.IsEnabled = false;
             NombreBox.IsEnabled = true; TipoCombo.IsEnabled = true;
-            CrearButton.Content = "1. Crear Repo";
         }
         UpdateRepoPreview();
     }
@@ -243,14 +248,127 @@ public partial class MainWindow : Window
         else { RepoDestinoText.Text = ModoExistente.IsChecked == true ? "(selecciona un repositorio)" : "(rellenar nombre y tipo)"; RepoDestinoText.Foreground = Brushes.Gray; }
     }
 
+    // Compat: el resto de la logica de negocio sigue llamando a este metodo.
+    // Ahora solo recalcula la accion primaria contextual y el paso activo.
     private void UpdateButtonStates()
+    {
+        UpdatePrimaryAction();
+        UpdateActiveStep();
+    }
+
+    /// <summary>
+    /// Boton primario unico y contextual. Decide texto, color, handler y
+    /// estado segun el estado actual. Reemplaza los antiguos botones
+    /// "1. Crear" / "2. Subir". No cambia la logica de negocio: solo
+    /// reconecta a los handlers existentes (CrearRepoAsync, SubirArchivosAsync).
+    /// </summary>
+    private void UpdatePrimaryAction()
     {
         var hasAuth = _gh.IsAuthenticated;
         var hasFolder = !string.IsNullOrEmpty(CarpetaBox.Text) && Directory.Exists(CarpetaBox.Text);
-        var hasRepoData = ModoExistente.IsChecked == true ? ReposCombo.SelectedItem != null
+        var existente = ModoExistente.IsChecked == true;
+        var hasRepoData = existente ? ReposCombo.SelectedItem != null
             : (!string.IsNullOrEmpty(NombreBox.Text.Trim()) && !string.IsNullOrEmpty((TipoCombo.SelectedItem as string ?? "").Trim()));
-        CrearButton.IsEnabled = hasAuth && hasRepoData;
-        SubirButton.IsEnabled = hasAuth && hasRepoData && hasFolder;
+
+        // 1) Sin sesion.
+        if (!hasAuth)
+        {
+            PrimaryButton.Content = "Inicia sesion primero";
+            PrimaryButton.Appearance = Wpf.Ui.Controls.ControlAppearance.Secondary;
+            PrimaryButton.IsEnabled = false;
+            _primaryAction = null;
+            return;
+        }
+
+        // 3) Carpeta lista + repo (creado o clonado) -> Subir.
+        if (hasFolder && hasRepoData)
+        {
+            PrimaryButton.Content = "Subir evaluacion";
+            PrimaryButton.Appearance = Wpf.Ui.Controls.ControlAppearance.Success;
+            PrimaryButton.IsEnabled = true;
+            _primaryAction = SubirArchivosAsync;
+            return;
+        }
+
+        // 2) Datos completos -> Crear / Clonar.
+        if (hasRepoData)
+        {
+            PrimaryButton.Content = existente ? "Clonar repositorio" : "Crear repositorio";
+            PrimaryButton.Appearance = Wpf.Ui.Controls.ControlAppearance.Primary;
+            PrimaryButton.IsEnabled = true;
+            _primaryAction = CrearRepoAsync;
+            return;
+        }
+
+        // Sesion iniciada pero faltan datos del repo.
+        PrimaryButton.Content = existente ? "Selecciona un repositorio" : "Completa los datos";
+        PrimaryButton.Appearance = Wpf.Ui.Controls.ControlAppearance.Secondary;
+        PrimaryButton.IsEnabled = false;
+        _primaryAction = null;
+    }
+
+    /// <summary>
+    /// Resalta el paso del sidebar que refleja el estado real del alumno:
+    /// sin sesion = paso 1; con sesion sin repo+carpeta listos = paso 2;
+    /// repo + carpeta listos = paso 3.
+    /// </summary>
+    private void UpdateActiveStep()
+    {
+        var hasAuth = _gh.IsAuthenticated;
+        var hasFolder = !string.IsNullOrEmpty(CarpetaBox.Text) && Directory.Exists(CarpetaBox.Text);
+        var existente = ModoExistente.IsChecked == true;
+        var hasRepoData = existente ? ReposCombo.SelectedItem != null
+            : (!string.IsNullOrEmpty(NombreBox.Text.Trim()) && !string.IsNullOrEmpty((TipoCombo.SelectedItem as string ?? "").Trim()));
+
+        int active = !hasAuth ? 1 : (hasFolder && hasRepoData ? 3 : 2);
+
+        SetStepActive(Step1Border, Step1Dot, Step1Num, Step1Title, active == 1, active > 1);
+        SetStepActive(Step2Border, Step2Dot, Step2Num, Step2Title, active == 2, active > 2);
+        SetStepActive(Step3Border, Step3Dot, Step3Num, Step3Title, active == 3, false);
+    }
+
+    private void SetStepActive(System.Windows.Controls.Border card, System.Windows.Controls.Border dot,
+        System.Windows.Controls.TextBlock num, System.Windows.Controls.TextBlock title, bool isActive, bool isDone)
+    {
+        var primary = (Brush)FindResource("PrimaryBrush");
+        var success = (Brush)FindResource("SuccessBrush");
+        var surface2 = (Brush)FindResource("Surface2Brush");
+        var border = (Brush)FindResource("BorderStrongBrush");
+        var muted = (Brush)FindResource("MutedBrush");
+        var text = (Brush)FindResource("TextBrush");
+
+        // Numero original guardado en el Tag la primera vez.
+        num.Tag ??= num.Text;
+        var original = (string)num.Tag;
+
+        if (isDone)
+        {
+            card.Background = Brushes.Transparent;
+            dot.Background = success; dot.BorderBrush = success;
+            num.Text = "✓"; num.Foreground = Brushes.White;
+            title.Foreground = text;
+        }
+        else if (isActive)
+        {
+            card.Background = surface2;
+            dot.Background = primary; dot.BorderBrush = primary;
+            num.Text = original; num.Foreground = Brushes.White;
+            title.Foreground = primary;
+        }
+        else
+        {
+            card.Background = Brushes.Transparent;
+            dot.Background = surface2; dot.BorderBrush = border;
+            num.Text = original; num.Foreground = muted;
+            title.Foreground = muted;
+        }
+    }
+
+    private async void PrimaryButton_Click(object sender, RoutedEventArgs e)
+    {
+        var action = _primaryAction;
+        if (action == null) return;
+        await action();
     }
 
     private void BuscarCarpeta()
@@ -464,10 +582,10 @@ public partial class MainWindow : Window
         var asg = FilterBySection(await _sb.GetActiveAssignmentsAsync());
         if (asg.Count > 0)
         {
-            AssignmentsLink.Content = $"Tienes {asg.Count} tarea(s) de Classroom - Click para aceptar";
-            AssignmentsLink.Visibility = Visibility.Visible;
+            AssignmentsBannerText.Text = $"Tienes {asg.Count} tarea(s) de Classroom";
+            AssignmentsBanner.Visibility = Visibility.Visible;
         }
-        else AssignmentsLink.Visibility = Visibility.Collapsed;
+        else AssignmentsBanner.Visibility = Visibility.Collapsed;
     }
 
     private async Task ShowAssignmentsDialog()
@@ -561,15 +679,87 @@ public partial class MainWindow : Window
     private void Log(string msg)
     {
         if (!Dispatcher.CheckAccess()) { Dispatcher.Invoke(() => Log(msg)); return; }
-        LogBox.AppendText($"[{DateTime.Now:HH:mm:ss}] {msg}\r\n");
-        LogBox.CaretIndex = LogBox.Text.Length;
-        LogBox.ScrollToEnd();
+
+        // Historial completo en memoria (visible en "Ver detalles").
+        var line = $"[{DateTime.Now:HH:mm:ss}] {msg}";
+        _logBuffer.AppendLine(line);
+        _logWindow?.AppendLine(line);
+
+        // Ultimo mensaje en la barra de estado.
+        StatusText.Text = msg;
+
+        // Toast para eventos clave (login, repo creado/clonado, subida, errores).
+        var kind = ClassifyLog(msg);
+        if (kind != null) ShowToast(msg, kind.Value);
     }
 
     private void Status(string msg)
     {
         if (!Dispatcher.CheckAccess()) { Dispatcher.Invoke(() => Status(msg)); return; }
         StatusText.Text = msg;
+    }
+
+    // Decide si un mensaje de Log() merece toast y de que tipo.
+    // Devuelve null para mensajes rutinarios (solo barra de estado).
+    private static ToastKind? ClassifyLog(string msg)
+    {
+        var m = msg.ToLowerInvariant();
+        if (m.Contains("error") || m.Contains("fallo") || m.Contains("trampa") || m.StartsWith("no se"))
+            return ToastKind.Error;
+        if (m.StartsWith("ok ") || m.Contains("completada") || m.Contains("creado") ||
+            m.Contains("clonado") || m.Contains("sesion iniciada") || m.Contains("sesion cerrada") ||
+            m.Contains("limpio"))
+            return ToastKind.Success;
+        if (m.StartsWith("[admin]"))
+            return ToastKind.Info;
+        return null;
+    }
+
+    // ===================== Toast =====================
+    private void ShowToast(string msg, ToastKind kind)
+    {
+        if (!Dispatcher.CheckAccess()) { Dispatcher.Invoke(() => ShowToast(msg, kind)); return; }
+
+        var accent = kind switch
+        {
+            ToastKind.Success => (Brush)FindResource("SuccessBrush"),
+            ToastKind.Error => (Brush)FindResource("DangerBrush"),
+            _ => (Brush)FindResource("InfoBrush"),
+        };
+        ToastAccent.Background = accent;
+        ToastBorder.BorderBrush = accent;
+        ToastText.Text = msg;
+
+        ToastBorder.Visibility = Visibility.Visible;
+
+        var fadeIn = new System.Windows.Media.Animation.DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(180));
+        ToastBorder.BeginAnimation(OpacityProperty, fadeIn);
+
+        _toastTimer?.Stop();
+        _toastTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(4) };
+        _toastTimer.Tick += (_, _) =>
+        {
+            _toastTimer!.Stop();
+            var fadeOut = new System.Windows.Media.Animation.DoubleAnimation(1, 0, TimeSpan.FromMilliseconds(300));
+            fadeOut.Completed += (_, _) => ToastBorder.Visibility = Visibility.Collapsed;
+            ToastBorder.BeginAnimation(OpacityProperty, fadeOut);
+        };
+        _toastTimer.Start();
+    }
+
+    private void LogDetailsLink_Click(object sender, RoutedEventArgs e)
+    {
+        if (_logWindow == null)
+        {
+            _logWindow = new LogDetailWindow { Owner = this };
+            _logWindow.Closed += (_, _) => _logWindow = null;
+            _logWindow.SetText(_logBuffer.ToString());
+            _logWindow.Show();
+        }
+        else
+        {
+            _logWindow.Activate();
+        }
     }
 
     private static void OpenUrl(string url)
@@ -596,5 +786,58 @@ public partial class MainWindow : Window
             catch { }
         }
         Log("Python no encontrado. Abre IDLE manualmente.");
+    }
+}
+
+/// <summary>Tipo de toast (color del acento y semantica del mensaje).</summary>
+public enum ToastKind { Info, Success, Error }
+
+/// <summary>
+/// Ventana de detalle del log (mono, fondo oscuro "Consola Ops"). Util para
+/// el profesor en debug. Se crea desde el link "Ver detalles" y muestra el
+/// historial completo guardado en memoria por MainWindow.
+/// </summary>
+public sealed class LogDetailWindow : Window
+{
+    private readonly System.Windows.Controls.TextBox _box;
+
+    public LogDetailWindow()
+    {
+        Title = "Detalle del registro";
+        Width = 720;
+        Height = 480;
+        WindowStartupLocation = WindowStartupLocation.CenterOwner;
+
+        _box = new System.Windows.Controls.TextBox
+        {
+            IsReadOnly = true,
+            TextWrapping = TextWrapping.Wrap,
+            VerticalScrollBarVisibility = System.Windows.Controls.ScrollBarVisibility.Auto,
+            BorderThickness = new Thickness(0),
+            Padding = new Thickness(12),
+            FontSize = 13,
+        };
+
+        // Colores Consola Ops (oscuros), independientes del tema claro.
+        _box.Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#0D0E14"));
+        _box.Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#4ADE80"));
+        _box.FontFamily = new System.Windows.Media.FontFamily("Consolas, Cascadia Code");
+
+        Background = _box.Background;
+        Content = _box;
+    }
+
+    public void SetText(string text)
+    {
+        _box.Text = text;
+        _box.CaretIndex = _box.Text.Length;
+        _box.ScrollToEnd();
+    }
+
+    public void AppendLine(string line)
+    {
+        _box.AppendText(line + "\r\n");
+        _box.CaretIndex = _box.Text.Length;
+        _box.ScrollToEnd();
     }
 }

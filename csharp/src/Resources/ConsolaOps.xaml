@@ -74,4 +74,49 @@
         <Setter Property="VerticalAlignment" Value="Center" />
     </Style>
 
+    <!-- ============================================================
+         Indicador de pasos (sidebar). El paso activo se resalta en
+         el code-behind cambiando Background del Border y del Dot.
+         ============================================================ -->
+
+    <Style x:Key="StepCard" TargetType="Border">
+        <Setter Property="CornerRadius" Value="8" />
+        <Setter Property="Padding" Value="10,8" />
+        <Setter Property="Margin" Value="0,0,0,6" />
+        <Setter Property="Background" Value="Transparent" />
+    </Style>
+
+    <Style x:Key="StepDot" TargetType="Border">
+        <Setter Property="Width" Value="24" />
+        <Setter Property="Height" Value="24" />
+        <Setter Property="CornerRadius" Value="12" />
+        <Setter Property="Margin" Value="0,0,10,0" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+        <Setter Property="Background" Value="{DynamicResource Surface2Brush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource BorderStrongBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+    </Style>
+
+    <Style x:Key="StepDotText" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{DynamicResource UiFont}" />
+        <Setter Property="FontSize" Value="12" />
+        <Setter Property="FontWeight" Value="Bold" />
+        <Setter Property="Foreground" Value="{DynamicResource MutedBrush}" />
+        <Setter Property="HorizontalAlignment" Value="Center" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+
+    <Style x:Key="StepTitle" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{DynamicResource UiFont}" />
+        <Setter Property="FontSize" Value="13" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+    </Style>
+
+    <Style x:Key="StepSub" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{DynamicResource UiFont}" />
+        <Setter Property="FontSize" Value="11" />
+        <Setter Property="Foreground" Value="{DynamicResource MutedBrush}" />
+    </Style>
+
 </ResourceDictionary>
