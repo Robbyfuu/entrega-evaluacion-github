@@ -58,6 +58,54 @@ public class SupabaseClient
         catch { return new(); }
     }
 
+    // ===== Blocklist de procesos sospechosos =====
+
+    /// <summary>
+    /// Devuelve la lista efectiva de procesos sospechosos para una seccion:
+    /// reglas globales (section IS NULL) union reglas de la seccion dada. Un solo
+    /// GET REST con filtro OR (mismo patron que los GET existentes). Cada
+    /// process_name se normaliza (paridad con la deteccion) y se arma un HashSet.
+    ///
+    /// Devuelve null en CUALQUIER error de red/parseo => el caller cae al fallback
+    /// (Config.SuspiciousProcesses). NO devuelve set vacio en error: null y []
+    /// significan cosas distintas (null=fallo/usar fallback, []=tabla vacia que el
+    /// detector tambien trata como fallback via IsSuspicious). Catch silencioso,
+    /// igual que GetActiveAssignmentsAsync.
+    /// </summary>
+    public async Task<HashSet<string>?> GetBlocklistAsync(string? section)
+    {
+        try
+        {
+            // section.is.null cubre las reglas globales; si hay seccion se suma
+            // section.eq.X. PostgREST OR: or=(section.is.null,section.eq.X).
+            // El valor va entre comillas dobles para que PostgREST lo trate como
+            // literal: asi un eventual delimitador (',' ')') en la seccion no
+            // rompe la gramatica del filtro or=(...). Se url-encodea igual.
+            string filter;
+            if (string.IsNullOrWhiteSpace(section))
+                filter = "section=is.null";
+            else
+            {
+                var quoted = Uri.EscapeDataString($"\"{section}\"");
+                filter = $"or=(section.is.null,section.eq.{quoted})";
+            }
+
+            var json = await _http.GetStringAsync(
+                Rest($"suspicious_processes?{filter}&select=process_name"));
+            var rows = JsonSerializer.Deserialize<List<SuspiciousProcess>>(json, JsonOpts);
+            if (rows == null) return null;
+
+            var set = new HashSet<string>();
+            foreach (var r in rows)
+            {
+                var norm = Config.NormalizeProcessName(r.ProcessName);
+                if (norm.Length > 0) set.Add(norm);
+            }
+            return set;
+        }
+        catch { return null; }
+    }
+
     // ===== Aceptaciones de tareas =====
 
     /// <summary>
@@ -181,15 +229,42 @@ public class SupabaseClient
         });
     }
 
+    /// <summary>
+    /// Reporta una alerta de proceso sospechoso via RPC SECURITY DEFINER
+    /// (anti-flood server-side: rate-limit 30s por pc_name+process_name). El
+    /// cliente ya no inserta directo en process_alerts. Patron y catch silencioso
+    /// identicos a SendHeartbeatAsync. CRITICO: nombre y orden de los argumentos
+    /// deben coincidir con la firma SQL report_process_alert(
+    ///   p_github_username, p_pc_name, p_section, p_process_name, p_window_title).
+    /// </summary>
     public async Task ReportProcessAlertAsync(
         string githubUsername, string pcName, string? section,
         string processName, string windowTitle)
     {
-        await PostInsertAsync("process_alerts", new
+        try
         {
-            github_username = githubUsername, pc_name = pcName, section,
-            process_name = processName, window_title = windowTitle
-        });
+            var payload = JsonSerializer.Serialize(new
+            {
+                p_github_username = githubUsername,
+                p_pc_name = pcName,
+                p_section = section,
+                p_process_name = processName,
+                p_window_title = windowTitle
+            }, JsonOpts);
+            var content = new StringContent(payload, Encoding.UTF8, "application/json");
+            var resp = await _http.PostAsync(Rest("rpc/report_process_alert"), content);
+            // La alerta es evidencia de proctoring: si la RPC responde error
+            // (RLS/grant regresion, fallo del rate-limit, etc.) dejamos rastro
+            // en Debug en vez de tragarlo del todo. Sigue siendo no-fatal para
+            // el alumno (catch silencioso para la UI).
+            if (!resp.IsSuccessStatusCode)
+                System.Diagnostics.Debug.WriteLine(
+                    $"[SupabaseClient] report_process_alert fallo: {(int)resp.StatusCode} {resp.ReasonPhrase}");
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[SupabaseClient] report_process_alert excepcion: {ex.Message}");
+        }
     }
 
     /// <summary>

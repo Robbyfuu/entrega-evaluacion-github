@@ -27,7 +27,12 @@ public static class Config
     public static readonly string[] EvaluationTypes =
         { "Evaluacion-1", "Evaluacion-2", "Evaluacion-3", "Evaluacion-4", "Examen" };
 
-    // Procesos sospechosos (sin powershell/cmd: el propio exe no, pero por las dudas)
+    // Procesos sospechosos. FALLBACK: la fuente de verdad en produccion es la
+    // tabla `suspicious_processes` (global section=NULL union extras por seccion),
+    // cacheada por el cliente en cada AdminTick. Esta lista solo se usa cuando el
+    // fetch a la tabla falla por red O devuelve vacio (ver ProcessMonitor.IsSuspicious
+    // y SupabaseClient.GetBlocklistAsync). Mantener normalizada (sin .exe, lowercase)
+    // y sincronizada con el seed de la migracion.
     public static readonly string[] SuspiciousProcesses =
     {
         "chrome", "msedge", "firefox", "opera", "brave", "iexplore", "vivaldi", "tor",
@@ -37,6 +42,29 @@ public static class Config
         "anydesk", "teamviewer", "rustdesk", "msrdc",
         "chatgpt", "claude", "copilot"
     };
+
+    /// <summary>
+    /// Normaliza un nombre de proceso para comparar contra el blocklist. DEBE
+    /// ser identico al seed de la migracion SQL y al normalizeProcessName del
+    /// panel (TS) para garantizar paridad de deteccion.
+    ///
+    /// Algoritmo (en orden, exacto):
+    ///   1. null/vacio/whitespace -> "".
+    ///   2. trim (recorta espacios al inicio/fin).
+    ///   3. lowercase invariante (ToLowerInvariant).
+    ///   4. si termina en ".exe" (case-insensitive, ya cubierto por el lowercase
+    ///      previo), quitar ese sufijo de 4 chars.
+    ///   5. trim final (por si quedaba espacio antes del ".exe").
+    /// Ej.: "Chrome.exe" -> "chrome"; "  CODE  " -> "code"; "notepad++" -> "notepad++".
+    /// </summary>
+    public static string NormalizeProcessName(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return "";
+        var s = name.Trim().ToLowerInvariant();
+        if (s.EndsWith(".exe", StringComparison.Ordinal))
+            s = s.Substring(0, s.Length - 4);
+        return s.Trim();
+    }
 
     // Archivos permitidos en un repo "limpio" (anti-trampa)
     public static readonly string[] AllowedRepoFiles =

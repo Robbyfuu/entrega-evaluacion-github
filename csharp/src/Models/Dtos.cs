@@ -84,6 +84,15 @@ public class ProcessInfo
     [JsonPropertyName("pid")] public int Pid { get; set; }
 }
 
+// Fila de la tabla `suspicious_processes`. section=NULL => regla global;
+// section=X => regla extra de la seccion X. El cliente solo lee process_name
+// para armar el HashSet del blocklist (ver SupabaseClient.GetBlocklistAsync).
+public class SuspiciousProcess
+{
+    [JsonPropertyName("process_name")] public string ProcessName { get; set; } = "";
+    [JsonPropertyName("section")] public string? Section { get; set; }
+}
+
 // DTOs para repos de GitHub (deserializar /user/repos y /repos/{owner}/{repo})
 public class GitHubRepo
 {

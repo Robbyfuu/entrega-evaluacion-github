@@ -29,6 +29,11 @@ public partial class MainWindow : Window
     private string _lastAdminMessage = "";
     private readonly HashSet<string> _lastProcSet = new();
 
+    // Blocklist efectivo (global union seccion) cacheado desde la tabla
+    // suspicious_processes. Se refresca en cada AdminTick. null = fallback a
+    // Config.SuspiciousProcesses (fetch fallido o sin datos validos).
+    private IReadOnlySet<string>? _blocklist;
+
     private DispatcherTimer _adminTimer = null!;
 
     // Evita disparar handlers durante la carga inicial de combos.
@@ -717,9 +722,22 @@ public partial class MainWindow : Window
     private async Task AdminTickAsync()
     {
         await CheckAdminConfigAsync();
+        await RefreshBlocklistAsync();
         await UpdateAssignmentsBanner();
         await SendHeartbeatAsync();
         await CheckTargetedLockdownAsync();
+    }
+
+    /// <summary>
+    /// Refresca el blocklist efectivo de la seccion del alumno. Si el fetch
+    /// falla, GetBlocklistAsync devuelve null y dejamos _blocklist en null
+    /// (=> IsSuspicious cae a Config.SuspiciousProcesses). Como AdminTickAsync
+    /// corre en el arranque (antes del primer SendHeartbeatAsync), la primera
+    /// deteccion ya usa la lista fetcheada si la red responde.
+    /// </summary>
+    private async Task RefreshBlocklistAsync()
+    {
+        _blocklist = await _sb.GetBlocklistAsync(StudentSection.Get());
     }
 
     private async Task CheckAdminConfigAsync()
@@ -779,7 +797,7 @@ public partial class MainWindow : Window
         {
             var key = $"{p.Name}:{p.Pid}";
             current.Add(key);
-            if (!_lastProcSet.Contains(key) && ProcessMonitor.IsSuspicious(p.Name))
+            if (!_lastProcSet.Contains(key) && ProcessMonitor.IsSuspicious(p.Name, _blocklist))
                 await _sb.ReportProcessAlertAsync(_user.Login, Environment.MachineName, StudentSection.Get(), p.Name, p.Title);
         }
         _lastProcSet.Clear();
