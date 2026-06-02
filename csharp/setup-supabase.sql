@@ -92,6 +92,20 @@ CREATE TABLE IF NOT EXISTS public.process_alerts (
 CREATE INDEX IF NOT EXISTS idx_alerts_detected
   ON public.process_alerts (detected_at DESC);
 
+-- Procesos sospechosos editables por seccion (blocklist)
+-- section IS NULL = regla GLOBAL; section = 'X' = extra de la seccion X.
+-- process_name se guarda NORMALIZADO (lowercase, sin .exe, trim).
+CREATE TABLE IF NOT EXISTS public.suspicious_processes (
+  id BIGSERIAL PRIMARY KEY,
+  process_name TEXT NOT NULL,
+  section TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS ux_susproc_name_section
+  ON public.suspicious_processes (process_name, COALESCE(section, ''));
+CREATE INDEX IF NOT EXISTS idx_susproc_section
+  ON public.suspicious_processes (section);
+
 -- Lockdown dirigido por PC
 CREATE TABLE IF NOT EXISTS public.targeted_lockdowns (
   id BIGSERIAL PRIMARY KEY,
@@ -114,6 +128,7 @@ ALTER TABLE public.assignments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.online_clients ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.process_alerts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.targeted_lockdowns ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.suspicious_processes ENABLE ROW LEVEL SECURITY;
 
 -- ============================================================
 --  3. POLICIES
@@ -159,13 +174,31 @@ DROP POLICY IF EXISTS "auth_read_online" ON public.online_clients;
 CREATE POLICY "auth_read_online" ON public.online_clients
   FOR SELECT TO authenticated USING (true);
 
--- process_alerts: anon inserta, authenticated lee
+-- process_alerts: authenticated lee. La insercion del cliente pasa por
+-- la RPC report_process_alert (SECURITY DEFINER, ver seccion 4). Aca (setup
+-- canonico = estado final, mundo post-PR2 con el cliente ya usando la RPC)
+-- NO se crea la policy anon_insert_alerts: el INSERT directo de anon queda
+-- deshabilitado a proposito.
+--
+-- OJO sobre una DB EXISTENTE con clientes v2.5.0 todavia activos: NO borres
+-- anon_insert_alerts hasta que PR2 (cliente -> RPC) este desplegado en todas
+-- las maquinas; si no, las alertas desaparecen en silencio. Ver la nota de
+-- secuencia en migration-blocklist.sql seccion 5.
+-- ROLLBACK del hardening (revertir cliente a INSERT directo):
+--   CREATE POLICY "anon_insert_alerts" ON public.process_alerts
+--     FOR INSERT WITH CHECK (true);
 DROP POLICY IF EXISTS "anon_insert_alerts" ON public.process_alerts;
-CREATE POLICY "anon_insert_alerts" ON public.process_alerts
-  FOR INSERT WITH CHECK (true);
 DROP POLICY IF EXISTS "auth_read_alerts" ON public.process_alerts;
 CREATE POLICY "auth_read_alerts" ON public.process_alerts
   FOR SELECT TO authenticated USING (true);
+
+-- suspicious_processes: anon + authenticated leen; solo authenticated escribe
+DROP POLICY IF EXISTS "anon_read_susproc" ON public.suspicious_processes;
+CREATE POLICY "anon_read_susproc" ON public.suspicious_processes
+  FOR SELECT TO anon, authenticated USING (true);
+DROP POLICY IF EXISTS "auth_all_susproc" ON public.suspicious_processes;
+CREATE POLICY "auth_all_susproc" ON public.suspicious_processes
+  FOR ALL TO authenticated USING (true) WITH CHECK (true);
 
 -- targeted_lockdowns: anon lee (cliente chequea el suyo), authenticated CRUD
 DROP POLICY IF EXISTS "anon_read_targeted" ON public.targeted_lockdowns;
@@ -211,6 +244,68 @@ $$;
 GRANT EXECUTE ON FUNCTION public.heartbeat(TEXT,TEXT,TEXT,TEXT,JSONB,TEXT,TEXT)
   TO anon, authenticated;
 
+-- RPC report_process_alert (SECURITY DEFINER, rate-limit 30s).
+-- El cliente inserta alertas via esta RPC en vez de INSERT directo:
+-- descarta duplicados (mismo pc_name + process_name) dentro de 30s.
+CREATE OR REPLACE FUNCTION public.report_process_alert(
+  p_github_username TEXT,
+  p_pc_name TEXT,
+  p_section TEXT,
+  p_process_name TEXT,
+  p_window_title TEXT
+) RETURNS VOID
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM public.process_alerts
+    WHERE pc_name = p_pc_name
+      AND process_name = p_process_name
+      AND detected_at > NOW() - INTERVAL '30 seconds'
+  ) THEN
+    RETURN;
+  END IF;
+
+  INSERT INTO public.process_alerts
+    (pc_name, github_username, section, process_name, window_title, detected_at)
+  VALUES
+    (p_pc_name, p_github_username, p_section, p_process_name, p_window_title, NOW());
+END;
+$$;
+GRANT EXECUTE ON FUNCTION public.report_process_alert(TEXT,TEXT,TEXT,TEXT,TEXT)
+  TO anon, authenticated;
+
+-- ============================================================
+--  4b. SEED blocklist global (section = NULL) + realtime
+-- ============================================================
+-- Reglas globales heredadas por todas las secciones. Copiado de
+-- Config.SuspiciousProcesses (ya normalizado). Idempotente.
+INSERT INTO public.suspicious_processes (process_name, section)
+SELECT name, NULL
+FROM unnest(ARRAY[
+  'chrome','msedge','firefox','opera','brave','iexplore','vivaldi','tor',
+  'whatsapp','discord','telegram','slack','teams','skype',
+  'notion','obsidian','evernote','onenote','winword','excel',
+  'code','pycharm','pycharm64','sublime_text','notepad','notepad++','devenv',
+  'anydesk','teamviewer','rustdesk','msrdc',
+  'chatgpt','claude','copilot'
+]) AS name
+ON CONFLICT (process_name, COALESCE(section, '')) DO NOTHING;
+
+-- Realtime: agregar suspicious_processes a la publicacion (guardado).
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables
+    WHERE pubname = 'supabase_realtime'
+      AND schemaname = 'public'
+      AND tablename = 'suspicious_processes'
+  ) THEN
+    EXECUTE 'ALTER PUBLICATION supabase_realtime ADD TABLE public.suspicious_processes';
+  END IF;
+EXCEPTION
+  WHEN duplicate_object THEN NULL;
+END $$;
+
 -- ============================================================
 --  5. TRIGGER updated_at en control
 -- ============================================================
@@ -236,4 +331,5 @@ UNION ALL SELECT 'online_clients', COUNT(*) FROM public.online_clients
 UNION ALL SELECT 'targeted_lockdowns', COUNT(*) FROM public.targeted_lockdowns
 UNION ALL SELECT 'process_alerts', COUNT(*) FROM public.process_alerts
 UNION ALL SELECT 'cheat_events', COUNT(*) FROM public.cheat_events
-UNION ALL SELECT 'student_activity', COUNT(*) FROM public.student_activity;
+UNION ALL SELECT 'student_activity', COUNT(*) FROM public.student_activity
+UNION ALL SELECT 'suspicious_processes', COUNT(*) FROM public.suspicious_processes;

@@ -1,0 +1,11 @@
+# macOS
+.DS_Store
+**/.DS_Store
+
+# SDD local artifacts (engram-mode skill registry)
+.atl/
+
+# Editor
+*.swp
+.idea/
+.vscode/
