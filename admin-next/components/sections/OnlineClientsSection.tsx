@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
-import type { OnlineClientRow } from "@/lib/types";
+import type { OnlineClientRow, SuspiciousProcess } from "@/lib/types";
 import { useRealtimeTable } from "@/hooks/useRealtimeTable";
 import { fmt, timeAgo } from "@/lib/format";
-import { isSuspicious } from "@/lib/suspicious";
+import { FALLBACK_SUSPICIOUS_PROCESSES, normalizeProcessName } from "@/lib/suspicious";
 import { BADGE } from "@/lib/colors";
 import { Badge } from "@/components/ui/Badge";
 
@@ -29,6 +29,48 @@ export function OnlineClientsSection({
     limit: 100,
     getId: (r) => `${r.pc_name}|${r.github_username}`,
   });
+
+  // Live blocklist. A process is suspicious for a client when its normalized
+  // name is global (section === null) or scoped to the client's own section.
+  const { rows: suspiciousRows } = useRealtimeTable<
+    SuspiciousProcess & Record<string, unknown>
+  >({
+    table: "suspicious_processes",
+    order: { column: "process_name", ascending: true },
+    getId: (r) => r.id,
+  });
+
+  // Build per-section lookup. Falls back to the static set when the table is
+  // empty/unavailable, mirroring the client's fallback invariant.
+  const suspicious = useMemo(() => {
+    const globalSet = new Set<string>();
+    const bySection = new Map<string, Set<string>>();
+    for (const r of suspiciousRows) {
+      const norm = normalizeProcessName(r.process_name);
+      if (!norm) continue;
+      if (r.section === null) {
+        globalSet.add(norm);
+      } else {
+        const set = bySection.get(r.section) ?? new Set<string>();
+        set.add(norm);
+        bySection.set(r.section, set);
+      }
+    }
+    const useFallback = suspiciousRows.length === 0;
+    return { globalSet, bySection, useFallback };
+  }, [suspiciousRows]);
+
+  const isSuspiciousFor = useCallback(
+    (procName: string | null | undefined, clientSection: string | null) => {
+      const norm = normalizeProcessName(procName ?? "");
+      if (!norm) return false;
+      if (suspicious.useFallback) return FALLBACK_SUSPICIOUS_PROCESSES.has(norm);
+      if (suspicious.globalSet.has(norm)) return true;
+      if (clientSection) return suspicious.bySection.get(clientSection)?.has(norm) ?? false;
+      return false;
+    },
+    [suspicious]
+  );
 
   // Tick every 5s so the "online" filter and "hace Ns" labels stay fresh.
   const [now, setNow] = useState(() => Date.now());
@@ -134,7 +176,9 @@ export function OnlineClientsSection({
           ) : (
             onlineData.map((c) => {
               const procs = Array.isArray(c.processes) ? c.processes : [];
-              const suspCount = procs.filter((p) => isSuspicious(p.name)).length;
+              const suspCount = procs.filter((p) =>
+                isSuspiciousFor(p.name, c.section)
+              ).length;
               return (
                 <tr
                   key={`${c.pc_name}|${c.github_username}`}
