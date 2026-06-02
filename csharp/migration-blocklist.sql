@@ -97,21 +97,28 @@ GRANT EXECUTE ON FUNCTION public.report_process_alert(TEXT,TEXT,TEXT,TEXT,TEXT)
   TO anon, authenticated;
 
 -- ============================================================
---  5. Quitar el INSERT directo de anon sobre process_alerts
---  La unica via de insercion para el cliente pasa a ser la RPC de
---  arriba. authenticated sigue leyendo; anon mantiene EXECUTE sobre
---  la RPC (SECURITY DEFINER bypasea RLS para el INSERT).
+--  5. (DIFERIDO) Quitar el INSERT directo de anon sobre process_alerts
 --
---  ROLLBACK IMPORTANTE: si se revierte este hardening hay que
---  RESTAURAR la policy anon_insert_alerts EN PARALELO con revertir
---  el cliente C# (ReportProcessAlertAsync -> INSERT directo). Si se
---  borra la policy pero NO se actualiza el cliente, o se restaura el
---  cliente viejo pero NO la policy, las alertas DESAPARECEN en silencio.
---  Para restaurar:
---    CREATE POLICY "anon_insert_alerts" ON public.process_alerts
---      FOR INSERT WITH CHECK (true);
+--  NO se quita en esta migracion A PROPOSITO. El cliente en produccion
+--  (v2.5.0) todavia inserta DIRECTO en process_alerts y se traga los
+--  errores en un catch silencioso. Si borraramos la policy ahora, cada
+--  PC de examen que aun no se actualizo dejaria de registrar alertas SIN
+--  ningun aviso, hasta que PR2 (cliente C# -> RPC) este desplegado en
+--  todas las maquinas.
+--
+--  La RPC report_process_alert (arriba) y el INSERT directo de anon
+--  COEXISTEN sin problema: el cliente nuevo usa la RPC, el viejo sigue
+--  insertando directo. Esta migracion es forward-compatible.
+--
+--  SECUENCIA correcta:
+--    1. correr esta migracion (crea tabla + RPC, no rompe nada).
+--    2. PR2: cliente C# pasa a llamar la RPC. Buildear + desplegar a TODOS
+--       los PC de examen (auto-update Velopack).
+--    3. confirmar que ningun cliente v2.5.0 sigue activo.
+--    4. recien ahi correr migration-blocklist-drop-anon-insert.sql:
+--         DROP POLICY IF EXISTS "anon_insert_alerts" ON public.process_alerts;
 -- ============================================================
-DROP POLICY IF EXISTS "anon_insert_alerts" ON public.process_alerts;
+-- (sin cambios sobre process_alerts en esta migracion)
 
 -- ============================================================
 --  6. Realtime: agregar suspicious_processes a la publicacion.

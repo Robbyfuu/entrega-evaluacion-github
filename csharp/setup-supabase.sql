@@ -175,11 +175,16 @@ CREATE POLICY "auth_read_online" ON public.online_clients
   FOR SELECT TO authenticated USING (true);
 
 -- process_alerts: authenticated lee. La insercion del cliente pasa por
--- la RPC report_process_alert (SECURITY DEFINER, ver seccion 4). Se quita
--- el INSERT directo de anon a proposito.
--- ROLLBACK: para revertir el hardening hay que RESTAURAR esta policy
--- anon_insert_alerts EN PARALELO con revertir el cliente C# a INSERT
--- directo; de lo contrario las alertas desaparecen en silencio:
+-- la RPC report_process_alert (SECURITY DEFINER, ver seccion 4). Aca (setup
+-- canonico = estado final, mundo post-PR2 con el cliente ya usando la RPC)
+-- NO se crea la policy anon_insert_alerts: el INSERT directo de anon queda
+-- deshabilitado a proposito.
+--
+-- OJO sobre una DB EXISTENTE con clientes v2.5.0 todavia activos: NO borres
+-- anon_insert_alerts hasta que PR2 (cliente -> RPC) este desplegado en todas
+-- las maquinas; si no, las alertas desaparecen en silencio. Ver la nota de
+-- secuencia en migration-blocklist.sql seccion 5.
+-- ROLLBACK del hardening (revertir cliente a INSERT directo):
 --   CREATE POLICY "anon_insert_alerts" ON public.process_alerts
 --     FOR INSERT WITH CHECK (true);
 DROP POLICY IF EXISTS "anon_insert_alerts" ON public.process_alerts;
