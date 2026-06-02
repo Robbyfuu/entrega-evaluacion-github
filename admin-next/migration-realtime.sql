@@ -15,7 +15,8 @@ declare
     'online_clients',
     'browser_history',
     'cheat_events',
-    'process_alerts'
+    'process_alerts',
+    'suspicious_processes'
   ];
 begin
   foreach t in array tables loop
