@@ -80,6 +80,13 @@ export interface TargetedLockdownRow {
   released_at: string | null;
 }
 
+export interface SuspiciousProcess {
+  id: number;
+  process_name: string;
+  section: string | null;
+  created_at: string;
+}
+
 export interface StudentActivityRow {
   id?: number | string;
   created_at: string;

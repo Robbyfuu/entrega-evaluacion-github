@@ -13,6 +13,7 @@ import { ControlSection } from "@/components/sections/ControlSection";
 import { OnlineClientsSection } from "@/components/sections/OnlineClientsSection";
 import { ProcessAlertsSection } from "@/components/sections/ProcessAlertsSection";
 import { BrowsingSection } from "@/components/sections/BrowsingSection";
+import { SuspiciousProcessesSection } from "@/components/sections/SuspiciousProcessesSection";
 import { AssignmentsSection } from "@/components/sections/AssignmentsSection";
 import { ActivitySection } from "@/components/sections/ActivitySection";
 import { CheatEventsSection } from "@/components/sections/CheatEventsSection";
@@ -56,6 +57,7 @@ export function Panel({ user }: PanelProps) {
           />
           <ProcessAlertsSection onCountChange={setAlertCount} />
           <BrowsingSection />
+          <SuspiciousProcessesSection />
           <AssignmentsSection />
           <ActivitySection />
           <CheatEventsSection />

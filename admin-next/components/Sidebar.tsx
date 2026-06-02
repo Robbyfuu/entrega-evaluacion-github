@@ -13,6 +13,7 @@ const NAV_ITEMS: NavItem[] = [
   { target: "sec-pcs", label: "PCs conectados", dot: "var(--success)" },
   { target: "sec-alerts", label: "Alertas", dot: "var(--warning)" },
   { target: "sec-browsing", label: "Navegación", dot: "var(--info)" },
+  { target: "sec-suspicious", label: "Procesos", dot: "var(--warning)" },
   { target: "sec-tareas", label: "Tareas Classroom", dot: "var(--info)" },
   { target: "sec-activity", label: "Actividad", dot: "var(--text-faint)" },
   { target: "sec-cheat", label: "Trampas", dot: "var(--danger)" },
