@@ -1,36 +1,64 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Panel del Profesor — Entrega de Evaluación
 
-## Getting Started
+Panel web de control y proctoring para el profesor (Next.js 16 + Supabase Realtime).
+Reemplaza al panel viejo de un solo archivo (`../admin/index.html`).
 
-First, run the development server:
+## Stack
+
+- Next.js 16 (App Router) + React 19 + TypeScript
+- Tailwind v4, diseño "Consola Ops" (tema claro/oscuro)
+- Supabase (`@supabase/supabase-js`) — Auth + Postgres + Realtime
+- Export estático (`output: 'export'`), deploy en Vercel
+- pnpm (obligatorio)
+
+## Desarrollo
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+cd admin-next
+pnpm install
+pnpm dev          # Turbopack, http://localhost:3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Login = cuenta docente en Supabase Auth (email + contraseña).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### Variables de entorno
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Crear `.env.local` (ver `.env.example`):
 
-## Learn More
+```
+NEXT_PUBLIC_SUPABASE_URL=https://<tu-proyecto>.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=<anon-key>
+```
 
-To learn more about Next.js, take a look at the following resources:
+La anon key es pública por diseño (protegida por RLS). En Vercel, setear ambas como
+variables de entorno del proyecto.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Build y deploy
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```bash
+pnpm build        # export estático -> out/
+```
 
-## Deploy on Vercel
+Deploy en Vercel: Root Directory = `admin-next`, framework Next.js, las 2 env vars arriba.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Migraciones de Supabase (orden)
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Correr en el SQL Editor de Supabase, **en este orden**. Todas son idempotentes.
+
+1. `../csharp/setup-supabase.sql` — esquema base (una vez, en un proyecto nuevo).
+2. `../csharp/migration-acceptances.sql` — aceptación de tareas de Classroom.
+3. `../csharp/migration-browser.sql` — historial de navegación del navegador embebido.
+4. `migration-realtime.sql` — habilita Realtime en las tablas de monitoreo.
+5. `../csharp/migration-blocklist.sql` — blocklist de procesos por sección + RPC de alertas.
+
+> ⚠️ La #5 incluye la RPC `report_process_alert`. El paso DIFERIDO que quita el INSERT
+> directo de anon sobre `process_alerts` NO se aplica ahí: hacerlo recién cuando el
+> cliente C# que usa la RPC esté desplegado en todas las máquinas (ver el comentario de
+> secuencia dentro del SQL).
+
+## Secciones del panel
+
+Resumen, Controles remotos, PCs conectados, Alertas, Navegación, **Procesos**
+(blocklist editable por sección), Tareas Classroom, Actividad, Trampas.
+
+Ver `docs/blocklist-procesos.md` para el detalle del blocklist editable.
