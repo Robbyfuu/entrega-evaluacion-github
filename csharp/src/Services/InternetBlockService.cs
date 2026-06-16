@@ -91,14 +91,22 @@ public static class InternetBlockService
     }
 
     /// <summary>
-    /// Al iniciar: si el proxy esta bloqueado pero no podemos confirmar con el
-    /// backend, desbloquear por seguridad (fail-safe). El polling lo re-aplica
-    /// si el profe sigue queriendo bloqueo.
+    /// Al iniciar: si quedo un proxy blackhole puesto (la app crasheo durante un
+    /// bloqueo), lo desbloqueamos por seguridad (fail-safe) para no dejar al alumno
+    /// sin internet de forma permanente. Si el profe sigue queriendo bloqueo, el
+    /// primer AdminTick de MainWindow lo re-aplica en segundos.
     /// </summary>
     public static void ReconcileOnStartup()
     {
-        // El estado real se reconcilia en MainForm via polling. Aqui solo
-        // garantizamos que un proxy huerfano no deje al alumno sin internet.
-        // (La logica completa de reconcile vive en el servicio de polling.)
+        // Si quedo un proxy huerfano de una sesion anterior (la app crasheo con el
+        // bloqueo puesto), lo limpiamos por seguridad para no dejar al alumno sin
+        // internet de forma permanente. Si el profe sigue queriendo bloqueo, el
+        // polling de MainWindow (AdminTick) lo re-aplica en el siguiente tick.
+        try
+        {
+            if (IsBlocked())
+                Unblock();
+        }
+        catch { }
     }
 }

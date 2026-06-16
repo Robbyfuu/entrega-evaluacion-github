@@ -51,7 +51,26 @@ public partial class WebBrowserWindow : Window
     {
         try
         {
-            await Browser.EnsureCoreWebView2Async();
+            // WebView2 respeta el proxy del sistema por defecto. Durante el bloqueo
+            // de internet, InternetBlockService pone un proxy blackhole
+            // (127.0.0.1:1) en HKCU; eso dejaria al navegador embebido sin red y el
+            // device flow de GitHub nunca podria autorizar (el polling gira eterno).
+            // Igual que los HttpClient usan UseProxy=false, forzamos --no-proxy-server:
+            // la whitelist de dominios (NavigationStarting) sigue siendo el control de
+            // seguridad real del sandbox, no el proxy del sistema.
+            var userDataFolder = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "EntregaEvaluacion", "WebView2");
+            var options = new CoreWebView2EnvironmentOptions("--no-proxy-server");
+            var env = await CoreWebView2Environment.CreateAsync(null, userDataFolder, options);
+
+            // Modo InPrivate: el navegador embebido usa un perfil en memoria y NO
+            // persiste cookies, cache ni la sesion de GitHub del alumno. En un PC de
+            // examen compartido, cada alumno se loguea desde cero y no queda rastro
+            // del anterior. El token queda solo en token.dat (DPAPI), nunca en WebView2.
+            var controllerOptions = env.CreateCoreWebView2ControllerOptions();
+            controllerOptions.IsInPrivateModeEnabled = true;
+            await Browser.EnsureCoreWebView2Async(env, controllerOptions);
         }
         catch (Exception)
         {
