@@ -12,7 +12,20 @@ namespace EntregaEvaluacion.Services;
 /// </summary>
 public class GitHubService
 {
-    private readonly HttpClient _http;
+    // DOS HttpClients para cubrir ambos escenarios sin tocar el registro del
+    // sistema (los navegadores siguen bloqueados durante el bloqueo):
+    //   _httpViaProxy: UseProxy=true  -> respeta proxy del sistema (Fortinet,
+    //                  proxy del aula, captive portal). Se usa durante el login
+    //                  cuando NO hay bloqueo activo. Replica el comportamiento
+    //                  de Invoke-RestMethod de la version .ps1 que funcionaba.
+    //   _httpDirect:   UseProxy=false -> ignora el proxy del sistema. Se usa
+    //                  durante el bloqueo (ProxyServer=127.0.0.1:1 blackhole)
+    //                  para que la entrega de evaluaciones llegue a GitHub.
+    // La seleccion es por llamada via la property Http, no por sesion, asi que
+    // si el bloqueo cambia a mitad de sesion, la siguiente llamada usa el
+    // HttpClient correcto automaticamente.
+    private readonly HttpClient _httpViaProxy;
+    private readonly HttpClient _httpDirect;
     private string? _token;
 
     private static readonly JsonSerializerOptions JsonOpts = new()
@@ -27,30 +40,37 @@ public class GitHubService
 
     public GitHubService()
     {
-        // UseProxy=false FIJO: ignorar el proxy del sistema. CRITICO para que
-        // la entrega de evaluaciones funcione durante el bloqueo: cuando el
-        // profe activa el bloqueo, ProxyServer pasa a ser 127.0.0.1:1
-        // (blackhole) y cualquier llamada que respete el proxy del sistema
-        // caeria al blackhole. La app DEBE poder llegar a GitHub durante el
-        // bloqueo para que el alumno entregue.
-        //
-        // Trade-off: en aulas con proxy obligatorio, este UseProxy=false impide
-        // que el device flow llegue a GitHub durante el login (el navegador
-        // embebido SI usa el proxy del sistema, por eso el alumno puede validar
-        // el codigo aunque el polling falle). La solucion definitiva (v2.6.0)
-        // es ProxyOverride en InternetBlockService con los dominios de GitHub
-        // y Supabase exceptuados del blackhole, mas UseProxy=true siempre.
-        // Ver memo en memoria: architecture/internet-block-proxyoverride.
-        var handler = new HttpClientHandler { UseProxy = false, Proxy = null };
+        // HttpClient que respeta el proxy del sistema (Fortinet, proxy del aula,
+        // captive portal). Se usa durante el login (sin bloqueo activo).
+        var handlerViaProxy = new HttpClientHandler { UseProxy = true };
+        _httpViaProxy = new HttpClient(handlerViaProxy) { Timeout = TimeSpan.FromSeconds(30) };
+
+        // HttpClient que ignora el proxy del sistema. Se usa durante el bloqueo
+        // (ProxyServer=127.0.0.1:1) para que la entrega llegue a GitHub sin
+        // caer en el blackhole.
+        var handlerDirect = new HttpClientHandler { UseProxy = false, Proxy = null };
+        _httpDirect = new HttpClient(handlerDirect) { Timeout = TimeSpan.FromSeconds(30) };
+
         // 30s en vez de 15s: en redes de aula con filtrado/VPN/WiFi saturado el
-        // handshake TLS + POST supera 15s y cada poll daba timeout, por lo que
-        // la app nunca recibia el token. El WebView2 gestiona timeouts largos
-        // por eso el alumno lograba validar el codigo aunque el polling fallara.
-        _http = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(30) };
-        _http.DefaultRequestHeaders.UserAgent.ParseAdd("EntregaEvaluacion/2.0");
-        _http.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");
+        // handshake TLS + POST supera 15s y cada poll daba timeout.
+        ConfigureHeaders(_httpViaProxy);
+        ConfigureHeaders(_httpDirect);
         LoadToken();
     }
+
+    private void ConfigureHeaders(HttpClient client)
+    {
+        client.DefaultRequestHeaders.UserAgent.ParseAdd("EntregaEvaluacion/2.0");
+        client.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");
+    }
+
+    /// <summary>
+    /// Selecciona el HttpClient segun el estado actual del bloqueo. Se evalua
+    /// en cada llamada, no en el constructor, para reaccionar a cambios de
+    /// bloqueo durante la sesion (AdminTick puede activar/desactivar el bloqueo
+    /// en cualquier momento).
+    /// </summary>
+    private HttpClient Http => InternetBlockService.IsBlocked() ? _httpDirect : _httpViaProxy;
 
     /// <summary>
     /// Lanzada cuando GitHub responde "slow_down" en el device flow. El caller
@@ -102,15 +122,22 @@ public class GitHubService
     public void Logout()
     {
         _token = null;
-        _http.DefaultRequestHeaders.Authorization = null;
+        _httpViaProxy.DefaultRequestHeaders.Authorization = null;
+        _httpDirect.DefaultRequestHeaders.Authorization = null;
         try { File.Delete(TokenFile); } catch { }
     }
 
     private void ApplyAuthHeader()
     {
+        // Aplicar a AMBOS HttpClients: el token se carga al arrancar (antes de
+        // saber si habra bloqueo) y debe estar disponible sin importar cual
+        // HttpClient se seleccione despues.
         if (!string.IsNullOrEmpty(_token))
-            _http.DefaultRequestHeaders.Authorization =
-                new AuthenticationHeaderValue("Bearer", _token);
+        {
+            var auth = new AuthenticationHeaderValue("Bearer", _token);
+            _httpViaProxy.DefaultRequestHeaders.Authorization = auth;
+            _httpDirect.DefaultRequestHeaders.Authorization = auth;
+        }
     }
 
     // ===== Device flow =====
@@ -127,7 +154,7 @@ public class GitHubService
                 ["client_id"] = Config.GitHubClientId,
                 ["scope"] = Config.GitHubScopes
             });
-            var resp = await _http.SendAsync(req);
+            var resp = await Http.SendAsync(req);
             var json = await resp.Content.ReadAsStringAsync();
             return JsonSerializer.Deserialize<DeviceCodeResponse>(json, JsonOpts);
         }
@@ -167,7 +194,7 @@ public class GitHubService
         // tal cual: LoginWindow distingue por tipo.
         string json;
         System.Net.HttpStatusCode status;
-        using (var resp = await _http.SendAsync(req))
+        using (var resp = await Http.SendAsync(req))
         {
             status = resp.StatusCode;
             json = await resp.Content.ReadAsStringAsync();
@@ -210,7 +237,7 @@ public class GitHubService
         if (!IsAuthenticated) return null;
         try
         {
-            var json = await _http.GetStringAsync("https://api.github.com/user");
+            var json = await Http.GetStringAsync("https://api.github.com/user");
             return JsonSerializer.Deserialize<GitHubUser>(json, JsonOpts);
         }
         catch { return null; }
@@ -221,7 +248,7 @@ public class GitHubService
         if (!IsAuthenticated) return new();
         try
         {
-            var json = await _http.GetStringAsync(
+            var json = await Http.GetStringAsync(
                 "https://api.github.com/user/repos?per_page=100&sort=updated");
             return JsonSerializer.Deserialize<List<GitHubRepo>>(json, JsonOpts) ?? new();
         }
@@ -233,7 +260,7 @@ public class GitHubService
         if (!IsAuthenticated) return null;
         try
         {
-            var json = await _http.GetStringAsync(
+            var json = await Http.GetStringAsync(
                 $"https://api.github.com/repos/{owner}/{repo}");
             return JsonSerializer.Deserialize<GitHubRepo>(json, JsonOpts);
         }
@@ -245,7 +272,7 @@ public class GitHubService
         if (!IsAuthenticated) return new();
         try
         {
-            var json = await _http.GetStringAsync(
+            var json = await Http.GetStringAsync(
                 "https://api.github.com/user/repository_invitations");
             return JsonSerializer.Deserialize<List<RepoInvitation>>(json, JsonOpts) ?? new();
         }
@@ -259,7 +286,7 @@ public class GitHubService
         {
             using var req = new HttpRequestMessage(HttpMethod.Patch,
                 $"https://api.github.com/user/repository_invitations/{invitationId}");
-            var resp = await _http.SendAsync(req);
+            var resp = await Http.SendAsync(req);
             return resp.IsSuccessStatusCode;
         }
         catch { return false; }
@@ -281,7 +308,7 @@ public class GitHubService
             {
                 Content = new StringContent(payload, Encoding.UTF8, "application/json")
             };
-            var resp = await _http.SendAsync(req);
+            var resp = await Http.SendAsync(req);
             return resp.IsSuccessStatusCode;
         }
         catch { return false; }
