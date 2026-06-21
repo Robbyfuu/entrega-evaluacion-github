@@ -18,6 +18,10 @@ public partial class LoginWindow : Window
     private string _deviceCode = "";
     private DateTime _expiresAt;
     private string _verifyUri = "";
+    // Guard anti-reentrancia: con timeout 30s e intervalo 5s pueden solaparse
+    // varios PollAsync sobre el mismo device_code. El flag asegura que solo uno
+    // este en vuelo a la vez.
+    private bool _isPolling;
 
     public LoginWindow(GitHubService gh)
     {
@@ -50,94 +54,107 @@ public partial class LoginWindow : Window
 
     private async Task PollAsync()
     {
-        var remaining = (int)(_expiresAt - DateTime.UtcNow).TotalSeconds;
-        if (remaining <= 0)
-        {
-            _pollTimer?.Stop();
-            StatusText.Text = "Codigo expirado. Cierra y vuelve a intentar.";
-            StatusText.Foreground = Brushes.Red;
-            Progress.IsIndeterminate = false;
-            return;
-        }
-        TimeText.Text = $"Tiempo restante: {remaining / 60} min {remaining % 60} seg";
-
+        // Guard anti-reentrancia: con timeout 30s e intervalo 5s pueden
+        // solaparse varios PollAsync sobre el mismo device_code si la red va
+        // lenta. El flag asegura que solo uno este en vuelo; los ticks
+        // subsiguientes se ignoran y el DispatcherTimer reintenta solo.
+        if (_isPolling) return;
+        _isPolling = true;
         try
         {
-            var token = await _gh.PollAccessTokenAsync(_deviceCode);
-            if (!string.IsNullOrEmpty(token))
+            var remaining = (int)(_expiresAt - DateTime.UtcNow).TotalSeconds;
+            if (remaining <= 0)
             {
                 _pollTimer?.Stop();
-                StatusText.Text = "Autorizado! Sesion iniciada.";
-                StatusText.Foreground = Brushes.Green;
+                StatusText.Text = "Codigo expirado. Cierra y vuelve a intentar.";
+                StatusText.Foreground = Brushes.Red;
                 Progress.IsIndeterminate = false;
-                Progress.Value = 100;
-                await Task.Delay(600);
-                DialogResult = true;
-                Close();
+                return;
             }
-            else
+            TimeText.Text = $"Tiempo restante: {remaining / 60} min {remaining % 60} seg";
+
+            try
             {
-                // pending / slow_down: si un poll previo mostro un error
-                // transitorio (timeout / sin conexion), restauramos al mensaje
-                // normal para que el alumno vea que la app responde.
-                StatusText.Text = "Esperando que ingreses el codigo...";
-                StatusText.Foreground = Brushes.Black;
+                var token = await _gh.PollAccessTokenAsync(_deviceCode);
+                if (!string.IsNullOrEmpty(token))
+                {
+                    _pollTimer?.Stop();
+                    StatusText.Text = "Autorizado! Sesion iniciada.";
+                    StatusText.Foreground = Brushes.Green;
+                    Progress.IsIndeterminate = false;
+                    Progress.Value = 100;
+                    await Task.Delay(600);
+                    DialogResult = true;
+                    Close();
+                }
+                else
+                {
+                    // pending / slow_down: si un poll previo mostro un error
+                    // transitorio (timeout / sin conexion), restauramos al mensaje
+                    // normal para que el alumno vea que la app responde.
+                    StatusText.Text = "Esperando que ingreses el codigo...";
+                    StatusText.Foreground = Brushes.Black;
+                }
+            }
+            catch (TimeoutException ex)
+            {
+                // Codigo de GitHub expirado: fatal. Cortamos y avisamos.
+                _pollTimer?.Stop();
+                StatusText.Text = $"Codigo expirado. {ex.Message}";
+                StatusText.Foreground = Brushes.Red;
+                Progress.IsIndeterminate = false;
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                // Acceso denegado por el alumno: fatal.
+                _pollTimer?.Stop();
+                StatusText.Text = $"Acceso denegado: {ex.Message}";
+                StatusText.Foreground = Brushes.Red;
+                Progress.IsIndeterminate = false;
+            }
+            catch (GitHubService.SlowDownException ex)
+            {
+                // GitHub pidio ir mas lento (rfc 8628). Aumentamos el intervalo del
+                // timer en AddSeconds y seguimos reintentando, sin cortar.
+                if (_pollTimer != null && _pollTimer.Interval < TimeSpan.FromMinutes(1))
+                    _pollTimer.Interval += TimeSpan.FromSeconds(ex.AddSeconds);
+                StatusText.Text = $"Reintentando... ({ex.Message})";
+                StatusText.Foreground = Brushes.Orange;
+            }
+            catch (TaskCanceledException ex)
+            {
+                // Timeout de red del HttpClient (30s sin respuesta). Transitorio:
+                // redes de aula lentas o saturadas pueden recuperarse. Mostramos
+                // el motivo Y seguimos reintentando (NO cortamos el timer).
+                StatusText.Text = $"Reintentando... (timeout: {ex.Message})";
+                StatusText.Foreground = Brushes.Orange;
+            }
+            catch (System.Net.Http.HttpRequestException ex)
+            {
+                // Sin ruta a GitHub: DNS / proxy del aula bloqueando / firewall de
+                // Windows negando la app / AV haciendo MITM del TLS. Transitorio:
+                // mostramos el motivo Y seguimos reintentando.
+                StatusText.Text = $"Reintentando... (sin conexion: {ex.Message})";
+                StatusText.Foreground = Brushes.Orange;
+            }
+            catch (InvalidOperationException ex)
+            {
+                // JSON inesperado o error desconocido de GitHub. Transitorio.
+                StatusText.Text = $"Reintentando... ({ex.Message})";
+                StatusText.Foreground = Brushes.Orange;
+            }
+            catch (Exception ex)
+            {
+                // Ultimo recurso: cualquier otra excepcion. La mostramos tambien
+                // para no volver nunca al patron catch {} silencioso que oculto el
+                // bug original del "queda esperando".
+                StatusText.Text = $"Reintentando... ({ex.GetType().Name}: {ex.Message})";
+                StatusText.Foreground = Brushes.Orange;
             }
         }
-        catch (TimeoutException ex)
+        finally
         {
-            // Codigo de GitHub expirado: fatal. Cortamos y avisamos.
-            _pollTimer?.Stop();
-            StatusText.Text = $"Codigo expirado. {ex.Message}";
-            StatusText.Foreground = Brushes.Red;
-            Progress.IsIndeterminate = false;
-        }
-        catch (UnauthorizedAccessException ex)
-        {
-            // Acceso denegado por el alumno: fatal.
-            _pollTimer?.Stop();
-            StatusText.Text = $"Acceso denegado: {ex.Message}";
-            StatusText.Foreground = Brushes.Red;
-            Progress.IsIndeterminate = false;
-        }
-        catch (GitHubService.SlowDownException ex)
-        {
-            // GitHub pidio ir mas lento (rfc 8628). Aumentamos el intervalo del
-            // timer en AddSeconds y seguimos reintentando, sin cortar.
-            if (_pollTimer != null && _pollTimer.Interval < TimeSpan.FromMinutes(1))
-                _pollTimer.Interval += TimeSpan.FromSeconds(ex.AddSeconds);
-            StatusText.Text = $"Reintentando... ({ex.Message})";
-            StatusText.Foreground = Brushes.Orange;
-        }
-        catch (TaskCanceledException ex)
-        {
-            // Timeout de red del HttpClient (30s sin respuesta). Transitorio:
-            // redes de aula lentas o saturadas pueden recuperarse. Mostramos
-            // el motivo Y seguimos reintentando (NO cortamos el timer).
-            StatusText.Text = $"Reintentando... (timeout: {ex.Message})";
-            StatusText.Foreground = Brushes.Orange;
-        }
-        catch (System.Net.Http.HttpRequestException ex)
-        {
-            // Sin ruta a GitHub: DNS / proxy del aula bloqueando / firewall de
-            // Windows negando la app / AV haciendo MITM del TLS. Transitorio:
-            // mostramos el motivo Y seguimos reintentando.
-            StatusText.Text = $"Reintentando... (sin conexion: {ex.Message})";
-            StatusText.Foreground = Brushes.Orange;
-        }
-        catch (InvalidOperationException ex)
-        {
-            // JSON inesperado o error desconocido de GitHub. Transitorio.
-            StatusText.Text = $"Reintentando... ({ex.Message})";
-            StatusText.Foreground = Brushes.Orange;
-        }
-        catch (Exception ex)
-        {
-            // Ultimo recurso: cualquier otra excepcion. La mostramos tambien
-            // para no volver nunca al patron catch {} silencioso que oculto el
-            // bug original del "queda esperando".
-            StatusText.Text = $"Reintentando... ({ex.GetType().Name}: {ex.Message})";
-            StatusText.Foreground = Brushes.Orange;
+            _isPolling = false;
         }
     }
 

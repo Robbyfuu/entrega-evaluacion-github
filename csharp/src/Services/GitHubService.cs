@@ -27,22 +27,24 @@ public class GitHubService
 
     public GitHubService()
     {
-        // UseProxy: respetamos el proxy del sistema SOLO cuando no hay bloqueo
-        // activo. En aulas con proxy obligatorio (filtrado, captive portal,
-        // etc.), ignorarlo impide que el device flow llegue a GitHub aunque el
-        // navegador embebido (que SI usa el proxy del sistema) pueda. Cuando hay
-        // bloqueo activo (ProxyServer=127.0.0.1:1), ignoramos el proxy para no
-        // caer en el blackhole. Contrastar con SupabaseClient, que SIEMPRE usa
-        // UseProxy=false porque debe recibir la orden de desbloqueo aun con el
-        // proxy blackhole puesto.
-        var handler = new HttpClientHandler
-        {
-            UseProxy = !InternetBlockService.IsBlocked(),
-            Proxy = null
-        };
+        // UseProxy=false FIJO: ignorar el proxy del sistema. CRITICO para que
+        // la entrega de evaluaciones funcione durante el bloqueo: cuando el
+        // profe activa el bloqueo, ProxyServer pasa a ser 127.0.0.1:1
+        // (blackhole) y cualquier llamada que respete el proxy del sistema
+        // caeria al blackhole. La app DEBE poder llegar a GitHub durante el
+        // bloqueo para que el alumno entregue.
+        //
+        // Trade-off: en aulas con proxy obligatorio, este UseProxy=false impide
+        // que el device flow llegue a GitHub durante el login (el navegador
+        // embebido SI usa el proxy del sistema, por eso el alumno puede validar
+        // el codigo aunque el polling falle). La solucion definitiva (v2.6.0)
+        // es ProxyOverride en InternetBlockService con los dominios de GitHub
+        // y Supabase exceptuados del blackhole, mas UseProxy=true siempre.
+        // Ver memo en memoria: architecture/internet-block-proxyoverride.
+        var handler = new HttpClientHandler { UseProxy = false, Proxy = null };
         // 30s en vez de 15s: en redes de aula con filtrado/VPN/WiFi saturado el
         // handshake TLS + POST supera 15s y cada poll daba timeout, por lo que
-        // la app nunca recivia el token. El WebView2 gestiona timeouts largos
+        // la app nunca recibia el token. El WebView2 gestiona timeouts largos
         // por eso el alumno lograba validar el codigo aunque el polling fallara.
         _http = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(30) };
         _http.DefaultRequestHeaders.UserAgent.ParseAdd("EntregaEvaluacion/2.0");
