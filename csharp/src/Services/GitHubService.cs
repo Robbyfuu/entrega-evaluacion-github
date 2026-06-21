@@ -27,13 +27,39 @@ public class GitHubService
 
     public GitHubService()
     {
-        // UseProxy=false: ignorar el proxy del sistema (ver SupabaseClient).
-        // GitHub API y device flow funcionan aunque el internet "bloqueado".
-        var handler = new HttpClientHandler { UseProxy = false, Proxy = null };
-        _http = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(15) };
+        // UseProxy: respetamos el proxy del sistema SOLO cuando no hay bloqueo
+        // activo. En aulas con proxy obligatorio (filtrado, captive portal,
+        // etc.), ignorarlo impide que el device flow llegue a GitHub aunque el
+        // navegador embebido (que SI usa el proxy del sistema) pueda. Cuando hay
+        // bloqueo activo (ProxyServer=127.0.0.1:1), ignoramos el proxy para no
+        // caer en el blackhole. Contrastar con SupabaseClient, que SIEMPRE usa
+        // UseProxy=false porque debe recibir la orden de desbloqueo aun con el
+        // proxy blackhole puesto.
+        var handler = new HttpClientHandler
+        {
+            UseProxy = !InternetBlockService.IsBlocked(),
+            Proxy = null
+        };
+        // 30s en vez de 15s: en redes de aula con filtrado/VPN/WiFi saturado el
+        // handshake TLS + POST supera 15s y cada poll daba timeout, por lo que
+        // la app nunca recivia el token. El WebView2 gestiona timeouts largos
+        // por eso el alumno lograba validar el codigo aunque el polling fallara.
+        _http = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(30) };
         _http.DefaultRequestHeaders.UserAgent.ParseAdd("EntregaEvaluacion/2.0");
         _http.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");
         LoadToken();
+    }
+
+    /// <summary>
+    /// Lanzada cuando GitHub responde "slow_down" en el device flow. El caller
+    /// (LoginWindow) debe aumentar el intervalo del timer en AddSeconds segun
+    /// la spec de OAuth 2.0 device flow (rfc 8628 sec 3.5).
+    /// </summary>
+    public class SlowDownException : Exception
+    {
+        public int AddSeconds { get; }
+        public SlowDownException(int add) : base($"GitHub pidio ir mas lento (+{add}s)")
+            => AddSeconds = add;
     }
 
     public bool IsAuthenticated => !string.IsNullOrEmpty(_token);
@@ -111,6 +137,14 @@ public class GitHubService
     /// - token si autorizado
     /// - null si pending/slow_down (seguir esperando)
     /// - lanza si expired/denied
+    ///
+    /// Tipos de excepcion deliberados para que LoginWindow distinga fatal vs
+    /// transitorio y deje de tragarse errores en silencio:
+    ///   TimeoutException             -> codigo de GitHub expirado (fatal)
+    ///   UnauthorizedAccessException  -> acceso denegado (fatal)
+    ///   TaskCanceledException        -> timeout de red del HttpClient (transitorio)
+    ///   HttpRequestException         -> sin ruta a GitHub (transitorio)
+    ///   InvalidOperationException    -> JSON inesperado o error GitHub desconocido
     /// </summary>
     public async Task<string?> PollAccessTokenAsync(string deviceCode)
     {
@@ -124,9 +158,33 @@ public class GitHubService
             ["device_code"] = deviceCode,
             ["grant_type"] = "urn:ietf:params:oauth:grant-type:device_code"
         });
-        var resp = await _http.SendAsync(req);
-        var json = await resp.Content.ReadAsStringAsync();
-        var data = JsonSerializer.Deserialize<AccessTokenResponse>(json, JsonOpts);
+
+        // SendAsync lanza HttpRequestException (sin ruta: DNS / proxy del aula
+        // / firewall de Windows negando la app / cable) y TaskCanceledException
+        // (timeout del HttpClient de 15s, tipico de red lenta). Se propagan
+        // tal cual: LoginWindow distingue por tipo.
+        string json;
+        System.Net.HttpStatusCode status;
+        using (var resp = await _http.SendAsync(req))
+        {
+            status = resp.StatusCode;
+            json = await resp.Content.ReadAsStringAsync();
+        }
+
+        AccessTokenResponse? data;
+        try
+        {
+            data = JsonSerializer.Deserialize<AccessTokenResponse>(json, JsonOpts);
+        }
+        catch (JsonException)
+        {
+            // El cuerpo no es JSON valido: lo mas probable es un captive
+            // portal, un AV haciendo MITM del TLS, o una pagina HTML del proxy
+            // del aula interponiendose. Mostramos preview para diagnostico.
+            var preview = json.Length > 150 ? json[..150] + "..." : json;
+            throw new InvalidOperationException(
+                $"GitHub devolvio algo que no es JSON (¿captive portal / AV?). Preview: {preview}");
+        }
 
         if (data?.AccessToken is { Length: > 0 } tok)
         {
@@ -136,10 +194,11 @@ public class GitHubService
         return data?.Error switch
         {
             "authorization_pending" => null,
-            "slow_down" => null,
-            "expired_token" => throw new TimeoutException("Codigo expirado"),
-            "access_denied" => throw new UnauthorizedAccessException("Acceso denegado"),
-            _ => null
+            "slow_down" => throw new SlowDownException(5),
+            "expired_token" => throw new TimeoutException("Codigo de GitHub expirado."),
+            "access_denied" => throw new UnauthorizedAccessException("Acceso denegado por el alumno."),
+            var unknown => throw new InvalidOperationException(
+                $"GitHub devolvio error desconocido '{unknown}'. Status={status}, Body={json}")
         };
     }
 

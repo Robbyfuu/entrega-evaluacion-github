@@ -75,20 +75,70 @@ public partial class LoginWindow : Window
                 DialogResult = true;
                 Close();
             }
+            else
+            {
+                // pending / slow_down: si un poll previo mostro un error
+                // transitorio (timeout / sin conexion), restauramos al mensaje
+                // normal para que el alumno vea que la app responde.
+                StatusText.Text = "Esperando que ingreses el codigo...";
+                StatusText.Foreground = Brushes.Black;
+            }
         }
-        catch (TimeoutException)
+        catch (TimeoutException ex)
         {
+            // Codigo de GitHub expirado: fatal. Cortamos y avisamos.
             _pollTimer?.Stop();
-            StatusText.Text = "Codigo expirado.";
+            StatusText.Text = $"Codigo expirado. {ex.Message}";
             StatusText.Foreground = Brushes.Red;
+            Progress.IsIndeterminate = false;
         }
-        catch (UnauthorizedAccessException)
+        catch (UnauthorizedAccessException ex)
         {
+            // Acceso denegado por el alumno: fatal.
             _pollTimer?.Stop();
-            StatusText.Text = "Acceso denegado.";
+            StatusText.Text = $"Acceso denegado: {ex.Message}";
             StatusText.Foreground = Brushes.Red;
+            Progress.IsIndeterminate = false;
         }
-        catch { /* reintentar */ }
+        catch (GitHubService.SlowDownException ex)
+        {
+            // GitHub pidio ir mas lento (rfc 8628). Aumentamos el intervalo del
+            // timer en AddSeconds y seguimos reintentando, sin cortar.
+            if (_pollTimer != null && _pollTimer.Interval < TimeSpan.FromMinutes(1))
+                _pollTimer.Interval += TimeSpan.FromSeconds(ex.AddSeconds);
+            StatusText.Text = $"Reintentando... ({ex.Message})";
+            StatusText.Foreground = Brushes.Orange;
+        }
+        catch (TaskCanceledException ex)
+        {
+            // Timeout de red del HttpClient (30s sin respuesta). Transitorio:
+            // redes de aula lentas o saturadas pueden recuperarse. Mostramos
+            // el motivo Y seguimos reintentando (NO cortamos el timer).
+            StatusText.Text = $"Reintentando... (timeout: {ex.Message})";
+            StatusText.Foreground = Brushes.Orange;
+        }
+        catch (System.Net.Http.HttpRequestException ex)
+        {
+            // Sin ruta a GitHub: DNS / proxy del aula bloqueando / firewall de
+            // Windows negando la app / AV haciendo MITM del TLS. Transitorio:
+            // mostramos el motivo Y seguimos reintentando.
+            StatusText.Text = $"Reintentando... (sin conexion: {ex.Message})";
+            StatusText.Foreground = Brushes.Orange;
+        }
+        catch (InvalidOperationException ex)
+        {
+            // JSON inesperado o error desconocido de GitHub. Transitorio.
+            StatusText.Text = $"Reintentando... ({ex.Message})";
+            StatusText.Foreground = Brushes.Orange;
+        }
+        catch (Exception ex)
+        {
+            // Ultimo recurso: cualquier otra excepcion. La mostramos tambien
+            // para no volver nunca al patron catch {} silencioso que oculto el
+            // bug original del "queda esperando".
+            StatusText.Text = $"Reintentando... ({ex.GetType().Name}: {ex.Message})";
+            StatusText.Foreground = Brushes.Orange;
+        }
     }
 
     private void CopyUrl_Click(object sender, RoutedEventArgs e)
