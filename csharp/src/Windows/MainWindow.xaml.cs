@@ -94,9 +94,16 @@ public partial class MainWindow : Window
         CursoCombo.Visibility = _courses.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
 
         // Resolver seccion guardada contra las secciones fetcheadas.
+        // Priorizar section_id (identidad real) sobre section TEXT (codigo,
+        // que puede repetirse entre cursos). Si section_id no existe, caer
+        // a buscar por code como fallback legacy.
         var savedCode = StudentSection.Get();
+        var savedSectionId = StudentSection.GetSectionId();
         var savedEvalId = StudentSection.GetEvaluationId();
-        var savedRow = _sections.FirstOrDefault(s => s.Code == savedCode);
+        var savedRow = savedSectionId.HasValue
+            ? _sections.FirstOrDefault(s => s.Id == savedSectionId.Value)
+            : null;
+        savedRow ??= _sections.FirstOrDefault(s => s.Code == savedCode);
 
         if (savedRow != null)
         {
@@ -104,6 +111,7 @@ public partial class MainWindow : Window
             SelectCourseById(savedRow.CourseId);
             PopulateSectionCombo(savedRow.CourseId);
             SectionCombo.SelectedItem = savedRow.Code;
+            StudentSection.Set(savedRow.Code);
             StudentSection.SetSectionId(savedRow.Id);
             await LoadEvaluationsForSection(savedRow.Code, savedRow.Id);
             RestoreEvaluationSelection(savedEvalId);
@@ -167,9 +175,14 @@ public partial class MainWindow : Window
 
     /// <summary>
     /// Pobla EvaluationCombo con las evaluaciones activas de la seccion dada
-    /// (fetch BD). Si sectionId es null o el fetch devuelve vacio, sintetiza
-    /// Evaluations desde Config.EvaluationTypes (Id=0 = sentinel de fallback).
-    /// No auto-selecciona: el alumno elige su evaluacion.
+    /// (fetch BD). Distingue dos casos:
+    /// - sectionId != null (BD viva): muestra lo que la BD devuelva, aunque
+    ///   sea vacio. Una lista vacia significa "el profe no activo ninguna
+    ///   evaluacion para esta seccion" — NO se inventa opciones de fallback
+    ///   porque eso confundiria al alumno con evaluaciones que el profe no
+    ///   activo (puede dejar el combo vacio legiblemente).
+    /// - sectionId == null (sin BD o modo legacy): sintetiza Evaluations
+    ///   desde Config.EvaluationTypes (Id=0 = sentinel de fallback).
     /// </summary>
     private async Task LoadEvaluationsForSection(string sectionCode, long? sectionId)
     {
@@ -181,11 +194,14 @@ public partial class MainWindow : Window
         {
             foreach (var ev in _currentEvaluations) EvaluationCombo.Items.Add(ev);
         }
-        else
+        else if (sectionId == null)
         {
+            // Modo legacy: no hay section_id real, cae a Config.EvaluationTypes.
             foreach (var t in Config.EvaluationTypes)
                 EvaluationCombo.Items.Add(new Evaluation { Id = 0, Title = t, Active = true });
         }
+        // Si sectionId != null pero _currentEvaluations esta vacio, el combo
+        // queda vacio (el profe no activo evaluaciones para esta seccion).
     }
 
     /// <summary>Restaura la evaluacion guardada (por Id) y espeja su titulo en TipoCombo.</summary>
@@ -240,8 +256,12 @@ public partial class MainWindow : Window
         if (_initializing || CursoCombo.SelectedItem == null) return;
         var courseId = ((Course)CursoCombo.SelectedItem).Id;
         PopulateSectionCombo(courseId);
-        // Reset de la cascada abajo: seccion, evaluacion y TipoCombo
+        // Reset de la cascada abajo: seccion, evaluacion y TipoCombo.
+        // Limpiar TAMBIEN section TEXT (no solo section_id) para que
+        // heartbeat/blocklist no manden una seccion vieja mezclada con
+        // curso nuevo durante la ventana hasta que el alumno elija.
         SectionCombo.SelectedIndex = -1;
+        StudentSection.Set("");
         StudentSection.SetSectionId(null);
         StudentSection.SetEvaluationId(null);
         EvaluationCombo.Items.Clear();
@@ -255,7 +275,13 @@ public partial class MainWindow : Window
         if (_initializing || SectionCombo.SelectedItem == null) return;
         var code = (string)SectionCombo.SelectedItem;
         StudentSection.Set(code);
-        var row = _sections.FirstOrDefault(s => s.Code == code);
+        // Resolver la seccion por code DENTRO del curso seleccionado (no
+        // globalmente) para no matchear otra seccion con el mismo code en
+        // otro curso.
+        var selectedCourseId = CursoCombo.SelectedItem is Course cc ? (long?)cc.Id : null;
+        var row = _sections.FirstOrDefault(s => s.Code == code
+            && (selectedCourseId == null || s.CourseId == selectedCourseId));
+        row ??= _sections.FirstOrDefault(s => s.Code == code);
         StudentSection.SetSectionId(row?.Id);
         // Al cambiar de seccion se resetea la evaluacion (pertenece a otra seccion)
         StudentSection.SetEvaluationId(null);
@@ -592,7 +618,7 @@ public partial class MainWindow : Window
                 Log($"Tienes {invites.Count} invitacion(es) pendiente(s).");
                 if (await AcceptInvitationsAsync(invites)) { await Task.Delay(2000); await LoadUserReposAsync(); return; }
             }
-            var asg = await _sb.GetActiveAssignmentsAsync();
+            var asg = await _sb.GetActiveAssignmentsAsync(StudentSection.GetEvaluationId());
             asg = FilterBySection(asg);
             if (asg.Count > 0)
                 Log($"Tienes {asg.Count} tarea(s) Classroom. Usa el banner para aceptarlas.");
@@ -829,7 +855,7 @@ public partial class MainWindow : Window
 
     private async Task UpdateAssignmentsBanner()
     {
-        var asg = FilterBySection(await _sb.GetActiveAssignmentsAsync());
+        var asg = FilterBySection(await _sb.GetActiveAssignmentsAsync(StudentSection.GetEvaluationId()));
         var statuses = await ComputeAssignmentStatusesAsync(asg);
         var pending = statuses.Count(s => !s.Accepted);
         if (pending > 0)
@@ -842,7 +868,7 @@ public partial class MainWindow : Window
 
     private async Task ShowAssignmentsDialog()
     {
-        var asg = FilterBySection(await _sb.GetActiveAssignmentsAsync());
+        var asg = FilterBySection(await _sb.GetActiveAssignmentsAsync(StudentSection.GetEvaluationId()));
         if (asg.Count == 0) { MessageBox.Show("No hay tareas activas.", "Sin tareas", MessageBoxButton.OK, MessageBoxImage.Information); return; }
 
         var statuses = await ComputeAssignmentStatusesAsync(asg);
@@ -861,7 +887,7 @@ public partial class MainWindow : Window
     {
         var me = _user?.Login;
         if (string.IsNullOrEmpty(me)) return;
-        var asg = FilterBySection(await _sb.GetActiveAssignmentsAsync());
+        var asg = FilterBySection(await _sb.GetActiveAssignmentsAsync(StudentSection.GetEvaluationId()));
         foreach (var a in asg)
         {
             if (string.Equals(ExpectedClassroomRepo(a.Title, me), repoName, StringComparison.OrdinalIgnoreCase))
