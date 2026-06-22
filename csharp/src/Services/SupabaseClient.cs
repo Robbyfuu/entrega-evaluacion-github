@@ -46,6 +46,44 @@ public class SupabaseClient
         catch { return null; }
     }
 
+    // ===== Multi-evaluacion: cursos, secciones, evaluaciones =====
+    // Fallback: si la BD no responde, el caller cae a Config.Sections/EvaluationTypes.
+
+    public async Task<List<Course>> GetCoursesAsync()
+    {
+        try
+        {
+            var json = await _http.GetStringAsync(
+                Rest("courses?active=eq.true&select=*&order=code.asc"));
+            return JsonSerializer.Deserialize<List<Course>>(json, JsonOpts) ?? new();
+        }
+        catch { return new(); }
+    }
+
+    public async Task<List<SectionRow>> GetSectionsAsync(long? courseId = null)
+    {
+        try
+        {
+            var filter = courseId is { } cid ? $"course_id=eq.{cid}&" : "";
+            var json = await _http.GetStringAsync(
+                Rest($"{filter}sections?select=*&order=code.asc"));
+            return JsonSerializer.Deserialize<List<SectionRow>>(json, JsonOpts) ?? new();
+        }
+        catch { return new(); }
+    }
+
+    public async Task<List<Evaluation>> GetEvaluationsAsync(long sectionId, bool onlyActive = true)
+    {
+        try
+        {
+            var activeFilter = onlyActive ? "&active=eq.true" : "";
+            var json = await _http.GetStringAsync(
+                Rest($"evaluations?section_id=eq.{sectionId}{activeFilter}&select=*&order=created_at.desc"));
+            return JsonSerializer.Deserialize<List<Evaluation>>(json, JsonOpts) ?? new();
+        }
+        catch { return new(); }
+    }
+
     // ===== Assignments =====
     public async Task<List<Assignment>> GetActiveAssignmentsAsync()
     {
@@ -114,7 +152,8 @@ public class SupabaseClient
     /// </summary>
     public async Task RecordAcceptanceAsync(
         string githubUsername, long assignmentId, string? title,
-        string? section, string? repoName, string? repoUrl)
+        string? section, string? repoName, string? repoUrl,
+        long? evaluationId = null)
     {
         try
         {
@@ -125,7 +164,8 @@ public class SupabaseClient
                 p_assignment_title = title,
                 p_section = section,
                 p_repo_name = repoName,
-                p_repo_url = repoUrl
+                p_repo_url = repoUrl,
+                p_evaluation_id = evaluationId
             }, JsonOpts);
             var content = new StringContent(payload, Encoding.UTF8, "application/json");
             await _http.PostAsync(Rest("rpc/record_acceptance"), content);
@@ -149,6 +189,8 @@ public class SupabaseClient
     }
 
     // ===== Heartbeat (RPC SECURITY DEFINER) =====
+    // section_id se sincroniza via trigger trg_sync_section_online desde
+    // section TEXT; la RPC heartbeat no acepta p_section_id (forward-compat).
     public async Task SendHeartbeatAsync(
         string pcName, string githubUsername, string? githubEmail,
         string? section, List<ProcessInfo> processes,
@@ -220,12 +262,14 @@ public class SupabaseClient
 
     public async Task ReportStudentActivityAsync(
         string action, string githubUsername, string? githubEmail,
-        string pcName, string? section, string? repoName, string? repoUrl)
+        string pcName, string? section, string? repoName, string? repoUrl,
+        long? sectionId = null)
     {
         await PostInsertAsync("student_activity", new
         {
             action, github_username = githubUsername, github_email = githubEmail,
-            pc_name = pcName, section, repo_name = repoName, repo_url = repoUrl
+            pc_name = pcName, section, section_id = sectionId,
+            repo_name = repoName, repo_url = repoUrl
         });
     }
 
@@ -274,12 +318,13 @@ public class SupabaseClient
     /// </summary>
     public async Task ReportBrowsingAsync(
         string githubUsername, string pcName, string? section,
-        string url, string domain, bool allowed)
+        string url, string domain, bool allowed,
+        long? sectionId = null)
     {
         await PostInsertAsync("browser_history", new
         {
             github_username = githubUsername, pc_name = pcName, section,
-            url, domain, allowed
+            section_id = sectionId, url, domain, allowed
         });
     }
 
