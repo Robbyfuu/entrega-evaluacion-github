@@ -1,6 +1,32 @@
 // Row types for every Supabase table the panel reads or writes.
 // Field names mirror the original admin panel queries exactly.
 
+export interface CourseRow {
+  id: number;
+  code: string;
+  name: string;
+  active: boolean;
+  created_at: string | null;
+}
+
+export interface SectionRow {
+  id: number;
+  course_id: number;
+  code: string;
+  name: string;
+  created_at: string | null;
+}
+
+export interface EvaluationRow {
+  id: number;
+  section_id: number;
+  title: string;
+  classroom_url: string | null;
+  org: string | null;
+  active: boolean;
+  created_at: string | null;
+}
+
 export interface ControlRow {
   id: number;
   internet_block: boolean;
@@ -19,6 +45,7 @@ export interface OnlineClientRow {
   pc_name: string | null;
   github_username: string | null;
   section: string | null;
+  section_id: number | null;
   last_seen: string;
   processes: ClientProcess[] | null;
   internet_state: string | null; // 'blocked' | other
@@ -31,6 +58,7 @@ export interface ProcessAlertRow {
   github_username: string | null;
   pc_name: string | null;
   section: string | null;
+  section_id: number | null;
   process_name: string;
   window_title: string | null;
 }
@@ -41,6 +69,7 @@ export interface BrowserHistoryRow {
   github_username: string | null;
   pc_name: string | null;
   section: string | null;
+  section_id: number | null;
   allowed: boolean;
   url: string | null;
 }
@@ -62,6 +91,7 @@ export interface AssignmentRow {
   org: string | null;
   classroom_url: string;
   active: boolean;
+  evaluation_id: number | null;
   created_at?: string | null;
 }
 
@@ -69,6 +99,8 @@ export interface AssignmentAcceptanceRow {
   id?: number | string;
   assignment_id: number | string;
   github_username: string | null;
+  evaluation_id: number | null;
+  section_id: number | null;
   accepted_at?: string | null;
 }
 
@@ -84,6 +116,7 @@ export interface SuspiciousProcess {
   id: number;
   process_name: string;
   section: string | null;
+  section_id: number | null;
   created_at: string;
 }
 
@@ -91,6 +124,7 @@ export interface StudentActivityRow {
   id?: number | string;
   created_at: string;
   section: string | null;
+  section_id: number | null;
   github_username: string | null;
   github_email: string | null;
   pc_name: string | null;

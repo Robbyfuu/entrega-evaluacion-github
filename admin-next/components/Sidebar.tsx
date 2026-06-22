@@ -10,6 +10,9 @@ interface NavItem {
 const NAV_ITEMS: NavItem[] = [
   { target: "sec-kpi", label: "Resumen", dot: "var(--primary)" },
   { target: "sec-control", label: "Controles", dot: "var(--danger)" },
+  { target: "sec-courses", label: "Cursos", dot: "var(--info)" },
+  { target: "sec-sections", label: "Secciones", dot: "var(--info)" },
+  { target: "sec-evaluations", label: "Evaluaciones", dot: "var(--primary)" },
   { target: "sec-pcs", label: "PCs conectados", dot: "var(--success)" },
   { target: "sec-alerts", label: "Alertas", dot: "var(--warning)" },
   { target: "sec-browsing", label: "Navegación", dot: "var(--info)" },
