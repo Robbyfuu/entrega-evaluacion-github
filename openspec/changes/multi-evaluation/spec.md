@@ -47,7 +47,7 @@ El sistema MUST proveer `sections (id BIGSERIAL PK, course_id BIGINT NOT NULL RE
 
 ## REQ-3: evaluation-management (CRUD de evaluaciones)
 
-El sistema MUST proveer `evaluations (id BIGSERIAL PK, section_id BIGINT NOT NULL REFERENCES sections(id) ON DELETE CASCADE, title TEXT NOT NULL, classroom_url TEXT, org TEXT, active BOOL DEFAULT true, created_at TIMESTAMPTZ)` con RLS.
+El sistema MUST proveer `evaluations (id BIGSERIAL PK, section_id BIGINT NOT NULL REFERENCES sections(id) ON DELETE CASCADE, title TEXT NOT NULL, classroom_url TEXT, org TEXT, active BOOL DEFAULT false, created_at TIMESTAMPTZ, UNIQUE(section_id, title))` con RLS.
 
 - `anon_read_evaluations`: SELECT donde `active=true` (alumno solo ve activas).
 - `auth_all_evaluations`: CRUD para profe.

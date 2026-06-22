@@ -31,9 +31,16 @@ DROP POLICY IF EXISTS "anon_update_acceptances" ON public.assignment_acceptances
 CREATE POLICY "anon_update_acceptances" ON public.assignment_acceptances
   FOR UPDATE USING (true) WITH CHECK (true);
 
--- RPC upsert (SECURITY DEFINER) para registrar/actualizar aceptacion
+-- RPC upsert (SECURITY DEFINER) para registrar/actualizar aceptacion.
 -- p_evaluation_id es nullable para coexistir con clientes viejos que
 -- no envian evaluation_id (forward-compatible).
+-- DROP previo de la firma vieja (6 params) para evitar overload:
+-- CREATE OR REPLACE con firma distinta crea un nuevo signature en
+-- vez de reemplazar, dejando dos funciones vivas y causando ambiguedad
+-- al invocar por nombre.
+DROP FUNCTION IF EXISTS public.record_acceptance(
+  TEXT, BIGINT, TEXT, TEXT, TEXT, TEXT);
+
 CREATE OR REPLACE FUNCTION public.record_acceptance(
   p_github_username TEXT,
   p_assignment_id BIGINT,
@@ -54,7 +61,7 @@ BEGIN
       section          = EXCLUDED.section,
       repo_name        = EXCLUDED.repo_name,
       repo_url         = EXCLUDED.repo_url,
-      evaluation_id    = EXCLUDED.evaluation_id,
+      evaluation_id    = COALESCE(EXCLUDED.evaluation_id, public.assignment_acceptances.evaluation_id),
       accepted_at      = NOW();
 END;
 $$;

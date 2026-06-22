@@ -38,7 +38,8 @@ CREATE TABLE IF NOT EXISTS public.evaluations (
   classroom_url TEXT,
   org TEXT,
   active BOOLEAN NOT NULL DEFAULT false,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(section_id, title)
 );
 
 CREATE INDEX IF NOT EXISTS idx_sections_course
@@ -118,15 +119,27 @@ ALTER TABLE public.suspicious_processes
 
 -- ============================================================
 --  4. FUNCTION sync_section_id + triggers
---  Sincroniza section_id desde section TEXT cuando section_id
---  es NULL. Forward-compatible: clientes viejos que reportan
---  via section TEXT siguen funcionando.
+--  Sincroniza section_id desde section TEXT para coexistencia
+--  forward-compatible con clientes v2.5.x que reportan via
+--  section TEXT. En INSERT completa section_id si es NULL;
+--  en UPDATE recalcula si section TEXT cambio; si section es
+--  NULL, limpia section_id stale.
+--
+--  ASSUMPTION: section codes (section TEXT) son globalmente
+--  unicos a traves de todos los cursos. Esto es valido para
+--  el sistema legacy (Config.Sections = 001D/002D/003D). Si
+--  en el futuro dos cursos comparten un mismo section code,
+--  este trigger elegira arbitrariamente el primero que matchee
+--  (LIMIT 1) y debera refinarse con contexto de curso.
 -- ============================================================
 
 CREATE OR REPLACE FUNCTION public.sync_section_id()
 RETURNS TRIGGER AS $$
 BEGIN
-  IF NEW.section_id IS NULL AND NEW.section IS NOT NULL THEN
+  IF NEW.section IS NULL THEN
+    NEW.section_id := NULL;
+  ELSIF (TG_OP = 'INSERT' AND NEW.section_id IS NULL)
+     OR (TG_OP = 'UPDATE' AND NEW.section IS DISTINCT FROM OLD.section) THEN
     SELECT s.id INTO NEW.section_id
     FROM public.sections s
     WHERE s.code = NEW.section
@@ -195,7 +208,9 @@ CROSS JOIN (VALUES
 WHERE c.code = 'FPY1101'
 ON CONFLICT (course_id, code) DO NOTHING;
 
--- Evaluaciones por seccion (mirror de Config.EvaluationTypes)
+-- Evaluaciones por seccion (mirror de Config.EvaluationTypes).
+-- Scopeado al curso default FPY1101 via course_id para evitar
+-- poluir secciones de otros cursos que compartan code.
 INSERT INTO public.evaluations (section_id, title, active)
 SELECT s.id, e.title, false
 FROM public.sections s
@@ -206,8 +221,9 @@ CROSS JOIN (VALUES
   ('Evaluacion-4'),
   ('Examen')
 ) AS e(title)
-WHERE s.code IN ('001D', '002D', '003D')
-ON CONFLICT DO NOTHING;
+WHERE s.course_id = (SELECT id FROM public.courses WHERE code = 'FPY1101')
+  AND s.code IN ('001D', '002D', '003D')
+ON CONFLICT (section_id, title) DO NOTHING;
 
 -- ============================================================
 --  6. REALTIME

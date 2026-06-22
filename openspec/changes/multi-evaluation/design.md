@@ -70,8 +70,9 @@ CREATE TABLE IF NOT EXISTS evaluations (
   title TEXT NOT NULL,
   classroom_url TEXT,
   org TEXT,
-  active BOOL DEFAULT true,
-  created_at TIMESTAMPTZ DEFAULT now()
+  active BOOL DEFAULT false,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  UNIQUE(section_id, title)
 );
 ALTER TABLE evaluations ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS anon_read_evaluations ON evaluations;
@@ -121,10 +122,13 @@ INSERT INTO courses (code, name) VALUES ('FPY1101', 'Física I') ON CONFLICT (co
 INSERT INTO sections (course_id, code, name)
   SELECT c.id, s.code, s.code FROM courses c, (VALUES ('001D'),('002D'),('003D')) AS s(code)
   WHERE c.code='FPY1101' ON CONFLICT (course_id, code) DO NOTHING;
--- 5 evaluaciones por sección (Evaluacion-1..4, Examen) tomadas de Config.EvaluationTypes:
+-- 5 evaluaciones por seccion (Evaluacion-1..4, Examen) tomadas de Config.EvaluationTypes.
+-- Scopeado al curso FPY1101 via course_id; active=false hasta que el profe active.
 INSERT INTO evaluations (section_id, title, active)
-  SELECT s.id, e.title, true FROM sections s, (VALUES ('Evaluación 1'),('Evaluación 2'),('Evaluación 3'),('Evaluación 4'),('Examen')) AS e(title)
-  WHERE s.code IN ('001D','002D','003D') ON CONFLICT DO NOTHING;
+  SELECT s.id, e.title, false FROM sections s, (VALUES ('Evaluación 1'),('Evaluación 2'),('Evaluación 3'),('Evaluación 4'),('Examen')) AS e(title)
+  WHERE s.course_id = (SELECT id FROM courses WHERE code='FPY1101')
+    AND s.code IN ('001D','002D','003D')
+  ON CONFLICT (section_id, title) DO NOTHING;
 ```
 
 ---
