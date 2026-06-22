@@ -11,6 +11,35 @@ public class ControlState
     [JsonPropertyName("updated_by")] public string? UpdatedBy { get; set; }
 }
 
+// ===== Multi-evaluacion: curso > seccion > evaluacion =====
+// Fetcheados de Supabase al arrancar; fallback a Config.cs si la BD no responde.
+
+public class Course
+{
+    [JsonPropertyName("id")] public long Id { get; set; }
+    [JsonPropertyName("code")] public string Code { get; set; } = "";
+    [JsonPropertyName("name")] public string Name { get; set; } = "";
+    [JsonPropertyName("active")] public bool Active { get; set; }
+}
+
+public class SectionRow
+{
+    [JsonPropertyName("id")] public long Id { get; set; }
+    [JsonPropertyName("course_id")] public long CourseId { get; set; }
+    [JsonPropertyName("code")] public string Code { get; set; } = "";
+    [JsonPropertyName("name")] public string Name { get; set; } = "";
+}
+
+public class Evaluation
+{
+    [JsonPropertyName("id")] public long Id { get; set; }
+    [JsonPropertyName("section_id")] public long SectionId { get; set; }
+    [JsonPropertyName("title")] public string Title { get; set; } = "";
+    [JsonPropertyName("classroom_url")] public string? ClassroomUrl { get; set; }
+    [JsonPropertyName("org")] public string? Org { get; set; }
+    [JsonPropertyName("active")] public bool Active { get; set; }
+}
+
 public class Assignment
 {
     [JsonPropertyName("id")] public long Id { get; set; }
@@ -19,6 +48,7 @@ public class Assignment
     [JsonPropertyName("section")] public string? Section { get; set; }
     [JsonPropertyName("org")] public string? Org { get; set; }
     [JsonPropertyName("active")] public bool Active { get; set; }
+    [JsonPropertyName("evaluation_id")] public long? EvaluationId { get; set; }
 }
 
 // Registro de aceptacion de una tarea de Classroom por parte de un alumno.
@@ -29,6 +59,7 @@ public class Acceptance
     [JsonPropertyName("assignment_id")] public long AssignmentId { get; set; }
     [JsonPropertyName("assignment_title")] public string? AssignmentTitle { get; set; }
     [JsonPropertyName("section")] public string? Section { get; set; }
+    [JsonPropertyName("evaluation_id")] public long? EvaluationId { get; set; }
     [JsonPropertyName("repo_name")] public string? RepoName { get; set; }
     [JsonPropertyName("repo_url")] public string? RepoUrl { get; set; }
     [JsonPropertyName("accepted_at")] public string? AcceptedAt { get; set; }
@@ -75,6 +106,7 @@ public sealed class BrowseContext
     public string GithubUsername { get; set; } = "";
     public string PcName { get; set; } = "";
     public string? Section { get; set; }
+    public long? SectionId { get; set; }
 }
 
 public class ProcessInfo
@@ -91,6 +123,7 @@ public class SuspiciousProcess
 {
     [JsonPropertyName("process_name")] public string ProcessName { get; set; } = "";
     [JsonPropertyName("section")] public string? Section { get; set; }
+    [JsonPropertyName("section_id")] public long? SectionId { get; set; }
 }
 
 // DTOs para repos de GitHub (deserializar /user/repos y /repos/{owner}/{repo})

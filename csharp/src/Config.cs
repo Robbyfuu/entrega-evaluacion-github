@@ -20,10 +20,17 @@ public static class Config
     // Intervalo de polling (heartbeat + admin config) en ms
     public const int PollIntervalMs = 20000;
 
-    // Secciones disponibles
+    // Secciones disponibles. FALLBACK: la fuente de verdad en produccion es la
+    // tabla `sections` (fetcheada por SupabaseClient.GetSectionsAsync al
+    // arrancar). Esta lista solo se usa cuando el fetch falla por red o
+    // devuelve vacio (mismo patron que SuspiciousProcesses). Mantener
+    // sincronizada con el seed de migration-multi-evaluation.sql.
     public static readonly string[] Sections = { "001D", "002D", "003D" };
 
-    // Tipos de evaluacion
+    // Tipos de evaluacion. FALLBACK: la fuente de verdad en produccion es la
+    // tabla `evaluations` (fetcheada por SupabaseClient.GetEvaluationsAsync).
+    // Esta lista solo se usa cuando el fetch falla. Mantener sincronizada con
+    // el seed de migration-multi-evaluation.sql.
     public static readonly string[] EvaluationTypes =
         { "Evaluacion-1", "Evaluacion-2", "Evaluacion-3", "Evaluacion-4", "Examen" };
 
