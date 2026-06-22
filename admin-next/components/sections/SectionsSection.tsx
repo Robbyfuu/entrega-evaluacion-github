@@ -54,7 +54,11 @@ export function SectionsSection() {
 
   async function deleteSection(id: SectionRow["id"], code: string) {
     if (!window.confirm(`¿Eliminar la sección "${code}"? Se borrarán sus evaluaciones en cascada.`)) return;
-    const { data } = await supabase.from("sections").delete().eq("id", id).select();
+    const { data, error: err } = await supabase.from("sections").delete().eq("id", id).select();
+    if (err) {
+      setFeedback({ text: "Error: " + err.message, ok: false });
+      return;
+    }
     if (!data || data.length === 0) {
       setFeedback({ text: "No se pudo eliminar (¿sesión expirada?).", ok: false });
       return;

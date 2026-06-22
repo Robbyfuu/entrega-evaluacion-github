@@ -43,7 +43,11 @@ export function CoursesSection() {
   }
 
   async function toggleCourse(id: CourseRow["id"], active: boolean) {
-    const { data } = await supabase.from("courses").update({ active }).eq("id", id).select();
+    const { data, error: err } = await supabase.from("courses").update({ active }).eq("id", id).select();
+    if (err) {
+      setFeedback({ text: "Error: " + err.message, ok: false });
+      return;
+    }
     if (!data || data.length === 0) {
       setFeedback({ text: "No se pudo actualizar (¿sesión expirada?).", ok: false });
       return;
@@ -53,7 +57,11 @@ export function CoursesSection() {
 
   async function deleteCourse(id: CourseRow["id"], code: string) {
     if (!window.confirm(`¿Eliminar el curso "${code}"? Se borrarán sus secciones y evaluaciones en cascada.`)) return;
-    const { data } = await supabase.from("courses").delete().eq("id", id).select();
+    const { data, error: err } = await supabase.from("courses").delete().eq("id", id).select();
+    if (err) {
+      setFeedback({ text: "Error: " + err.message, ok: false });
+      return;
+    }
     if (!data || data.length === 0) {
       setFeedback({ text: "No se pudo eliminar (¿sesión expirada?).", ok: false });
       return;
