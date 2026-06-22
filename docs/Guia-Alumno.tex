@@ -147,7 +147,7 @@
 % ============================================================
 \chapter{Resumen del proceso}
 
-Esta guia te explica como entregar tus evaluaciones de programacion usando un script automatico que sube tu codigo a GitHub.
+Esta guia te explica como entregar tus evaluaciones de programacion usando una app automatica que sube tu codigo a GitHub.
 
 El proceso se divide en \textbf{dos momentos}:
 
@@ -158,7 +158,7 @@ Luego, antes de cada evaluacion, repites solo el paso de \textbf{aceptar la tare
 \end{notebox}
 
 \begin{successbox}[En el aula\,---\,Dia del examen]
-Solo tres pasos: clonar el repositorio que ya aceptaste en casa, programar tu evaluacion en IDLE, y subir los archivos. El script entrega automaticamente el enlace que pegas en el AVA.
+Solo tres pasos: clonar el repositorio que ya aceptaste en casa, programar tu evaluacion en IDLE, y subir los archivos. La app entrega automaticamente el enlace que pegas en el AVA.
 \end{successbox}
 
 \section{Que vas a necesitar}
@@ -174,7 +174,7 @@ Solo tres pasos: clonar el repositorio que ya aceptaste en casa, programar tu ev
 
 \begin{itemize}
   \item No necesitas saber usar la consola
-  \item No necesitas instalar git ni gh manualmente (el script lo hace solo)
+  \item No necesitas instalar git ni gh manualmente (la app lo hace solo)
   \item No necesitas memorizar comandos
 \end{itemize}
 
@@ -201,14 +201,14 @@ Si ya tienes cuenta, salta al Paso 3.
 
 \begin{enumerate}
   \item Haz doble-click en el ejecutable de la app.
-  \item Windows puede mostrar una advertencia de seguridad: click en \textbf{Mas informaciones} $\rightarrow$ \textbf{Ejecutar de todas formas}.
+  \item Windows puede mostrar una advertencia de seguridad: click en \textbf{Mas informacion} $\rightarrow$ \textbf{Ejecutar de todas formas}.
   \item Se abre el formulario principal.
   \item En la esquina superior derecha veras el enlace: \emph{\textquotedblleft\,No tienes cuenta de GitHub? Creala aqui\,\textquotedblright}.
   \item Click en el enlace $\rightarrow$ se abre un dialogo con instrucciones $\rightarrow$ click \textbf{Abrir GitHub}.
   \item Se abre tu navegador en \url{https://github.com/signup}.
   \item Completa: email personal, contrasena (minimo 8 caracteres con letras y numeros), username.
   \item Verifica tu email con el codigo de 8 digitos que recibes.
-  \item Listo. Vuelve al script y click \textbf{Ya tengo cuenta, iniciar sesion}.
+  \item Listo. Vuelve a la app y click \textbf{Ya tengo cuenta, iniciar sesion}.
 \end{enumerate}
 
 \begin{notebox}[Sugerencia de username]
@@ -217,13 +217,13 @@ Usa algo profesional como \texttt{tu-nombre-apellido} o \texttt{tu-nombre.duoc}.
 
 \section{Paso 3\,---\,Instalar dependencias (winget)}
 
-La primera vez que abres el script, te ofrecera instalar \texttt{git} y \texttt{gh} (GitHub CLI) usando \texttt{winget}.
+La primera vez que abres la app, te ofrecera instalar \texttt{git} y \texttt{gh} (GitHub CLI) usando \texttt{winget}.
 
 \begin{enumerate}
   \item Cuando aparezca el dialogo \textbf{Instalar dependencias}, click \textbf{Si}.
   \item Acepta los permisos de administrador que pida Windows.
   \item Espera 1\,---\,2 minutos. Veras una consola negra instalando.
-  \item Cuando termine, \textbf{cierra y vuelve a abrir} el script para que detecte las nuevas herramientas.
+  \item Cuando termine, \textbf{cierra y vuelve a abrir} la app para que detecte las nuevas herramientas.
 \end{enumerate}
 
 \section{Paso 4\,---\,Seleccionar tu seccion}
@@ -243,12 +243,12 @@ Si te equivocas de seccion, los assignments del Classroom no apareceran. Puedes 
 
 \begin{enumerate}
   \item En el formulario principal, click en cualquier accion (por ejemplo, \textbf{Crear Repo}).
-  \item Si no estas conectado, el script muestra un dialogo con un \textbf{codigo} grande tipo \texttt{XXXX-XXXX}.
+  \item Si no estas conectado, la app muestra un dialogo con un \textbf{codigo} grande tipo \texttt{XXXX-XXXX}.
   \item Abre en tu navegador (o celular): \url{https://github.com/login/device}
   \item Ingresa el codigo (boton \textbf{Copiar codigo} ayuda).
   \item Inicia sesion en GitHub si no estabas conectado.
   \item Autoriza el acceso a \emph{\textquotedblleft GitHub CLI\,\textquotedblright}.
-  \item El script detecta automaticamente la autorizacion y continua.
+  \item La app detecta automaticamente la autorizacion y continua.
 \end{enumerate}
 
 \begin{successbox}[Una sola vez]
@@ -269,7 +269,7 @@ Esto es lo MAS importante para preparar el dia del examen:
   \item Verifica que la cuenta logueada en GitHub es la \textbf{tuya} (no la del PC del aula si estas en clases).
   \item Click \textbf{Accept this assignment} en GitHub.
   \item GitHub Classroom crea automaticamente un repositorio en tu cuenta con un nombre tipo \texttt{evaluacion-1-tu-username}.
-  \item Cierra el navegador y vuelve al script.
+  \item Cierra el navegador y vuelve a la app.
 \end{enumerate}
 
 \begin{warnbox}[NO clones todavia]
@@ -278,11 +278,11 @@ Acepta la tarea pero NO la clones en casa. Si clonas y editas codigo en casa, el
 Solo acepta la tarea. El repositorio queda esperando en tu cuenta de GitHub, vacio.
 \end{warnbox}
 
-\section{Paso 7\,---\,Cerrar el script y guardar el PC}
+\section{Paso 7\,---\,Cerrar la app y guardar el PC}
 
-Si trabajas desde tu PC personal, cierra el script normalmente y apaga. Todo queda configurado.
+Si trabajas desde tu PC personal, cierra la app normalmente y apaga. Todo queda configurado.
 
-\textbf{El dia de la evaluacion solo tendras que abrir el script y hacer clone + edit + push.}
+\textbf{El dia de la evaluacion solo tendras que abrir la app y hacer clone + edit + push.}
 
 % ============================================================
 \chapter{Dia del examen\,---\,En el aula}
@@ -311,7 +311,7 @@ Mira los dropdowns \emph{\textquotedblleft\,Tu curso\,\textquotedblright}, \emph
   \item Click en \textbf{Clonar Repo}.
 \end{enumerate}
 
-El script:
+La app:
 
 \begin{itemize}
   \item Descarga tu repositorio a \texttt{Escritorio\textbackslash{}evaluacion-1-tu-username}
@@ -338,7 +338,7 @@ Click \textbf{Run} $\rightarrow$ \textbf{Run Module} (F5) para ejecutar.
 Cuando termines:
 
 \begin{enumerate}
-  \item Vuelve al script (esta abierto en la barra de tareas).
+  \item Vuelve a la app (esta abierta en la barra de tareas).
   \item Click \textbf{Subir Archivos} (boton verde).
   \item Espera 5\,---\,10 segundos mientras hace \texttt{git add}, \texttt{commit} y \texttt{push}.
   \item Aparece un mensaje \textbf{Listo\,---\,Ahora entrega en el AVA} con tu URL.
@@ -356,7 +356,7 @@ Cuando termines:
 
 \section{Paso 7\,---\,Limpieza (opcional)}
 
-El script te preguntara: \emph{\textquotedblleft\,Ya terminaste la evaluacion\,?\,\textquotedblright}
+La app te preguntara: \emph{\textquotedblleft\,Ya terminaste la evaluacion\,?\,\textquotedblright}
 
 \begin{itemize}
   \item Si responde \textbf{Si}, elimina la carpeta local del Escritorio. Tu evaluacion queda guardada en GitHub.
@@ -370,7 +370,7 @@ El script te preguntara: \emph{\textquotedblleft\,Ya terminaste la evaluacion\,?
 
 Primera vez normal. Click \textbf{Mas informacion} $\rightarrow$ \textbf{Ejecutar de todas formas}.
 
-El script desbloquea automaticamente los archivos al iniciar para evitar que esta advertencia se repita.
+La app desbloquea automaticamente los archivos al iniciar para evitar que esta advertencia se repita.
 
 \section{\textquotedblleft winget no se reconoce\textquotedblright}
 
@@ -383,7 +383,7 @@ Tu Windows no tiene \texttt{winget}. Instala \textbf{App Installer} desde Micros
 
 \section{\textquotedblleft No tienes una sesion de GitHub activa\textquotedblright}
 
-Click \textbf{Si} cuando el script ofrezca iniciar sesion. Sigue las instrucciones del dialogo con el codigo.
+Click \textbf{Si} cuando la app ofrezca iniciar sesion. Sigue las instrucciones del dialogo con el codigo.
 
 \section{\textquotedblleft No aparece mi tarea en el banner\textquotedblright}
 
@@ -392,7 +392,7 @@ Verifica:
 \begin{enumerate}
   \item Tu seccion en el dropdown superior coincide con tu inscripcion real.
   \item El profesor ya activo la tarea en el panel admin (preguntale).
-  \item Tienes conexion a internet (el script consulta el backend cada 60 segundos).
+  \item Tienes conexion a internet (la app consulta el backend cada 60 segundos).
 \end{enumerate}
 
 \section{\textquotedblleft No aparece mi repositorio al refrescar\textquotedblright}
