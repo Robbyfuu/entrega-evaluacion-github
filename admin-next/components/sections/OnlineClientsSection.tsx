@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import type { OnlineClientRow, SuspiciousProcess } from "@/lib/types";
 import { useRealtimeTable } from "@/hooks/useRealtimeTable";
+import { useSectionLookup } from "@/hooks/useSectionLookup";
 import { fmt, timeAgo } from "@/lib/format";
 import { FALLBACK_SUSPICIOUS_PROCESSES, normalizeProcessName } from "@/lib/suspicious";
 import { BADGE } from "@/lib/colors";
@@ -29,6 +30,8 @@ export function OnlineClientsSection({
     limit: 100,
     getId: (r) => `${r.pc_name}|${r.github_username}`,
   });
+
+  const { sectionCodeById } = useSectionLookup();
 
   // Live blocklist. A process is suspicious for a client when its normalized
   // name is global (section === null) or scoped to the client's own section.
@@ -176,8 +179,9 @@ export function OnlineClientsSection({
           ) : (
             onlineData.map((c) => {
               const procs = Array.isArray(c.processes) ? c.processes : [];
+              const clientSection = sectionCodeById(c.section_id) ?? c.section ?? null;
               const suspCount = procs.filter((p) =>
-                isSuspiciousFor(p.name, c.section)
+                isSuspiciousFor(p.name, clientSection)
               ).length;
               return (
                 <tr
@@ -194,8 +198,8 @@ export function OnlineClientsSection({
                     )}
                   </td>
                   <td>
-                    {c.section ? (
-                      <Badge solidColor={BADGE.sectionAlt}>{c.section}</Badge>
+                    {clientSection ? (
+                      <Badge solidColor={BADGE.sectionAlt}>{clientSection}</Badge>
                     ) : (
                       "-"
                     )}

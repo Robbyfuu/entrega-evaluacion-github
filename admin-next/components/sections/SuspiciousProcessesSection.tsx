@@ -4,14 +4,11 @@ import { useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import type { SuspiciousProcess } from "@/lib/types";
 import { useRealtimeTable } from "@/hooks/useRealtimeTable";
+import { useSectionLookup } from "@/hooks/useSectionLookup";
 import { normalizeProcessName } from "@/lib/suspicious";
 import { fmt } from "@/lib/format";
 import { BADGE } from "@/lib/colors";
 import { Badge } from "@/components/ui/Badge";
-
-// Sections that students are split into. Mirrors AssignmentsSection's inline
-// list (there is no shared section constant in the project yet).
-const SECTIONS = ["001D", "002D", "003D"] as const;
 
 const GLOBAL_LABEL = "Global (todas las secciones)";
 
@@ -27,29 +24,34 @@ export function SuspiciousProcessesSection() {
     getId: (r) => r.id,
   });
 
+  const { sections } = useSectionLookup();
+
   const [feedback, setFeedback] = useState<{ text: string; ok: boolean } | null>(null);
   const [name, setName] = useState("");
   const [section, setSection] = useState<string>("");
 
-  // Group rows: a "Global" bucket (section === null) first, then one bucket per
-  // known section. Sections come from the fixed list plus any extra value seen
-  // in the data, so the editor never hides a row.
-  const groups = useMemo(() => {
-    const sectionKeys = new Set<string>(SECTIONS);
-    for (const r of rows) {
-      if (r.section) sectionKeys.add(r.section);
-    }
-    const orderedSections = Array.from(sectionKeys).sort();
+  // Section codes come from the DB (dynamic) plus any extra value seen in
+  // existing rows, so the editor never hides a row even if its section was
+  // deleted from the sections table.
+  const sectionCodes = useMemo(() => {
+    const codes = new Set<string>();
+    for (const s of sections) codes.add(s.code);
+    for (const r of rows) if (r.section) codes.add(r.section);
+    return Array.from(codes).sort();
+  }, [sections, rows]);
 
+  // Group rows: a "Global" bucket (section === null) first, then one bucket per
+  // known section.
+  const groups = useMemo(() => {
     const global = rows.filter((r) => r.section === null);
-    const bySection = orderedSections.map((sec) => ({
+    const bySection = sectionCodes.map((sec) => ({
       key: sec,
       label: sec,
       items: rows.filter((r) => r.section === sec),
     }));
 
     return [{ key: "__global__", label: GLOBAL_LABEL, items: global }, ...bySection];
-  }, [rows]);
+  }, [rows, sectionCodes]);
 
   async function addProcess() {
     const normalized = normalizeProcessName(name);
@@ -152,7 +154,7 @@ export function SuspiciousProcessesSection() {
             onChange={(e) => setSection(e.target.value)}
           >
             <option value="">{GLOBAL_LABEL}</option>
-            {SECTIONS.map((sec) => (
+            {sectionCodes.map((sec) => (
               <option key={sec} value={sec}>
                 {sec}
               </option>

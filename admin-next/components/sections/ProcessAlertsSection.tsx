@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import type { ProcessAlertRow } from "@/lib/types";
 import { useRealtimeTable } from "@/hooks/useRealtimeTable";
+import { useSectionLookup } from "@/hooks/useSectionLookup";
 import { fmt } from "@/lib/format";
 import { BADGE } from "@/lib/colors";
 import { Badge } from "@/components/ui/Badge";
@@ -23,6 +24,8 @@ export function ProcessAlertsSection({ onCountChange }: ProcessAlertsSectionProp
     getId: (r) => r.id ?? `${r.detected_at}|${r.pc_name}|${r.process_name}`,
   });
 
+  const { sectionCodeById } = useSectionLookup();
+
   useEffect(() => {
     onCountChange(rows.length);
   }, [rows.length, onCountChange]);
@@ -39,7 +42,7 @@ export function ProcessAlertsSection({ onCountChange }: ProcessAlertsSectionProp
         ),
     },
     { header: "PC", cell: (a) => a.pc_name || "-" },
-    { header: "Sección", cell: (a) => a.section || "-" },
+    { header: "Sección", cell: (a) => (sectionCodeById(a.section_id) ?? a.section) || "-" },
     {
       header: "Proceso",
       cell: (a) => <Badge solidColor={BADGE.danger}>{a.process_name}</Badge>,

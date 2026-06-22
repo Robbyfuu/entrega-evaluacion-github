@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import type { BrowserHistoryRow } from "@/lib/types";
 import { useRealtimeTable } from "@/hooks/useRealtimeTable";
+import { useSectionLookup } from "@/hooks/useSectionLookup";
 import { fmt } from "@/lib/format";
 import { BADGE } from "@/lib/colors";
 import { Badge } from "@/components/ui/Badge";
@@ -10,7 +11,6 @@ import { Badge } from "@/components/ui/Badge";
 // Historial de navegación (últimos 100). Live via browser_history.
 export function BrowsingSection() {
   const [onlyBlocked, setOnlyBlocked] = useState(false);
-  // Track ids that just arrived blocked so we can flash them once.
   const [flashIds, setFlashIds] = useState<Set<string | number>>(new Set());
 
   const { rows, loading, error, refresh } = useRealtimeTable<
@@ -34,6 +34,8 @@ export function BrowsingSection() {
       }
     },
   });
+
+  const { sectionCodeById } = useSectionLookup();
 
   const visible = useMemo(
     () => (onlyBlocked ? rows.filter((r) => r.allowed === false) : rows),
@@ -122,7 +124,7 @@ export function BrowsingSection() {
                     )}
                   </td>
                   <td>{r.pc_name || "-"}</td>
-                  <td>{r.section || "-"}</td>
+                  <td>{(sectionCodeById(r.section_id) ?? r.section) || "-"}</td>
                   <td>
                     <Badge variant={r.allowed ? "success" : "cheat"}>
                       {r.allowed ? "permitido" : "BLOQUEADO"}
