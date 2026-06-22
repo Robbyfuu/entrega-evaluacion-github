@@ -17,15 +17,15 @@ Y sube todos los archivos de tu carpeta de evaluación con un solo click.
 ## Requisitos
 
 - Windows 10 / 11
-- Cuenta en [GitHub](https://github.com) (gratuita — el script tiene un asistente para crearla)
+- Cuenta en [GitHub](https://github.com) (gratuita — la app tiene un asistente para crearla)
 - Conexión a internet
 
-**No necesitas instalar nada manualmente.** El script detecta y ofrece instalar
+**No necesitas instalar nada manualmente.** La app detecta y ofrece instalar
 automáticamente `git` y `gh` (GitHub CLI) si no están presentes.
 
 ### ¿No tienes cuenta de GitHub?
 
-En la esquina superior derecha del script verás el link:
+En la esquina superior derecha de la app verás el link:
 
 > **¿No tienes cuenta de GitHub? Créala aquí**
 
@@ -54,26 +54,26 @@ Doble-click en el ejecutable descargado.
 
 ### 3. Primera vez: instalar dependencias
 
-Si es la primera vez, el script te ofrecerá instalar `git` y `gh` con `winget`.
+Si es la primera vez, la app te ofrecerá instalar `git` y `gh` con `winget`.
 
 - Click **Sí** cuando pregunte.
 - Acepta los permisos de administrador que aparezcan.
-- Cuando termine, cierra y vuelve a abrir el script.
+- Cuando termine, cierra y vuelve a abrir la app.
 
 ### 4. Primera vez: iniciar sesión en GitHub
 
-Cuando hagas click en cualquier acción, el script te pedirá iniciar sesión en
+Cuando hagas click en cualquier acción, la app te pedirá iniciar sesión en
 GitHub **sin abrir un navegador automáticamente**:
 
-1. El script muestra un **código** grande tipo `XXXX-XXXX`.
+1. La app muestra un **código** grande tipo `XXXX-XXXX`.
 2. Abre en tu navegador (o **celular**): https://github.com/login/device
 3. Ingresa el código (puedes copiarlo con el botón "Copiar código").
 4. Inicia sesión en GitHub si no estás conectado.
 5. Autoriza el acceso a "GitHub CLI".
-6. El script detecta automáticamente la autorización y continúa.
+6. La app detecta automáticamente la autorización y continúa.
 
 **Ventaja:** puedes usar tu celular para hacer el login. No necesitas navegador
-en la PC donde corre el script.
+en la PC donde corre la app.
 
 Esto es **solo una vez**. La sesión queda guardada.
 
@@ -87,6 +87,10 @@ En la esquina superior derecha verás siempre quién está conectado:
 
 ### 6. Subir tu evaluación
 
+Antes de empezar, selecciona tu **Curso**, **Sección** y **Evaluación** en el
+panel izquierdo de la app. Estas opciones vienen de la base de datos (si el
+profesor las configuró) o de los valores por defecto.
+
 Hay **dos modos** de subida:
 
 #### Modo A: Crear repositorio nuevo (default)
@@ -95,23 +99,23 @@ Para alumnos que vienen sin preparación previa.
 
 1. Selecciona **"Crear repositorio nuevo"**.
 2. Completa **Nombre completo** (ej: `Juan Pérez García`).
-3. Elige el **Tipo de evaluación**: `Evaluacion-1`, `Evaluacion-2`, `Evaluacion-3`, `Evaluacion-4` o `Examen`.
+3. El **Tipo de evaluación** se completa automáticamente con la evaluación que elegiste en el panel izquierdo.
 4. Click **Buscar...** y selecciona la carpeta de tu evaluación.
-5. Click **Hacer TODO**.
+5. Click **Crear repositorio** y luego **Subir evaluación**.
 
-El script crea el repositorio con formato `nombre-completo-tipo` (siempre **público** para que el profesor pueda verlo) y sube todo.
+La app crea el repositorio con formato `nombre-completo-tipo` (siempre **público** para que el profesor pueda verlo) y sube todo.
 
 #### Modo B: Usar repositorio existente
 
 Para alumnos que ya crearon el repo en su casa.
 
 1. Selecciona **"Usar repositorio existente de mi cuenta"**.
-2. El script carga automáticamente la lista de repos de tu cuenta.
+2. La app carga automáticamente la lista de repos de tu cuenta.
 3. Elige tu repo del **dropdown** (los privados aparecen con `[Priv]`, públicos con `[Pub]`).
 4. Si creaste un repo nuevo recientemente, click **Refrescar** para actualizar la lista.
-5. Click **Hacer TODO** (o **Clonar Repo**).
+5. Click **Clonar repositorio**.
 
-El script:
+La app:
 - Clona el repositorio en tu **Escritorio** (`Desktop\nombre-del-repo`).
 - Te muestra la ruta donde quedó la carpeta.
 - Abre **IDLE de Python** apuntando a esa carpeta para que edites tu evaluación.
@@ -119,20 +123,20 @@ El script:
 
 Cuando termines de editar:
 1. Guarda los cambios en IDLE (`Ctrl+S`).
-2. Vuelve a la ventana del script.
-3. Click **Subir Archivos**.
+2. Vuelve a la ventana de la app.
+3. Click **Subir evaluación**.
 
 #### Protección contra confusión de cuentas
 
-Si seleccionas una carpeta que ya tiene un `.git` asociado a **otra cuenta de GitHub** (no a la tuya actual), el script:
+Si seleccionas una carpeta que ya tiene un `.git` asociado a **otra cuenta de GitHub** (no a la tuya actual), la app:
 
 - **NO permite** subir desde ahí.
 - Muestra el nombre de la cuenta conflictiva.
 - Sugiere cambiar de carpeta o cerrar sesión y entrar con la cuenta correcta.
 
-Si el `.git` es de **tu cuenta** pero apunta a otro repo, el script pregunta antes de reinicializar.
+Si el `.git` es de **tu cuenta** pero apunta a otro repo, la app pregunta antes de reinicializar.
 
-#### Lo que hace el script en ambos modos
+#### Lo que hace la app en ambos modos
 
 - Configura tu nombre y email en el repositorio local.
 - Ejecuta `git init` (si hace falta), `git add`, `git commit`, `git push`.
@@ -140,15 +144,18 @@ Si el `.git` es de **tu cuenta** pero apunta a otro repo, el script pregunta ant
 
 ---
 
-## Botones disponibles
+## Acciones disponibles
 
-| Botón                 | Qué hace                                                 |
-|-----------------------|----------------------------------------------------------|
-| **1. Crear Repo**     | Solo crea el repositorio vacío en GitHub.                |
-| **2. Subir Archivos** | Sube los archivos a un repositorio ya existente.         |
-| **Hacer TODO**        | Hace los dos pasos. **Recomendado si es la primera vez.**|
-| **Iniciar sesión**    | Inicia sesión en GitHub con código (sin navegador).      |
-| **Cerrar sesión**     | Borra todas las credenciales del equipo.                 |
+La app usa un **botón primario contextual** que cambia según el estado:
+
+| Estado               | Botón muestra            | Qué hace                                     |
+|----------------------|--------------------------|----------------------------------------------|
+| Sin sesión           | "Inicia sesión primero"  | Deshabilitado hasta iniciar sesión.          |
+| Datos incompletos    | "Completa los datos"     | Deshabilitado hasta llenar nombre + carpeta. |
+| Datos listos         | "Crear/Clonar repo"      | Crea o clona el repositorio.                 |
+| Repo + carpeta listos| "Subir evaluación"       | Sube los archivos al repo.                   |
+
+Adicionales: **Iniciar sesión** / **Cerrar sesión** / **Refrescar** (lista de repos) / **Buscar...** (carpeta).
 
 ---
 
@@ -163,19 +170,19 @@ o descarga manualmente:
 
 ### "No tienes una sesión de GitHub activa"
 
-Click **Sí** cuando el script ofrezca iniciar sesión. Sigue las instrucciones del
+Click **Sí** cuando la app ofrezca iniciar sesión. Sigue las instrucciones del
 diálogo con el código.
 
 ### "Repositorio ya existe"
 
-El script lo detecta y reutiliza ese mismo repositorio. No es un error.
+La app lo detecta y reutiliza ese mismo repositorio. No es un error.
 
 ### "Falló el push"
 
 Posibles causas:
 - Conexión a internet interrumpida.
 - Token expirado: usa el botón **Cerrar sesión** y vuelve a iniciar sesión.
-- El repositorio ya tenía commits desde otro lado: el script no sobrescribe historial.
+- El repositorio ya tenía commits desde otro lado: la app no sobrescribe historial.
 
 ### Quiero cambiar de cuenta de GitHub
 
@@ -205,7 +212,7 @@ Ejemplos:
 
 ## Seguridad
 
-- El script **no envía tus credenciales a ningún servidor externo**.
+- La app **no envía tus credenciales a ningún servidor externo**.
 - Toda la autenticación pasa por `gh` (la herramienta oficial de GitHub).
 - Las credenciales se guardan en el **Credential Manager de Windows**, encriptadas.
 - El botón **Cerrar sesión** limpia todas las credenciales del equipo (gh CLI + Credential Manager + caché de git).
