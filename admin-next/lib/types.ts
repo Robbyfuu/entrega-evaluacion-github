@@ -21,6 +21,9 @@ export interface EvaluationRow {
   id: number;
   section_id: number;
   title: string;
+  // Stable numeric handle per section (UNIQUE(section_id, number)). Nullable for
+  // legacy rows that predate the column; the panel assigns it explicitly.
+  number: number | null;
   classroom_url: string | null;
   org: string | null;
   active: boolean;
@@ -36,6 +39,17 @@ export interface ControlRow {
   updated_by: string | null;
 }
 
+// Per-evaluation override over the global control id=1. A NULL field inherits
+// the global value. Mirrors public.evaluation_control exactly (PR1 migration).
+export interface EvaluationControlRow {
+  evaluation_id: number;
+  internet_block: boolean | null;
+  force_lockdown: boolean | null;
+  message: string | null;
+  updated_at: string | null;
+  updated_by: string | null;
+}
+
 export interface ClientProcess {
   name?: string | null;
   title?: string | null;
@@ -46,6 +60,9 @@ export interface OnlineClientRow {
   github_username: string | null;
   section: string | null;
   section_id: number | null;
+  // Which evaluation this client is sitting (PR1 column). Distinguishes
+  // re-sittings of the same PC across different evaluations.
+  evaluation_id: number | null;
   last_seen: string;
   processes: ClientProcess[] | null;
   internet_state: string | null; // 'blocked' | other
