@@ -1,7 +1,6 @@
 # Panel del Profesor — Entrega de Evaluación
 
 Panel web de control y proctoring para el profesor (Next.js 16 + Supabase Realtime).
-Reemplaza al panel viejo de un solo archivo (`../admin/index.html`).
 
 ## Stack
 
