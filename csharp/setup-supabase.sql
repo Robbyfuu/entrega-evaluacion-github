@@ -211,6 +211,19 @@ CREATE POLICY "auth_all_targeted" ON public.targeted_lockdowns
 -- ============================================================
 --  4. RPC heartbeat (SECURITY DEFINER - bypasea RLS de online_clients)
 -- ============================================================
+-- p_evaluation_id es nullable (DEFAULT NULL) para que los clientes
+-- viejos que llaman con la firma de 7 args sigan resolviendo sin
+-- cambios; el comportamiento con NULL es identico al de hoy.
+-- DROP previo de la firma vieja (7 params) antes del CREATE: con una
+-- firma distinta, CREATE OR REPLACE crea un NUEVO signature en vez de
+-- reemplazar, dejando dos funciones vivas y un overload que rompe a
+-- PostgREST (300 ambiguous). Exactamente UNA firma por nombre.
+-- NOTA: el ON CONFLICT sigue siendo (pc_name, github_username). El swap
+-- a COALESCE(evaluation_id,0) es de otra migracion (gated 4-before-5),
+-- aca solo se escribe la columna evaluation_id.
+DROP FUNCTION IF EXISTS public.heartbeat(
+  TEXT, TEXT, TEXT, TEXT, JSONB, TEXT, TEXT);
+
 CREATE OR REPLACE FUNCTION public.heartbeat(
   p_pc_name TEXT,
   p_github_username TEXT,
@@ -218,7 +231,8 @@ CREATE OR REPLACE FUNCTION public.heartbeat(
   p_section TEXT DEFAULT NULL,
   p_processes JSONB DEFAULT '[]'::jsonb,
   p_internet_state TEXT DEFAULT 'free',
-  p_lockdown_state TEXT DEFAULT 'none'
+  p_lockdown_state TEXT DEFAULT 'none',
+  p_evaluation_id BIGINT DEFAULT NULL
 ) RETURNS VOID
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -227,32 +241,44 @@ AS $$
 BEGIN
   INSERT INTO public.online_clients
     (pc_name, github_username, github_email, section, processes,
-     internet_state, lockdown_state, last_seen)
+     internet_state, lockdown_state, evaluation_id, last_seen)
   VALUES
     (p_pc_name, p_github_username, p_github_email, p_section, p_processes,
-     p_internet_state, p_lockdown_state, NOW())
+     p_internet_state, p_lockdown_state, p_evaluation_id, NOW())
   ON CONFLICT (pc_name, github_username) DO UPDATE
   SET github_email   = EXCLUDED.github_email,
       section        = EXCLUDED.section,
       processes      = EXCLUDED.processes,
       internet_state = EXCLUDED.internet_state,
       lockdown_state = EXCLUDED.lockdown_state,
+      evaluation_id  = COALESCE(EXCLUDED.evaluation_id, public.online_clients.evaluation_id),
       last_seen      = NOW();
 END;
 $$;
 
-GRANT EXECUTE ON FUNCTION public.heartbeat(TEXT,TEXT,TEXT,TEXT,JSONB,TEXT,TEXT)
+GRANT EXECUTE ON FUNCTION public.heartbeat(TEXT,TEXT,TEXT,TEXT,JSONB,TEXT,TEXT,BIGINT)
   TO anon, authenticated;
 
 -- RPC report_process_alert (SECURITY DEFINER, rate-limit 30s).
 -- El cliente inserta alertas via esta RPC en vez de INSERT directo:
 -- descarta duplicados (mismo pc_name + process_name) dentro de 30s.
+-- p_evaluation_id es nullable (DEFAULT NULL): los clientes viejos que
+-- llaman con la firma de 5 args siguen resolviendo y el comportamiento
+-- con NULL es identico al de hoy. DROP previo de la firma vieja (5
+-- params) antes del CREATE para evitar el overload (PostgREST 300):
+-- exactamente UNA firma por nombre. Esta definicion es espejo de la de
+-- migration-blocklist.sql; ambas convergen a la misma firma para que
+-- re-correr cualquiera de los dos archivos no resucite el overload.
+DROP FUNCTION IF EXISTS public.report_process_alert(
+  TEXT, TEXT, TEXT, TEXT, TEXT);
+
 CREATE OR REPLACE FUNCTION public.report_process_alert(
   p_github_username TEXT,
   p_pc_name TEXT,
   p_section TEXT,
   p_process_name TEXT,
-  p_window_title TEXT
+  p_window_title TEXT,
+  p_evaluation_id BIGINT DEFAULT NULL
 ) RETURNS VOID
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
 BEGIN
@@ -266,12 +292,12 @@ BEGIN
   END IF;
 
   INSERT INTO public.process_alerts
-    (pc_name, github_username, section, process_name, window_title, detected_at)
+    (pc_name, github_username, section, process_name, window_title, evaluation_id, detected_at)
   VALUES
-    (p_pc_name, p_github_username, p_section, p_process_name, p_window_title, NOW());
+    (p_pc_name, p_github_username, p_section, p_process_name, p_window_title, p_evaluation_id, NOW());
 END;
 $$;
-GRANT EXECUTE ON FUNCTION public.report_process_alert(TEXT,TEXT,TEXT,TEXT,TEXT)
+GRANT EXECUTE ON FUNCTION public.report_process_alert(TEXT,TEXT,TEXT,TEXT,TEXT,BIGINT)
   TO anon, authenticated;
 
 -- ============================================================
