@@ -10,6 +10,9 @@ import { Sidebar } from "@/components/Sidebar";
 import { ProcessModal } from "@/components/ProcessModal";
 import { KpiRow } from "@/components/sections/KpiRow";
 import { ControlSection } from "@/components/sections/ControlSection";
+import { CoursesSection } from "@/components/sections/CoursesSection";
+import { SectionsSection } from "@/components/sections/SectionsSection";
+import { EvaluationsSection } from "@/components/sections/EvaluationsSection";
 import { OnlineClientsSection } from "@/components/sections/OnlineClientsSection";
 import { ProcessAlertsSection } from "@/components/sections/ProcessAlertsSection";
 import { BrowsingSection } from "@/components/sections/BrowsingSection";
@@ -51,6 +54,9 @@ export function Panel({ user }: PanelProps) {
             error={controlError}
             onRefresh={refreshControl}
           />
+          <CoursesSection />
+          <SectionsSection />
+          <EvaluationsSection />
           <OnlineClientsSection
             onOpenProcesses={setModalClient}
             onOnlineCountChange={setOnlineCount}
