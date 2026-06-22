@@ -2,7 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
-import type { AssignmentRow, AssignmentAcceptanceRow } from "@/lib/types";
+import type { AssignmentRow, AssignmentAcceptanceRow, EvaluationRow } from "@/lib/types";
+import { useSectionLookup } from "@/hooks/useSectionLookup";
+import { useEvaluations } from "@/hooks/useEvaluations";
 import { BADGE } from "@/lib/colors";
 import { Badge } from "@/components/ui/Badge";
 
@@ -13,9 +15,46 @@ export function AssignmentsSection() {
   const [feedback, setFeedback] = useState<{ text: string; ok: boolean } | null>(null);
 
   const [title, setTitle] = useState("");
-  const [section, setSection] = useState("001D");
+  const [section, setSection] = useState("");
   const [org, setOrg] = useState("");
   const [url, setUrl] = useState("");
+  const [evaluationId, setEvaluationId] = useState<string>("");
+
+  const { sections, sectionById, courseById } = useSectionLookup();
+  const { rows: evaluations } = useEvaluations();
+
+  // Section codes come from the DB (dynamic) plus any extra value seen in
+  // existing rows, so the editor never hides a row.
+  const sectionCodes = useMemo(() => {
+    const codes = new Set<string>();
+    for (const s of sections) codes.add(s.code);
+    for (const r of rows) if (r.section) codes.add(r.section);
+    return Array.from(codes).sort();
+  }, [sections, rows]);
+
+  // Evaluations grouped by section_id for cascading select.
+  const evaluationsBySection = useMemo(() => {
+    const m = new Map<number, EvaluationRow[]>();
+    for (const e of evaluations) {
+      const arr = m.get(e.section_id) ?? [];
+      arr.push(e);
+      m.set(e.section_id, arr);
+    }
+    return m;
+  }, [evaluations]);
+
+  // When section changes, reset evaluationId if not valid for that section.
+  useEffect(() => {
+    if (!evaluationId) return;
+    const ev = evaluations.find((e) => String(e.id) === evaluationId);
+    if (!ev) return;
+    // If the selected evaluation's section doesn't match the current section,
+    // update the section to match the evaluation (heredity).
+    const sec = sectionById.get(ev.section_id);
+    if (sec && sec.code !== section) {
+      setSection(sec.code);
+    }
+  }, [evaluationId, evaluations, sectionById, section]);
 
   const load = useCallback(async () => {
     const { data } = await supabase
@@ -42,24 +81,43 @@ export function AssignmentsSection() {
     return map;
   }, [acceptances]);
 
+  const sectionLabel = (r: AssignmentRow) => {
+    if (r.evaluation_id) {
+      const ev = evaluations.find((e) => e.id === r.evaluation_id);
+      if (ev) {
+        const sec = sectionById.get(ev.section_id);
+        if (sec) {
+          const course = courseById.get(sec.course_id);
+          return `${course?.code ?? "?"}/${sec.code}`;
+        }
+      }
+    }
+    return r.section || "Todas";
+  };
+
   async function addAssignment() {
     if (!title.trim() || !url.trim()) {
       setFeedback({ text: "Completa título y URL.", ok: false });
       return;
     }
-    const { error: err } = await supabase.from("assignments").insert({
+    const insert: Record<string, unknown> = {
       title: title.trim(),
       classroom_url: url.trim(),
       section,
       org: org.trim(),
       active: true,
-    });
+    };
+    if (evaluationId) {
+      insert.evaluation_id = Number(evaluationId);
+    }
+    const { error: err } = await supabase.from("assignments").insert(insert);
     if (err) {
       setFeedback({ text: "Error: " + err.message, ok: false });
     } else {
       setTitle("");
       setUrl("");
       setOrg("");
+      setEvaluationId("");
       setFeedback({ text: "Tarea agregada.", ok: true });
       void load();
     }
@@ -76,6 +134,14 @@ export function AssignmentsSection() {
     void load();
   }
 
+  // Evaluations available for the currently selected section.
+  const availableEvaluations = useMemo(() => {
+    if (!section) return evaluations;
+    const sec = sections.find((s) => s.code === section);
+    if (!sec) return [];
+    return evaluationsBySection.get(sec.id) ?? [];
+  }, [section, sections, evaluations, evaluationsBySection]);
+
   return (
     <div className="card" id="sec-tareas">
       <h2>
@@ -89,7 +155,7 @@ export function AssignmentsSection() {
         <a href="https://classroom.github.com/" target="_blank" rel="noopener noreferrer">
           classroom.github.com
         </a>
-        . Los alumnos los ven en su script y los aceptan con un click.
+        . Opcional: vincula la tarea a una evaluación para heredar sección y curso.
       </p>
       <div className="row-flex">
         <div className="field" style={{ flex: "0 0 160px" }}>
@@ -109,13 +175,30 @@ export function AssignmentsSection() {
             value={section}
             onChange={(e) => setSection(e.target.value)}
           >
-            <option value="001D">001D</option>
-            <option value="002D">002D</option>
-            <option value="003D">003D</option>
             <option value="">Todas las secciones</option>
+            {sectionCodes.map((sec) => (
+              <option key={sec} value={sec}>
+                {sec}
+              </option>
+            ))}
           </select>
         </div>
-        <div className="field" style={{ flex: "0 0 220px" }}>
+        <div className="field" style={{ flex: "0 0 160px" }}>
+          <label htmlFor="asgEvaluation">Evaluación (opcional)</label>
+          <select
+            id="asgEvaluation"
+            value={evaluationId}
+            onChange={(e) => setEvaluationId(e.target.value)}
+          >
+            <option value="">— Ninguna —</option>
+            {availableEvaluations.map((ev) => (
+              <option key={ev.id} value={ev.id}>
+                {ev.title}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="field" style={{ flex: "0 0 200px" }}>
           <label htmlFor="asgOrg">Org GitHub (Classroom)</label>
           <input
             type="text"
@@ -144,8 +227,8 @@ export function AssignmentsSection() {
         <thead>
           <tr>
             <th style={{ width: "20%" }}>Título</th>
-            <th style={{ width: "12%" }}>Sección</th>
-            <th style={{ width: "30%" }}>URL</th>
+            <th style={{ width: "14%" }}>Sección</th>
+            <th style={{ width: "26%" }}>URL</th>
             <th style={{ width: "10%" }}>Aceptaciones</th>
             <th style={{ width: "13%" }}>Estado</th>
             <th style={{ width: "15%" }}>Acciones</th>
@@ -159,54 +242,57 @@ export function AssignmentsSection() {
               </td>
             </tr>
           ) : (
-            rows.map((a) => (
-              <tr key={a.id}>
-                <td>{a.title}</td>
-                <td>
-                  <Badge solidColor={a.section ? BADGE.user : BADGE.sectionAlt}>
-                    {a.section || "Todas"}
-                  </Badge>
-                </td>
-                <td>
-                  <a
-                    href={a.classroom_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="mono"
-                    style={{ fontSize: 12 }}
-                  >
-                    {a.classroom_url}
-                  </a>
-                </td>
-                <td className="mono">{acceptanceCount.get(String(a.id)) ?? 0}</td>
-                <td>
-                  <Badge solidColor={a.active ? BADGE.success : BADGE.neutral}>
-                    {a.active ? "ACTIVA" : "inactiva"}
-                  </Badge>
-                </td>
-                <td>
-                  <button
-                    className={a.active ? "btn-secondary" : "btn-success"}
-                    style={{ padding: "4px 12px", fontSize: 12, height: "auto" }}
-                    onClick={() => toggleAssignment(a.id, !a.active)}
-                  >
-                    {a.active ? "Desactivar" : "Activar"}
-                  </button>
-                  <button
-                    className="btn-danger"
-                    style={{
-                      padding: "4px 10px",
-                      fontSize: 14,
-                      height: "auto",
-                      marginLeft: 6,
-                    }}
-                    onClick={() => deleteAssignment(a.id)}
-                  >
-                    ×
-                  </button>
-                </td>
-              </tr>
-            ))
+            rows.map((a) => {
+              const label = sectionLabel(a);
+              return (
+                <tr key={a.id}>
+                  <td>{a.title}</td>
+                  <td>
+                    <Badge solidColor={a.section || a.evaluation_id ? BADGE.user : BADGE.sectionAlt}>
+                      {label}
+                    </Badge>
+                  </td>
+                  <td>
+                    <a
+                      href={a.classroom_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="mono"
+                      style={{ fontSize: 12 }}
+                    >
+                      {a.classroom_url}
+                    </a>
+                  </td>
+                  <td className="mono">{acceptanceCount.get(String(a.id)) ?? 0}</td>
+                  <td>
+                    <Badge solidColor={a.active ? BADGE.success : BADGE.neutral}>
+                      {a.active ? "ACTIVA" : "inactiva"}
+                    </Badge>
+                  </td>
+                  <td>
+                    <button
+                      className={a.active ? "btn-secondary" : "btn-success"}
+                      style={{ padding: "4px 12px", fontSize: 12, height: "auto" }}
+                      onClick={() => toggleAssignment(a.id, !a.active)}
+                    >
+                      {a.active ? "Desactivar" : "Activar"}
+                    </button>
+                    <button
+                      className="btn-danger"
+                      style={{
+                        padding: "4px 10px",
+                        fontSize: 14,
+                        height: "auto",
+                        marginLeft: 6,
+                      }}
+                      onClick={() => deleteAssignment(a.id)}
+                    >
+                      ×
+                    </button>
+                  </td>
+                </tr>
+              );
+            })
           )}
         </tbody>
       </table>

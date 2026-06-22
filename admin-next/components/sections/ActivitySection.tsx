@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import type { StudentActivityRow } from "@/lib/types";
+import { useSectionLookup } from "@/hooks/useSectionLookup";
 import { fmt } from "@/lib/format";
 import { ACTION_LABEL, ACTION_COLOR, BADGE } from "@/lib/colors";
 import { Badge } from "@/components/ui/Badge";
@@ -10,11 +11,19 @@ import { Badge } from "@/components/ui/Badge";
 // Actividad de alumnos (últimos 100), filtered by action and section.
 // Uses manual fetch on filter change / Refrescar (realtime optional here).
 export function ActivitySection() {
+  const { sections, sectionCodeById } = useSectionLookup();
   const [actionFilter, setActionFilter] = useState("");
   const [sectionFilter, setSectionFilter] = useState("");
   const [rows, setRows] = useState<StudentActivityRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const sectionCodes = useMemo(() => {
+    const codes = new Set<string>();
+    for (const s of sections) codes.add(s.code);
+    for (const r of rows) if (r.section) codes.add(r.section);
+    return Array.from(codes).sort();
+  }, [sections, rows]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -39,6 +48,9 @@ export function ActivitySection() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  const sectionLabel = (r: StudentActivityRow) =>
+    sectionCodeById(r.section_id) ?? r.section ?? null;
 
   return (
     <div className="card" id="sec-activity">
@@ -71,9 +83,11 @@ export function ActivitySection() {
             onChange={(e) => setSectionFilter(e.target.value)}
           >
             <option value="">Todas</option>
-            <option value="001D">001D</option>
-            <option value="002D">002D</option>
-            <option value="003D">003D</option>
+            {sectionCodes.map((sec) => (
+              <option key={sec} value={sec}>
+                {sec}
+              </option>
+            ))}
           </select>
         </div>
         <button className="btn-secondary" onClick={load}>
@@ -112,31 +126,34 @@ export function ActivitySection() {
               </td>
             </tr>
           ) : (
-            rows.map((e, i) => (
-              <tr key={e.id ?? i}>
-                <td>{fmt(e.created_at)}</td>
-                <td>
-                  {e.section ? <Badge solidColor={BADGE.user}>{e.section}</Badge> : "-"}
-                </td>
-                <td>@{e.github_username || "?"}</td>
-                <td>{e.github_email || "-"}</td>
-                <td>{e.pc_name || "-"}</td>
-                <td>
-                  <Badge solidColor={ACTION_COLOR[e.action] || "#999"}>
-                    {ACTION_LABEL[e.action] || e.action}
-                  </Badge>
-                </td>
-                <td>
-                  {e.repo_url ? (
-                    <a href={e.repo_url} target="_blank" rel="noopener noreferrer">
-                      {e.repo_name || e.repo_url}
-                    </a>
-                  ) : (
-                    e.repo_name || "-"
-                  )}
-                </td>
-              </tr>
-            ))
+            rows.map((e, i) => {
+              const sec = sectionLabel(e);
+              return (
+                <tr key={e.id ?? i}>
+                  <td>{fmt(e.created_at)}</td>
+                  <td>
+                    {sec ? <Badge solidColor={BADGE.user}>{sec}</Badge> : "-"}
+                  </td>
+                  <td>@{e.github_username || "?"}</td>
+                  <td>{e.github_email || "-"}</td>
+                  <td>{e.pc_name || "-"}</td>
+                  <td>
+                    <Badge solidColor={ACTION_COLOR[e.action] || "#999"}>
+                      {ACTION_LABEL[e.action] || e.action}
+                    </Badge>
+                  </td>
+                  <td>
+                    {e.repo_url ? (
+                      <a href={e.repo_url} target="_blank" rel="noopener noreferrer">
+                        {e.repo_name || e.repo_url}
+                      </a>
+                    ) : (
+                      e.repo_name || "-"
+                    )}
+                  </td>
+                </tr>
+              );
+            })
           )}
         </tbody>
       </table>
