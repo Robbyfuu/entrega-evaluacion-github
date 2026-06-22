@@ -661,14 +661,15 @@ public partial class MainWindow : Window
             // record_acceptance SINCRONO antes de cualquier recompute del banner:
             // cierra el transitorio "aceptada en GitHub pero sin reconciliar en
             // BD". Al await aqui, el recompute posterior (LoadUserReposAsync /
-            // UpdateAssignmentsBanner) ya ve la aceptacion registrada.
+            // UpdateAssignmentsBanner) ya ve la aceptacion registrada. Reusa el
+            // MISMO matcher LONGEST-PREFIX-WINS que el banner para no divergir y
+            // evitar que un slug corto registre la aceptacion contra la tarea
+            // equivocada.
             if (!string.IsNullOrEmpty(me))
             {
                 var repoName = inv.Repository?.Name ?? "";
-                var match = asg.FirstOrDefault(a =>
-                    repoName.StartsWith(ClassroomRepoPrefix(a.Title), StringComparison.OrdinalIgnoreCase)
-                    && (string.IsNullOrEmpty(evalOrg ?? a.Org)
-                        || string.Equals(inv.Inviter?.Login, evalOrg ?? a.Org, StringComparison.OrdinalIgnoreCase)));
+                var match = PickAssignmentByLongestPrefix(
+                    asg, repoName, inv.Inviter?.Login, evalOrg);
                 if (match != null)
                 {
                     var repoUrl = repoFullName != null
@@ -919,7 +920,6 @@ public partial class MainWindow : Window
         var remainingInvites = invitations != null
             ? new List<RepoInvitation>(invitations)
             : new List<RepoInvitation>();
-        var evalOrg = CurrentEvaluationOrg();
 
         foreach (var a in asg)
         {
@@ -940,16 +940,16 @@ public partial class MainWindow : Window
                 }
             }
 
-            // INVITED: invitacion viva cuyo repo empieza con el prefijo de slug
-            // de la tarea. Desempate: si varias matchean el prefijo, preferir la
-            // cuyo inviter coincide con Evaluation.Org/Assignment.Org.
-            var prefix = ClassroomRepoPrefix(a.Title);
-            var expectedOrg = evalOrg ?? a.Org;
-            var matched = MatchInvitationByPrefix(remainingInvites, prefix, expectedOrg);
-
             var accepted = hasRepo || acceptedIds.Contains(a.Id);
             var submitted = submittedIds.Contains(a.Id);
             submissionsByAssignment.TryGetValue(a.Id, out var sub);
+
+            // INVITED: la asociacion invitacion<->tarea se resuelve mas abajo en
+            // un paso aparte (longest-prefix-wins), porque procesar las tareas en
+            // el orden de asg permitiria que un slug corto ("tarea-") robe la
+            // invitacion de uno mas especifico ("tarea-extra-"). Aqui solo se
+            // arma el AssignmentStatus; InvitationId/InvitationPending se rellenan
+            // luego con el match determinista.
             result.Add(new AssignmentStatus
             {
                 Assignment = a,
@@ -958,12 +958,23 @@ public partial class MainWindow : Window
                 RepoUrl = repoUrl,
                 Submitted = submitted,
                 SubmittedRepoUrl = sub?.RepoUrl,
-                SubmittedAt = sub?.SubmittedAt,
-                InvitationId = matched?.Id,
-                InvitationPending = matched != null
+                SubmittedAt = sub?.SubmittedAt
             });
+        }
 
-            if (matched != null) remainingInvites.Remove(matched);
+        // Asociacion determinista invitacion -> tarea con LONGEST-PREFIX-WINS:
+        // se procesan las invitaciones contra las tareas ordenadas por prefijo
+        // descendente (mas especifico primero), de modo que "tarea-extra-"
+        // reclame "tarea-extra-login" antes de que "tarea-" lo capture. Cada
+        // invitacion se asigna a lo sumo a una tarea; el orden de salida (result)
+        // se mantiene en el orden original de asg.
+        foreach (var inv in remainingInvites.ToList())
+        {
+            var match = MatchAssignmentForRepo(result, inv);
+            if (match == null) continue;
+            match.InvitationId = inv.Id;
+            match.InvitationPending = true;
+            remainingInvites.Remove(inv);
         }
 
         // Invitaciones vivas que no matchearon ninguna tarea esperada.
@@ -972,24 +983,69 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// Elige la invitacion cuyo repo empieza con el prefijo de slug dado.
-    /// Desempate: entre las candidatas, prefiere la cuyo inviter (login del
-    /// invitante) coincide con la org esperada; si ninguna coincide, devuelve
-    /// la primera candidata. Devuelve null si no hay candidata.
+    /// Resuelve, para una invitacion de repo, la tarea (AssignmentStatus) a la
+    /// que pertenece usando LONGEST-PREFIX-WINS. Solo considera tareas aun sin
+    /// invitacion asociada (InvitationPending=false) y delega el algoritmo de
+    /// matching al core compartido PickAssignmentByLongestPrefix para que el
+    /// banner y AcceptInvitationsAsync usen EXACTAMENTE la misma logica.
     /// </summary>
-    private static RepoInvitation? MatchInvitationByPrefix(
-        List<RepoInvitation> invites, string prefix, string? expectedOrg)
+    private AssignmentStatus? MatchAssignmentForRepo(
+        List<AssignmentStatus> statuses, RepoInvitation inv)
     {
-        var candidates = invites
-            .Where(i => (i.Repository?.Name ?? "")
-                .StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
-            .ToList();
-        if (candidates.Count == 0) return null;
-        if (candidates.Count == 1 || string.IsNullOrEmpty(expectedOrg))
-            return candidates[0];
-        return candidates.FirstOrDefault(i =>
-                   string.Equals(i.Inviter?.Login, expectedOrg, StringComparison.OrdinalIgnoreCase))
-               ?? candidates[0];
+        var repoName = inv.Repository?.Name ?? "";
+        if (repoName.Length == 0) return null;
+
+        // Solo tareas que aun no tienen invitacion: asi cada invitacion se
+        // asigna a lo sumo a una tarea (matching bipartito).
+        var unclaimed = statuses.Where(s => !s.InvitationPending).ToList();
+        var match = PickAssignmentByLongestPrefix(
+            unclaimed.Select(s => s.Assignment),
+            repoName, inv.Inviter?.Login, CurrentEvaluationOrg());
+        if (match == null) return null;
+        return unclaimed.FirstOrDefault(s => ReferenceEquals(s.Assignment, match));
+    }
+
+    /// <summary>
+    /// Core compartido de asociacion invitacion -> tarea con LONGEST-PREFIX-WINS.
+    ///
+    /// Entre las tareas cuyo prefijo de slug ({Sanitize(title)}-) es prefijo del
+    /// nombre del repo invitado, gana la del prefijo MAS LARGO (mas especifica):
+    /// asi "Tarea Extra" ("tarea-extra-") reclama "tarea-extra-login" en vez de
+    /// "Tarea" ("tarea-"), eliminando la colision de prefijos dependiente del
+    /// orden. Desempate entre prefijos de IGUAL longitud: preferir la tarea cuyo
+    /// expectedOrg (evalOrg ?? Assignment.Org) coincide con el inviter; ante
+    /// empate total gana la primera en orden estable de entrada. Devuelve null
+    /// si ninguna tarea matchea. El resultado es DETERMINISTA.
+    /// </summary>
+    private static Assignment? PickAssignmentByLongestPrefix(
+        IEnumerable<Assignment> candidates, string repoName, string? inviter, string? evalOrg)
+    {
+        if (string.IsNullOrEmpty(repoName)) return null;
+
+        Assignment? best = null;
+        int bestLen = -1;
+        bool bestOrgMatch = false;
+        foreach (var a in candidates)
+        {
+            var prefix = ClassroomRepoPrefix(a.Title);
+            if (!repoName.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) continue;
+
+            var expectedOrg = evalOrg ?? a.Org;
+            bool orgMatch = !string.IsNullOrEmpty(expectedOrg)
+                && string.Equals(inviter, expectedOrg, StringComparison.OrdinalIgnoreCase);
+
+            // Prioridad: (1) prefijo mas largo; (2) a igual longitud, el que
+            // coincide en org. Determinista: el primer candidato estable gana
+            // ante empate total.
+            if (prefix.Length > bestLen
+                || (prefix.Length == bestLen && orgMatch && !bestOrgMatch))
+            {
+                best = a;
+                bestLen = prefix.Length;
+                bestOrgMatch = orgMatch;
+            }
+        }
+        return best;
     }
 
     private async Task UpdateAssignmentsBanner()
