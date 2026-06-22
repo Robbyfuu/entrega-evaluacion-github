@@ -64,7 +64,11 @@ export function EvaluationsSection() {
   }
 
   async function toggleEvaluation(id: EvaluationRow["id"], active: boolean) {
-    const { data } = await supabase.from("evaluations").update({ active }).eq("id", id).select();
+    const { data, error: err } = await supabase.from("evaluations").update({ active }).eq("id", id).select();
+    if (err) {
+      setFeedback({ text: "Error: " + err.message, ok: false });
+      return;
+    }
     if (!data || data.length === 0) {
       setFeedback({ text: "No se pudo actualizar (¿sesión expirada?).", ok: false });
       return;
@@ -74,7 +78,11 @@ export function EvaluationsSection() {
 
   async function deleteEvaluation(id: EvaluationRow["id"], title: string) {
     if (!window.confirm(`¿Eliminar la evaluación "${title}"?`)) return;
-    const { data } = await supabase.from("evaluations").delete().eq("id", id).select();
+    const { data, error: err } = await supabase.from("evaluations").delete().eq("id", id).select();
+    if (err) {
+      setFeedback({ text: "Error: " + err.message, ok: false });
+      return;
+    }
     if (!data || data.length === 0) {
       setFeedback({ text: "No se pudo eliminar (¿sesión expirada?).", ok: false });
       return;
@@ -135,6 +143,7 @@ export function EvaluationsSection() {
             placeholder="https://classroom.github.com/a/XXXX"
             value={url}
             onChange={(e) => setUrl(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") void addEvaluation(); }}
           />
         </div>
         <button className="btn-primary" onClick={addEvaluation}>
