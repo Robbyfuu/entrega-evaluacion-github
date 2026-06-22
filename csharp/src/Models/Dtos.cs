@@ -44,11 +44,12 @@ public class Assignment
 {
     [JsonPropertyName("id")] public long Id { get; set; }
     [JsonPropertyName("title")] public string Title { get; set; } = "";
-    [JsonPropertyName("classroom_url")] public string ClassroomUrl { get; set; } = "";
+    [JsonPropertyName("classroom_url")] public string? ClassroomUrl { get; set; } = "";
     [JsonPropertyName("section")] public string? Section { get; set; }
     [JsonPropertyName("org")] public string? Org { get; set; }
     [JsonPropertyName("active")] public bool Active { get; set; }
     [JsonPropertyName("evaluation_id")] public long? EvaluationId { get; set; }
+    [JsonPropertyName("allows_manual_submission")] public bool AllowsManualSubmission { get; set; }
 }
 
 // Registro de aceptacion de una tarea de Classroom por parte de un alumno.
@@ -65,6 +66,18 @@ public class Acceptance
     [JsonPropertyName("accepted_at")] public string? AcceptedAt { get; set; }
 }
 
+// Registro de entrega formal de un repo por parte de un alumno.
+// Se persiste via RPC record_submission y se lee de assignment_submissions.
+// Aceptar una tarea (Acceptance) != entregarla (Submission).
+public class Submission
+{
+    [JsonPropertyName("assignment_id")] public long AssignmentId { get; set; }
+    [JsonPropertyName("github_username")] public string GithubUsername { get; set; } = "";
+    [JsonPropertyName("repo_url")] public string RepoUrl { get; set; } = "";
+    [JsonPropertyName("status")] public string Status { get; set; } = "submitted";
+    [JsonPropertyName("submitted_at")] public string? SubmittedAt { get; set; }
+}
+
 // Estado calculado de una tarea para el alumno actual (cruce repo + acceptances).
 // No mapea a ninguna tabla; es un view-model para la lista de tareas.
 public class AssignmentStatus
@@ -74,12 +87,22 @@ public class AssignmentStatus
     public string? RepoName { get; set; }
     public string? RepoUrl { get; set; }
 
+    // Entrega formal (assignment_submissions). Aceptar != Entregar.
+    public bool Submitted { get; set; }
+    public string? SubmittedRepoUrl { get; set; }
+    public string? SubmittedAt { get; set; }
+
     // Bindings para la UI (DataTemplate de AssignmentsWindow).
     public string Title => Assignment.Title;
-    public string ClassroomUrl => Assignment.ClassroomUrl;
-    public string StatusLabel => Accepted ? "Aceptada ✓" : "Pendiente";
-    public bool IsPending => !Accepted;
+    public string? ClassroomUrl => Assignment.ClassroomUrl;
+    public string StatusLabel => Submitted ? "Entregada ✓" : Accepted ? "Aceptada ✓" : "Pendiente";
+    public bool IsPending => !Accepted && !string.IsNullOrEmpty(Assignment.ClassroomUrl);
     public bool HasRepoLink => Accepted && !string.IsNullOrEmpty(RepoUrl);
+    public bool CanSubmit => Accepted || Assignment.AllowsManualSubmission;
+
+    // Binding para XAML: mostrar boton "Entregar" solo cuando se puede y no se entrego.
+    [JsonIgnore]
+    public bool CanSubmitAndNotSubmitted => CanSubmit && !Submitted;
 
     // Naranja para pendiente, verde para aceptada (tema Consola Ops).
     [JsonIgnore]

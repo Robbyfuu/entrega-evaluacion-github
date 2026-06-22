@@ -822,6 +822,16 @@ public partial class MainWindow : Window
             foreach (var a in await _sb.GetAcceptancesAsync(me))
                 acceptedIds.Add(a.AssignmentId);
 
+        // Entregas formales registradas en BD.
+        var submittedIds = new HashSet<long>();
+        var submissionsByAssignment = new Dictionary<long, Submission>();
+        if (!string.IsNullOrEmpty(me))
+            foreach (var s in await _sb.GetSubmissionsAsync(me))
+            {
+                submittedIds.Add(s.AssignmentId);
+                submissionsByAssignment[s.AssignmentId] = s;
+            }
+
         foreach (var a in asg)
         {
             string? repoName = null;
@@ -842,12 +852,17 @@ public partial class MainWindow : Window
             }
 
             var accepted = hasRepo || acceptedIds.Contains(a.Id);
+            var submitted = submittedIds.Contains(a.Id);
+            submissionsByAssignment.TryGetValue(a.Id, out var sub);
             result.Add(new AssignmentStatus
             {
                 Assignment = a,
                 Accepted = accepted,
                 RepoName = repoName,
-                RepoUrl = repoUrl
+                RepoUrl = repoUrl,
+                Submitted = submitted,
+                SubmittedRepoUrl = sub?.RepoUrl,
+                SubmittedAt = sub?.SubmittedAt
             });
         }
         return result;
@@ -857,10 +872,10 @@ public partial class MainWindow : Window
     {
         var asg = FilterBySection(await _sb.GetActiveAssignmentsAsync(StudentSection.GetEvaluationId()));
         var statuses = await ComputeAssignmentStatusesAsync(asg);
-        var pending = statuses.Count(s => !s.Accepted);
+        var pending = statuses.Count(s => !s.Accepted && !s.Submitted);
         if (pending > 0)
         {
-            AssignmentsBannerText.Text = $"Tienes {pending} tarea(s) de Classroom";
+            AssignmentsBannerText.Text = $"Tienes {pending} tarea(s) pendientes";
             AssignmentsBanner.Visibility = Visibility.Visible;
         }
         else AssignmentsBanner.Visibility = Visibility.Collapsed;
@@ -872,9 +887,9 @@ public partial class MainWindow : Window
         if (asg.Count == 0) { MessageBox.Show("No hay tareas activas.", "Sin tareas", MessageBoxButton.OK, MessageBoxImage.Information); return; }
 
         var statuses = await ComputeAssignmentStatusesAsync(asg);
-        var dlg = new AssignmentsWindow(statuses, OpenAcceptUrl, OpenUrl) { Owner = this };
+        var dlg = new AssignmentsWindow(statuses, OpenAcceptUrl, OpenUrl, SubmitRepo) { Owner = this };
         dlg.ShowDialog();
-        // Al cerrar, refrescar el banner por si el alumno acepto algo.
+        // Al cerrar, refrescar el banner por si el alumno acepto o entrego algo.
         await UpdateAssignmentsBanner();
     }
 
@@ -912,7 +927,98 @@ public partial class MainWindow : Window
             var repoUrl = status.RepoUrl ?? $"https://github.com/{me}/{repoName}";
             _ = _sb.RecordAcceptanceAsync(me, a.Id, a.Title, StudentSection.Get(), repoName, repoUrl, StudentSection.GetEvaluationId());
         }
-        OpenUrl(a.ClassroomUrl);
+        if (!string.IsNullOrEmpty(a.ClassroomUrl))
+            OpenUrl(a.ClassroomUrl);
+    }
+
+    /// <summary>
+    /// Pide la URL del repo y registra la entrega formal en BD.
+    /// Pre-fill: si ya tiene repo detectado (Classroom), usa esa URL.
+    /// </summary>
+    private async void SubmitRepo(AssignmentStatus status)
+    {
+        var me = _user?.Login;
+        if (string.IsNullOrEmpty(me))
+        {
+            MessageBox.Show("Debes iniciar sesion con GitHub para entregar.", "Sin sesion", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
+        // Pre-fill con repoUrl si existe (aceptado via Classroom).
+        var prefill = !string.IsNullOrEmpty(status.RepoUrl)
+            ? status.RepoUrl
+            : !string.IsNullOrEmpty(status.SubmittedRepoUrl)
+                ? status.SubmittedRepoUrl
+                : "";
+
+        var input = SimpleInputDialog("URL del repositorio a entregar:", "Entregar repositorio", prefill);
+        if (string.IsNullOrWhiteSpace(input)) return;
+
+        await _sb.RecordSubmissionAsync(status.Assignment.Id, me, input.Trim());
+        Log($"Entrega registrada: {status.Title} -> {input.Trim()}");
+        MessageBox.Show("Entrega registrada correctamente.", "Entregado", MessageBoxButton.OK, MessageBoxImage.Information);
+    }
+
+    /// <summary>Dialogo simple de input de texto (WPF no trae uno nativo).</summary>
+    private string? SimpleInputDialog(string prompt, string title, string prefill = "")
+    {
+        var dlg = new Window
+        {
+            Title = title,
+            Width = 460,
+            Height = 200,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Owner = this,
+            ResizeMode = ResizeMode.NoResize,
+            Background = (System.Windows.Media.Brush)FindResource("SurfaceBrush")
+        };
+        var panel = new System.Windows.Controls.StackPanel { Margin = new Thickness(20) };
+        var label = new System.Windows.Controls.TextBlock
+        {
+            Text = prompt,
+            Style = (Style)FindResource("LabelText"),
+            Margin = new Thickness(0, 0, 0, 8),
+            TextWrapping = TextWrapping.Wrap
+        };
+        var input = new System.Windows.Controls.TextBox
+        {
+            Text = prefill,
+            FontSize = 14,
+            Padding = new Thickness(8, 6, 8, 6)
+        };
+        var btnRow = new System.Windows.Controls.StackPanel
+        {
+            Orientation = System.Windows.Controls.Orientation.Horizontal,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            Margin = new Thickness(0, 16, 0, 0)
+        };
+        var okBtn = new Wpf.Ui.Controls.Button
+        {
+            Content = "Entregar",
+            Appearance = Wpf.Ui.Controls.ControlAppearance.Success,
+            Padding = new Thickness(20, 6, 20, 6)
+        };
+        var cancelBtn = new Wpf.Ui.Controls.Button
+        {
+            Content = "Cancelar",
+            Appearance = Wpf.Ui.Controls.ControlAppearance.Secondary,
+            Padding = new Thickness(20, 6, 20, 6),
+            Margin = new Thickness(8, 0, 0, 0)
+        };
+        btnRow.Children.Add(okBtn);
+        btnRow.Children.Add(cancelBtn);
+        panel.Children.Add(label);
+        panel.Children.Add(input);
+        panel.Children.Add(btnRow);
+        dlg.Content = panel;
+
+        string? result = null;
+        okBtn.Click += (_, _) => { result = input.Text; dlg.Close(); };
+        cancelBtn.Click += (_, _) => dlg.Close();
+        input.KeyDown += (s, e) => { if (e.Key == System.Windows.Input.Key.Enter) { result = input.Text; dlg.Close(); } };
+
+        dlg.ShowDialog();
+        return result;
     }
 
     // ===================== Admin polling =====================

@@ -92,6 +92,7 @@ export interface AssignmentRow {
   classroom_url: string;
   active: boolean;
   evaluation_id: number | null;
+  allows_manual_submission?: boolean;
   created_at?: string | null;
 }
 
@@ -102,6 +103,15 @@ export interface AssignmentAcceptanceRow {
   evaluation_id: number | null;
   section_id: number | null;
   accepted_at?: string | null;
+}
+
+export interface AssignmentSubmissionRow {
+  id?: number | string;
+  assignment_id: number | string;
+  github_username: string;
+  repo_url: string;
+  status: string;
+  submitted_at?: string | null;
 }
 
 export interface TargetedLockdownRow {

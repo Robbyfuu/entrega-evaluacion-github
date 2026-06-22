@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
-import type { AssignmentRow, AssignmentAcceptanceRow, EvaluationRow } from "@/lib/types";
+import type { AssignmentRow, AssignmentAcceptanceRow, AssignmentSubmissionRow, EvaluationRow } from "@/lib/types";
 import { useSectionLookup } from "@/hooks/useSectionLookup";
 import { useEvaluations } from "@/hooks/useEvaluations";
 import { BADGE } from "@/lib/colors";
@@ -12,6 +12,7 @@ import { Badge } from "@/components/ui/Badge";
 export function AssignmentsSection() {
   const [rows, setRows] = useState<AssignmentRow[]>([]);
   const [acceptances, setAcceptances] = useState<AssignmentAcceptanceRow[]>([]);
+  const [submissions, setSubmissions] = useState<AssignmentSubmissionRow[]>([]);
   const [feedback, setFeedback] = useState<{ text: string; ok: boolean } | null>(null);
 
   const [title, setTitle] = useState("");
@@ -19,6 +20,7 @@ export function AssignmentsSection() {
   const [org, setOrg] = useState("");
   const [url, setUrl] = useState("");
   const [evaluationId, setEvaluationId] = useState<string>("");
+  const [manualSubmission, setManualSubmission] = useState(false);
 
   const { sections, sectionById, courseById } = useSectionLookup();
   const { rows: evaluations } = useEvaluations();
@@ -73,6 +75,10 @@ export function AssignmentsSection() {
     // Cross-reference acceptances to show how many students accepted each task.
     const { data: acc } = await supabase.from("assignment_acceptances").select("*");
     setAcceptances((acc ?? []) as AssignmentAcceptanceRow[]);
+
+    // Cross-reference submissions (formal deliveries) per task.
+    const { data: subs } = await supabase.from("assignment_submissions").select("*");
+    setSubmissions((subs ?? []) as AssignmentSubmissionRow[]);
   }, []);
 
   useEffect(() => {
@@ -87,6 +93,15 @@ export function AssignmentsSection() {
     }
     return map;
   }, [acceptances]);
+
+  const submissionCount = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const s of submissions) {
+      const key = String(s.assignment_id);
+      map.set(key, (map.get(key) ?? 0) + 1);
+    }
+    return map;
+  }, [submissions]);
 
   const sectionLabel = (r: AssignmentRow) => {
     if (r.evaluation_id) {
@@ -103,16 +118,17 @@ export function AssignmentsSection() {
   };
 
   async function addAssignment() {
-    if (!title.trim() || !url.trim()) {
-      setFeedback({ text: "Completa título y URL.", ok: false });
+    if (!title.trim() || (!url.trim() && !manualSubmission)) {
+      setFeedback({ text: "Completa título y al menos URL o entrega manual.", ok: false });
       return;
     }
     const insert: Record<string, unknown> = {
       title: title.trim(),
-      classroom_url: url.trim(),
+      classroom_url: url.trim() || null,
       section,
-      org: org.trim(),
+      org: org.trim() || null,
       active: true,
+      allows_manual_submission: manualSubmission,
     };
     if (evaluationId) {
       insert.evaluation_id = Number(evaluationId);
@@ -125,6 +141,7 @@ export function AssignmentsSection() {
       setUrl("");
       setOrg("");
       setEvaluationId("");
+      setManualSubmission(false);
       setFeedback({ text: "Tarea agregada.", ok: true });
       void load();
     }
@@ -232,6 +249,16 @@ export function AssignmentsSection() {
             onChange={(e) => setUrl(e.target.value)}
           />
         </div>
+        <div className="field" style={{ flex: "0 0 auto", alignSelf: "flex-end" }}>
+          <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
+            <input
+              type="checkbox"
+              checked={manualSubmission}
+              onChange={(e) => setManualSubmission(e.target.checked)}
+            />
+            Entrega manual
+          </label>
+        </div>
         <button className="btn-primary" onClick={addAssignment}>
           Agregar tarea
         </button>
@@ -240,18 +267,19 @@ export function AssignmentsSection() {
       <table style={{ marginTop: 16 }}>
         <thead>
           <tr>
-            <th style={{ width: "20%" }}>Título</th>
-            <th style={{ width: "14%" }}>Sección</th>
-            <th style={{ width: "26%" }}>URL</th>
-            <th style={{ width: "10%" }}>Aceptaciones</th>
-            <th style={{ width: "13%" }}>Estado</th>
+            <th style={{ width: "18%" }}>Título</th>
+            <th style={{ width: "12%" }}>Sección</th>
+            <th style={{ width: "22%" }}>URL</th>
+            <th style={{ width: "8%" }}>Acept.</th>
+            <th style={{ width: "8%" }}>Entr.</th>
+            <th style={{ width: "12%" }}>Estado</th>
             <th style={{ width: "15%" }}>Acciones</th>
           </tr>
         </thead>
         <tbody>
           {rows.length === 0 ? (
             <tr>
-              <td colSpan={6} style={{ textAlign: "center", color: "var(--text-faint)" }}>
+              <td colSpan={7} style={{ textAlign: "center", color: "var(--text-faint)" }}>
                 Sin tareas configuradas. Agrega una pegando el link de Classroom.
               </td>
             </tr>
@@ -260,24 +288,36 @@ export function AssignmentsSection() {
               const label = sectionLabel(a);
               return (
                 <tr key={a.id}>
-                  <td>{a.title}</td>
+                  <td>
+                    {a.title}
+                    {a.allows_manual_submission ? (
+                      <span style={{ fontSize: 10, color: "var(--text-faint)", marginLeft: 4 }}>
+                        manual
+                      </span>
+                    ) : null}
+                  </td>
                   <td>
                     <Badge solidColor={a.section || a.evaluation_id ? BADGE.user : BADGE.sectionAlt}>
                       {label}
                     </Badge>
                   </td>
                   <td>
-                    <a
-                      href={a.classroom_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="mono"
-                      style={{ fontSize: 12 }}
-                    >
-                      {a.classroom_url}
-                    </a>
+                    {a.classroom_url ? (
+                      <a
+                        href={a.classroom_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="mono"
+                        style={{ fontSize: 12 }}
+                      >
+                        {a.classroom_url}
+                      </a>
+                    ) : (
+                      <span style={{ color: "var(--text-faint)", fontSize: 12 }}>—</span>
+                    )}
                   </td>
                   <td className="mono">{acceptanceCount.get(String(a.id)) ?? 0}</td>
+                  <td className="mono">{submissionCount.get(String(a.id)) ?? 0}</td>
                   <td>
                     <Badge solidColor={a.active ? BADGE.success : BADGE.neutral}>
                       {a.active ? "ACTIVA" : "inactiva"}
