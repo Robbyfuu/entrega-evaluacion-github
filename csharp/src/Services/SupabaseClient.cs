@@ -207,6 +207,41 @@ public class SupabaseClient
         catch { return new(); }
     }
 
+    /// <summary>
+    /// Devuelve las entregas formales registradas de un alumno. Lista vacia si falla.
+    /// </summary>
+    public async Task<List<Submission>> GetSubmissionsAsync(string githubUsername)
+    {
+        try
+        {
+            var user = Uri.EscapeDataString(githubUsername);
+            var json = await _http.GetStringAsync(
+                Rest($"assignment_submissions?github_username=eq.{user}&select=*"));
+            return JsonSerializer.Deserialize<List<Submission>>(json, JsonOpts) ?? new();
+        }
+        catch { return new(); }
+    }
+
+    /// <summary>
+    /// Registra (upsert) que un alumno entrego un repo via RPC SECURITY DEFINER.
+    /// </summary>
+    public async Task RecordSubmissionAsync(long assignmentId, string githubUsername, string repoUrl)
+    {
+        try
+        {
+            var payload = JsonSerializer.Serialize(new
+            {
+                p_assignment_id = assignmentId,
+                p_github_username = githubUsername,
+                p_repo_url = repoUrl,
+                p_status = "submitted"
+            }, JsonOpts);
+            var content = new StringContent(payload, Encoding.UTF8, "application/json");
+            await _http.PostAsync(Rest("rpc/record_submission"), content);
+        }
+        catch { }
+    }
+
     // ===== Heartbeat (RPC SECURITY DEFINER) =====
     // section_id se sincroniza via trigger trg_sync_section_online desde
     // section TEXT; la RPC heartbeat no acepta p_section_id (forward-compat).

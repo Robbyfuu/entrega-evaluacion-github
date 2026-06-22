@@ -16,15 +16,19 @@ public partial class AssignmentsWindow : Window
     private readonly Action<AssignmentStatus> _onAccept;
     // Abrir una URL cualquiera (repo) en el navegador embebido.
     private readonly Action<string> _openUrl;
+    // Entregar: pide URL del repo y registra la entrega formal.
+    private readonly Action<AssignmentStatus> _onSubmit;
 
     public AssignmentsWindow(
         List<AssignmentStatus> statuses,
         Action<AssignmentStatus> onAccept,
-        Action<string> openUrl)
+        Action<string> openUrl,
+        Action<AssignmentStatus> onSubmit)
     {
         InitializeComponent();
         _onAccept = onAccept;
         _openUrl = openUrl;
+        _onSubmit = onSubmit;
         ItemsHost.ItemsSource = statuses;
     }
 
@@ -32,6 +36,12 @@ public partial class AssignmentsWindow : Window
     {
         if (sender is Button { Tag: AssignmentStatus status })
             _onAccept(status);
+    }
+
+    private void Submit_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is Button { Tag: AssignmentStatus status })
+            _onSubmit(status);
     }
 
     private void OpenRepo_Click(object sender, RoutedEventArgs e)

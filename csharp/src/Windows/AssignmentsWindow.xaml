@@ -3,7 +3,7 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
-    Title="Tareas de GitHub Classroom"
+    Title="Tareas de repositorio"
     Width="620"
     Height="480"
     WindowStartupLocation="CenterOwner"
@@ -31,7 +31,7 @@
 
         <TextBlock
             Grid.Row="1"
-            Text="Pendiente: presiona 'Aceptar' -> se abre Classroom -> acepta en GitHub. Aceptada: ya tienes el repositorio."
+            Text="Pendiente: presiona 'Aceptar' -> se abre Classroom -> acepta en GitHub. Aceptada: ya tienes el repositorio. Entregada: registraste la URL de tu repo."
             Style="{StaticResource MutedText}"
             TextWrapping="Wrap"
             Margin="0,0,0,16" />
@@ -95,6 +95,19 @@
                                     Visibility="{Binding IsPending, Converter={StaticResource BoolToVis}}"
                                     Tag="{Binding}"
                                     Click="Accept_Click" />
+
+                                <!-- Boton entregar repo (cuando se puede entregar y no entregado) -->
+                                <ui:Button
+                                    Grid.Row="1"
+                                    Grid.Column="1"
+                                    Content="Entregar repo"
+                                    Appearance="Primary"
+                                    Width="150"
+                                    Margin="0,10,0,0"
+                                    HorizontalAlignment="Right"
+                                    Visibility="{Binding CanSubmitAndNotSubmitted, Converter={StaticResource BoolToVis}}"
+                                    Tag="{Binding}"
+                                    Click="Submit_Click" />
 
                                 <!-- Link al repo (solo aceptadas) -->
                                 <ui:HyperlinkButton
