@@ -64,9 +64,12 @@ public class SupabaseClient
     {
         try
         {
-            var filter = courseId is { } cid ? $"course_id=eq.{cid}&" : "";
-            var json = await _http.GetStringAsync(
-                Rest($"{filter}sections?select=*&order=code.asc"));
+            // PostgREST espera el filtro DESPUES del nombre de tabla:
+            //   sections?course_id=eq.123&select=*
+            // Antes se generaba "course_id=eq.123&sections?select=*" (URL invalida).
+            var filter = courseId is { } cid ? $"?course_id=eq.{cid}&select=*&order=code.asc"
+                                             : "?select=*&order=code.asc";
+            var json = await _http.GetStringAsync(Rest($"sections{filter}"));
             return JsonSerializer.Deserialize<List<SectionRow>>(json, JsonOpts) ?? new();
         }
         catch { return new(); }
@@ -85,12 +88,19 @@ public class SupabaseClient
     }
 
     // ===== Assignments =====
-    public async Task<List<Assignment>> GetActiveAssignmentsAsync()
+    /// <summary>
+    /// Trae assignments activos. Si se pasa evaluationId, filtra por
+    /// evaluation_id=eq.X (cuando el alumno ya eligio una evaluacion
+    /// concreta). Sin filtro, trae todos los activos (comportamiento
+    /// legacy para coexistencia con clientes viejos).
+    /// </summary>
+    public async Task<List<Assignment>> GetActiveAssignmentsAsync(long? evaluationId = null)
     {
         try
         {
+            var evalFilter = evaluationId is { } id ? $"evaluation_id=eq.{id}&" : "";
             var json = await _http.GetStringAsync(
-                Rest("assignments?active=eq.true&select=*&order=created_at.desc"));
+                Rest($"assignments?{evalFilter}active=eq.true&select=*&order=created_at.desc"));
             return JsonSerializer.Deserialize<List<Assignment>>(json, JsonOpts) ?? new();
         }
         catch { return new(); }
@@ -100,28 +110,37 @@ public class SupabaseClient
 
     /// <summary>
     /// Devuelve la lista efectiva de procesos sospechosos para una seccion:
-    /// reglas globales (section IS NULL) union reglas de la seccion dada. Un solo
-    /// GET REST con filtro OR (mismo patron que los GET existentes). Cada
-    /// process_name se normaliza (paridad con la deteccion) y se arma un HashSet.
+    /// reglas globales (section IS NULL) union reglas de la seccion dada.
+    /// Soporta tanto section TEXT (legacy) como section_id (multi-evaluacion).
+    /// Si sectionId viene != null, filtra por section_id; si no, cae a section
+    /// TEXT (forward-compat con clientes viejos). Cada process_name se
+    /// normaliza (paridad con la deteccion) y se arma un HashSet.
     ///
-    /// Devuelve null en CUALQUIER error de red/parseo => el caller cae al fallback
-    /// (Config.SuspiciousProcesses). NO devuelve set vacio en error: null y []
-    /// significan cosas distintas (null=fallo/usar fallback, []=tabla vacia que el
-    /// detector tambien trata como fallback via IsSuspicious). Catch silencioso,
-    /// igual que GetActiveAssignmentsAsync.
+    /// Devuelve null en CUALQUIER error de red/parseo => el caller cae al
+    /// fallback (Config.SuspiciousProcesses). NO devuelve set vacio en error:
+    /// null y [] significan cosas distintas (null=fallo/usar fallback,
+    /// []=tabla vacia que el detector tambien trata como fallback).
     /// </summary>
-    public async Task<HashSet<string>?> GetBlocklistAsync(string? section)
+    public async Task<HashSet<string>?> GetBlocklistAsync(string? section, long? sectionId = null)
     {
         try
         {
             // section.is.null cubre las reglas globales; si hay seccion se suma
-            // section.eq.X. PostgREST OR: or=(section.is.null,section.eq.X).
-            // El valor va entre comillas dobles para que PostgREST lo trate como
-            // literal: asi un eventual delimitador (',' ')') en la seccion no
-            // rompe la gramatica del filtro or=(...). Se url-encodea igual.
+            // section.eq.X (o section_id.eq.Y cuando se usa multi-evaluacion).
+            // PostgREST OR: or=(section.is.null,section.eq.X).
+            // El valor va entre comillas dobles para que PostgREST lo trate
+            // como literal. Se url-encodea igual.
             string filter;
-            if (string.IsNullOrWhiteSpace(section))
+            if (sectionId is { } sid)
+            {
+                // Multi-evaluacion: filtrar por section_id (preferido) ya que
+                // section TEXT puede ser NULL en filas migradas.
+                filter = $"or=(section.is.null,section_id.eq.{sid})";
+            }
+            else if (string.IsNullOrWhiteSpace(section))
+            {
                 filter = "section=is.null";
+            }
             else
             {
                 var quoted = Uri.EscapeDataString($"\"{section}\"");
