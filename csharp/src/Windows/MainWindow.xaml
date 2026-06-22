@@ -94,8 +94,12 @@
                 <StackPanel Grid.Row="3" Margin="16,8,16,16">
                     <Border Background="{DynamicResource Surface2Brush}" CornerRadius="8" Padding="12">
                         <StackPanel>
-                            <TextBlock Text="Tu seccion" Style="{StaticResource MutedText}" FontWeight="SemiBold" FontSize="11" Margin="0,0,0,6" />
+                            <TextBlock Text="Tu curso" Style="{StaticResource MutedText}" FontWeight="SemiBold" FontSize="11" Margin="0,0,0,6" />
+                            <ComboBox x:Name="CursoCombo" HorizontalAlignment="Stretch" SelectionChanged="CursoCombo_SelectionChanged" />
+                            <TextBlock Text="Tu seccion" Style="{StaticResource MutedText}" FontWeight="SemiBold" FontSize="11" Margin="0,8,0,6" />
                             <ComboBox x:Name="SectionCombo" HorizontalAlignment="Stretch" SelectionChanged="SectionCombo_SelectionChanged" />
+                            <TextBlock Text="Tu evaluacion" Style="{StaticResource MutedText}" FontWeight="SemiBold" FontSize="11" Margin="0,8,0,6" />
+                            <ComboBox x:Name="EvaluationCombo" HorizontalAlignment="Stretch" SelectionChanged="EvaluationCombo_SelectionChanged" />
                         </StackPanel>
                     </Border>
                     <Border x:Name="AssignmentsBanner" Background="#F3EEFF" BorderBrush="{DynamicResource InfoBrush}" BorderThickness="1" CornerRadius="8" Padding="10" Margin="0,8,0,0" Visibility="Collapsed">
@@ -167,7 +171,7 @@
 
                             <!-- Tipo de evaluacion -->
                             <TextBlock Grid.Row="1" Grid.Column="0" Text="Tipo de evaluacion:" Style="{StaticResource LabelText}" Margin="0,0,0,10" />
-                            <ComboBox x:Name="TipoCombo" Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" Margin="0,0,0,10" HorizontalAlignment="Stretch" SelectionChanged="TipoCombo_SelectionChanged" />
+                            <ComboBox x:Name="TipoCombo" Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" Margin="0,0,0,10" HorizontalAlignment="Stretch" IsEnabled="False" SelectionChanged="TipoCombo_SelectionChanged" />
 
                             <!-- Tu repositorio -->
                             <TextBlock Grid.Row="2" Grid.Column="0" Text="Tu repositorio:" Style="{StaticResource LabelText}" Margin="0,0,0,10" />
