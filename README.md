@@ -37,28 +37,20 @@ verificación, y al terminar te ofrece iniciar sesión directamente.
 
 ## Cómo usar
 
-### 1. Descomprimir
+### 1. Descargar la app
 
-Extrae el ZIP en una carpeta. Verás estos archivos:
+Descarga el instalador desde la sección **Releases** de este repositorio
+(app autocontenida generada con Velopack). No requiere instalar dependencias
+manualmente: la app detecta y ofrece instalar `git` y `gh` (GitHub CLI) si
+no están presentes.
 
-```
-EntregaEvaluacion/
-├─ Subir-Evaluacion.bat         ← Doble-click aquí
-├─ Subir-Evaluacion.ps1
-├─ Reset-GitHubAuth.ps1
-└─ README.md
-```
+> El cliente legacy basado en PowerShell (`Subir-Evaluacion.ps1`,
+> `Subir-Evaluacion.bat`, `Reset-GitHubAuth.ps1`, `Reset-Internet.bat`)
+> fue removido del repo. La app C# self-contained lo reemplaza.
 
 ### 2. Ejecutar
 
-**Doble-click en `Subir-Evaluacion.bat`**.
-
-Si Windows muestra una advertencia de seguridad:
-- Click en **"Más información"**
-- Click en **"Ejecutar de todas formas"**
-
-El script desbloquea automáticamente los archivos al iniciar para evitar que esta
-advertencia aparezca en futuras ejecuciones.
+Doble-click en el ejecutable descargado.
 
 ### 3. Primera vez: instalar dependencias
 
@@ -187,15 +179,9 @@ Posibles causas:
 
 ### Quiero cambiar de cuenta de GitHub
 
-Opción A (recomendada): usa el botón **Cerrar sesión** dentro del script y luego
-**Iniciar sesión** con la nueva cuenta.
-
-Opción B: ejecuta `Reset-GitHubAuth.ps1` (click derecho → Ejecutar con PowerShell).
-Limpia todas las credenciales y permite iniciar sesión con otra cuenta.
-
-```powershell
-powershell -ExecutionPolicy Bypass -File Reset-GitHubAuth.ps1
-```
+Usa el botón **Cerrar sesión** dentro de la app y luego **Iniciar sesión**
+con la nueva cuenta. Limpia todas las credenciales y permite iniciar sesión
+con otra cuenta.
 
 ---
 
@@ -222,7 +208,6 @@ Ejemplos:
 - El script **no envía tus credenciales a ningún servidor externo**.
 - Toda la autenticación pasa por `gh` (la herramienta oficial de GitHub).
 - Las credenciales se guardan en el **Credential Manager de Windows**, encriptadas.
-- Puedes revisar el código fuente abriendo `Subir-Evaluacion.ps1` con cualquier editor.
 - El botón **Cerrar sesión** limpia todas las credenciales del equipo (gh CLI + Credential Manager + caché de git).
 
 ---
