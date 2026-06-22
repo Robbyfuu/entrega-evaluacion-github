@@ -183,30 +183,25 @@ Solo tres pasos: clonar el repositorio que ya aceptaste en casa, programar tu ev
 
 Sigue estos pasos ANTES del dia de la evaluacion. Lo ideal es hacerlo el primer dia de clases para evitar problemas.
 
-\section{Paso 1\,---\,Descargar y descomprimir el script}
+\section{Paso 1\,---\,Descargar la app}
 
 \begin{enumerate}
-  \item El profesor te entregara un archivo llamado \texttt{EntregaEvaluacion-Alumno.zip}.
+  \item El profesor te entregara el instalador autocontenido de la app (o el enlace a la seccion \textbf{Releases} del repo).
   \item Descargalo y guardalo en una carpeta facil de encontrar (por ejemplo \texttt{Escritorio\textbackslash{}DUOC}).
-  \item Click derecho sobre el ZIP $\rightarrow$ \textbf{Extraer todo}.
-  \item Veras una carpeta con estos archivos:
+  \item La app no requiere instalacion de dependencias manuales: detecta y ofrece instalar \texttt{git} y \texttt{gh} (GitHub CLI) automaticamente si no estan presentes.
 \end{enumerate}
 
-\begin{lstlisting}
-EntregaEvaluacion-Alumno/
-  Subir-Evaluacion.bat       <- Doble-click aqui
-  Subir-Evaluacion.ps1
-  Reset-GitHubAuth.ps1
-  README.md
-\end{lstlisting}
+\begin{notebox}[Cliente legacy removido]
+El cliente viejo basado en PowerShell (\texttt{Subir-Evaluacion.bat} / \texttt{.ps1}, \texttt{Reset-GitHubAuth.ps1}) fue removido del repo. La app de escritorio self-contained (C\#) lo reemplaza.
+\end{notebox}
 
 \section{Paso 2\,---\,Crear tu cuenta de GitHub (si no tienes)}
 
 Si ya tienes cuenta, salta al Paso 3.
 
 \begin{enumerate}
-  \item Haz doble-click en \texttt{Subir-Evaluacion.bat}.
-  \item Windows puede mostrar una advertencia de seguridad: click en \textbf{Mas informacion} $\rightarrow$ \textbf{Ejecutar de todas formas}.
+  \item Haz doble-click en el ejecutable de la app.
+  \item Windows puede mostrar una advertencia de seguridad: click en \textbf{Mas informaciones} $\rightarrow$ \textbf{Ejecutar de todas formas}.
   \item Se abre el formulario principal.
   \item En la esquina superior derecha veras el enlace: \emph{\textquotedblleft\,No tienes cuenta de GitHub? Creala aqui\,\textquotedblright}.
   \item Click en el enlace $\rightarrow$ se abre un dialogo con instrucciones $\rightarrow$ click \textbf{Abrir GitHub}.
@@ -294,17 +289,17 @@ Si trabajas desde tu PC personal, cierra el script normalmente y apaga. Todo que
 
 Llegaste al aula. Estos son los pasos:
 
-\section{Paso 1\,---\,Abrir el script}
+\section{Paso 1\,---\,Abrir la app}
 
 \begin{enumerate}
-  \item Si el PC del aula ya tiene el script: doble-click \texttt{Subir-Evaluacion.bat}.
-  \item Si NO lo tiene: descargalo de nuevo del enlace que entrega el profesor y extrae el ZIP.
+  \item Si el PC del aula ya tiene la app: doble-click en el ejecutable.
+  \item Si NO lo tiene: descargalo de nuevo del enlace que entrega el profesor.
   \item En PCs del aula puede que tengas que repetir el login (Paso 5 del capitulo anterior).
 \end{enumerate}
 
-\section{Paso 2\,---\,Verificar tu seccion}
+\section{Paso 2\,---\,Verificar tu curso, seccion y evaluacion}
 
-Mira el dropdown \emph{\textquotedblleft\,Tu seccion\,\textquotedblright} arriba: debe decir tu seccion correcta. Si no, cambiala.
+Mira los dropdowns \emph{\textquotedblleft\,Tu curso\,\textquotedblright}, \emph{\textquotedblleft\,Tu seccion\,\textquotedblright} y \emph{\textquotedblleft\,Tu evaluacion\,\textquotedblright} en el panel izquierdo: deben decir tu curso, seccion y evaluacion correctos. Si no, cambialos.
 
 \section{Paso 3\,---\,Clonar el repositorio}
 
@@ -444,21 +439,21 @@ Esto puede pasar si:
 \section{Flujo en casa (una vez)}
 
 \begin{lstlisting}
-1. Descargar y extraer ZIP
-2. Doble-click Subir-Evaluacion.bat
+1. Descargar la app (Releases del repo o ZIP del profe)
+2. Doble-click en el ejecutable
 3. Aceptar instalacion winget (Si)
-4. Elegir seccion (001D / 002D / 003D)
+4. Elegir curso / seccion / evaluacion
 5. Iniciar sesion en GitHub (codigo XXXX-XXXX)
 6. Click banner "Tienes N tareas"
 7. Aceptar tarea (se abre Classroom)
 8. NO clonar todavia
-9. Cerrar el script
+9. Cerrar la app
 \end{lstlisting}
 
 \section{Flujo en el aula (cada evaluacion)}
 
 \begin{lstlisting}
-1. Abrir Subir-Evaluacion.bat
+1. Abrir la app (doble-click ejecutable)
 2. Modo "Repositorio existente" -> Refrescar
 3. Seleccionar tu repo -> Clonar Repo
 4. IDLE abre automatico -> programar
