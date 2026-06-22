@@ -1,0 +1,20 @@
+change: multi-evaluation
+title: Multi-evaluacion (Curso > Seccion > Evaluacion)
+status: proposed
+created: 2026-06-21
+artifacts:
+  proposal: done
+  spec: done
+  design: done
+  tasks: done
+  apply: pending
+  verify: pending
+  archive: pending
+decisions:
+  hierarchy: course > section > evaluation (evaluations.section_id FK)
+  control_scope: global (control.id=1 unchanged)
+  legacy_clients: delete admin/index.html + Subir-Evaluacion.ps1 + Reset-*
+  student_selection: section manual + list of active evaluations of section
+persistence: hybrid (openspec + engram)
+phases_total: 7
+tasks_total: 48
