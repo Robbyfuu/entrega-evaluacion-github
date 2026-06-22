@@ -44,12 +44,19 @@ export function AssignmentsSection() {
   }, [evaluations]);
 
   // When section changes, reset evaluationId if not valid for that section.
+  // Si la evaluacion seleccionada desaparece del realtime feed (deleted por
+  // otro admin), limpia evaluationId para evitar persistir un ID stale.
   useEffect(() => {
     if (!evaluationId) return;
     const ev = evaluations.find((e) => String(e.id) === evaluationId);
-    if (!ev) return;
-    // If the selected evaluation's section doesn't match the current section,
-    // update the section to match the evaluation (heredity).
+    if (!ev) {
+      // La evaluacion ya no existe: limpiar para evitar FK violation.
+      setEvaluationId("");
+      return;
+    }
+    // Si la evaluacion sigue existiendo pero su seccion no matchea la
+    // seleccionada, actualizar la seccion para reflejar herencia (curso/
+    // seccion vienen de la evaluacion).
     const sec = sectionById.get(ev.section_id);
     if (sec && sec.code !== section) {
       setSection(sec.code);
@@ -191,11 +198,18 @@ export function AssignmentsSection() {
             onChange={(e) => setEvaluationId(e.target.value)}
           >
             <option value="">— Ninguna —</option>
-            {availableEvaluations.map((ev) => (
-              <option key={ev.id} value={ev.id}>
-                {ev.title}
-              </option>
-            ))}
+            {availableEvaluations.map((ev) => {
+              const sec = sectionById.get(ev.section_id);
+              const course = sec ? courseById.get(sec.course_id) : undefined;
+              const label = [course?.code, sec?.code, ev.title]
+                .filter(Boolean)
+                .join(" / ");
+              return (
+                <option key={ev.id} value={ev.id}>
+                  {label}
+                </option>
+              );
+            })}
           </select>
         </div>
         <div className="field" style={{ flex: "0 0 200px" }}>

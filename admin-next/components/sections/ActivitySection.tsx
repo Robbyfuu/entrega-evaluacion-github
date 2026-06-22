@@ -25,6 +25,14 @@ export function ActivitySection() {
     return Array.from(codes).sort();
   }, [sections, rows]);
 
+  // Resuelve el section_id correspondiente al code seleccionado para el
+  // filtro OR (filas legacy con section TEXT + filas migradas con section_id).
+  const sectionFilterId = useMemo(() => {
+    if (!sectionFilter) return null;
+    const s = sections.find((x) => x.code === sectionFilter);
+    return s?.id ?? null;
+  }, [sectionFilter, sections]);
+
   const load = useCallback(async () => {
     setLoading(true);
     let q = supabase
@@ -33,7 +41,15 @@ export function ActivitySection() {
       .order("created_at", { ascending: false })
       .limit(100);
     if (actionFilter) q = q.eq("action", actionFilter);
-    if (sectionFilter) q = q.eq("section", sectionFilter);
+    if (sectionFilter) {
+      // Filtro OR: cubre filas legacy (section TEXT) y migradas (section_id).
+      // Si no hay section_id resuelto, cae solo a section TEXT.
+      if (sectionFilterId != null) {
+        q = q.or(`section.eq.${sectionFilter},section_id.eq.${sectionFilterId}`);
+      } else {
+        q = q.eq("section", sectionFilter);
+      }
+    }
     const { data, error: err } = await q;
     if (err) {
       setError(err.message);
