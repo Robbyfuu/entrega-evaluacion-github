@@ -124,4 +124,39 @@ public static class Config
         }
         return false;
     }
+
+    // ===== URLs exactas permitidas (por prefijo de ruta) =====
+    // Para endpoints de SSO que viven en un host que NO queremos abrir entero.
+    // Ej: el ACS (Assertion Consumer Service) SAML de DUOC vive en
+    // www.google.com, pero abrir www.google.com completo seria un escape
+    // (Search/Docs/Translate). Aqui se permite SOLO esta ruta puntual para que
+    // funcione el inicio de sesion con Google/Microsoft, sin abrir el host.
+    public static readonly string[] AllowedExactUrls =
+    {
+        "https://www.google.com/a/duocuc.cl/acs",
+    };
+
+    /// <summary>
+    /// True si la URL puede navegarse: su host esta en la whitelist de dominios
+    /// (IsDomainAllowed), O la URL coincide por prefijo (ignorando query y
+    /// fragment) con una de AllowedExactUrls. Permite habilitar un endpoint
+    /// puntual (p.ej. el ACS SSO de DUOC) sin abrir todo su host.
+    /// </summary>
+    public static bool IsUrlAllowed(string url)
+    {
+        if (string.IsNullOrWhiteSpace(url)) return false;
+        Uri uri;
+        try { uri = new Uri(url); } catch { return false; }
+
+        if (IsDomainAllowed(uri.Host)) return true;
+
+        // Comparar scheme://host/path (sin query ni fragment), case-insensitive.
+        var normalized = (uri.Scheme + "://" + uri.Host + uri.AbsolutePath).ToLowerInvariant();
+        foreach (var allowed in AllowedExactUrls)
+        {
+            if (normalized.StartsWith(allowed.ToLowerInvariant(), StringComparison.Ordinal))
+                return true;
+        }
+        return false;
+    }
 }

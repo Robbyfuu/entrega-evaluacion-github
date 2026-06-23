@@ -132,9 +132,9 @@ public partial class WebBrowserWindow : Window
             return;
         }
 
-        if (Config.IsDomainAllowed(host))
+        if (Config.IsUrlAllowed(uri))
         {
-            // Permitida: registrar (fire-and-forget).
+            // Permitida (host en whitelist o URL exacta permitida): registrar.
             _ = _sb.ReportBrowsingAsync(
                 _ctx.GithubUsername, _ctx.PcName, _ctx.Section, uri, host, allowed: true);
             return;
