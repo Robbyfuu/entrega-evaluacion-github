@@ -92,10 +92,21 @@ public class AssignmentStatus
     public string? SubmittedRepoUrl { get; set; }
     public string? SubmittedAt { get; set; }
 
+    // Invitacion de repo pendiente (repository_invitations) asociada a esta
+    // tarea por prefijo de slug. InvitationId es el id de la invitacion en
+    // GitHub (para aceptarla); InvitationPending indica que hay una invitacion
+    // viva que el alumno aun no acepta. Estas dos senales alimentan el banner
+    // (bucket pendienteAceptar) y son independientes de Accepted/Submitted.
+    public long? InvitationId { get; set; }
+    public bool InvitationPending { get; set; }
+
     // Bindings para la UI (DataTemplate de AssignmentsWindow).
     public string Title => Assignment.Title;
     public string? ClassroomUrl => Assignment.ClassroomUrl;
-    public string StatusLabel => Submitted ? "Entregada ✓" : Accepted ? "Aceptada ✓" : "Pendiente";
+    public string StatusLabel => Submitted ? "Entregada ✓"
+        : Accepted ? "Aceptada ✓"
+        : InvitationPending ? "Invitacion pendiente"
+        : "Pendiente";
     public bool IsPending => !Accepted && !string.IsNullOrEmpty(Assignment.ClassroomUrl);
     public bool HasRepoLink => Accepted && !string.IsNullOrEmpty(RepoUrl);
     public bool CanSubmit => Accepted || Assignment.AllowsManualSubmission;
