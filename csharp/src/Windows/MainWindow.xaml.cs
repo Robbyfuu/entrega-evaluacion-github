@@ -1047,7 +1047,13 @@ public partial class MainWindow : Window
 
     private async Task CheckAdminConfigAsync()
     {
-        var cfg = await _sb.GetControlAsync();
+        // Control EFECTIVO de la evaluacion actual: override por evaluacion ??
+        // global id=1 (no el global pelado). Si no se puede resolver (red/null)
+        // degradamos CERRADO: no tocamos el estado actual (return) en vez de
+        // soltar un bloqueo activo. La APERTURA y la LIBERACION del lockdown
+        // leen exactamente la misma resolucion (IsForceLockdownAsync), asi un
+        // lock por evaluacion abre y luego libera contra el MISMO valor.
+        var cfg = await _sb.GetEffectiveControlAsync(StudentSection.GetEvaluationId());
         if (cfg == null) return;
 
         if (cfg.InternetBlock && !_internetBlocked) { Log("[ADMIN] Bloqueo de internet activado."); InternetBlockService.Block(); _internetBlocked = true; }
