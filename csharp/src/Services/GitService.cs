@@ -133,14 +133,23 @@ public class GitService
                 repo.Commit(commitMessage, sig, sig);
             }
 
-            // Detectar branch actual
+            // La entrega SIEMPRE va a 'main': GitHub Classroom cuenta la entrega
+            // por commits en la rama DEFAULT del repo (main). Un init local de
+            // LibGit2Sharp crea 'master', lo que mandaba la entrega a una rama
+            // que Classroom NO mira => aparecia "0 commits / sin entregar".
+            // Si el repo quedo en 'master', renombrar a 'main'.
             var branch = repo.Head.FriendlyName;
+            if (branch == "master" && repo.Branches["main"] == null)
+            {
+                var renamed = repo.Branches.Rename(repo.Branches["master"], "main");
+                branch = renamed.FriendlyName;
+            }
             if (string.IsNullOrEmpty(branch) || branch == "(no branch)")
                 branch = "main";
 
-            // Push
+            // Push SIEMPRE a main remoto (la rama que mira Classroom).
             var pushOpts = new PushOptions { CredentialsProvider = Creds };
-            var refSpec = $"refs/heads/{branch}:refs/heads/{branch}";
+            var refSpec = $"refs/heads/{branch}:refs/heads/main";
 
             try
             {
@@ -148,9 +157,21 @@ public class GitService
             }
             catch (NonFastForwardException)
             {
-                // Divergencia (repo Classroom con README inicial): pull --rebase + retry
-                PullRebase(repo, branch);
-                repo.Network.Push(repo.Network.Remotes["origin"], refSpec, pushOpts);
+                // main remoto ya tiene historia (starter de Classroom). Intentar
+                // integrarla; si las historias NO se relacionan (init local sin
+                // clonar), la entrega del alumno es la fuente de verdad en main
+                // => force-push. Asi Classroom cuenta la entrega aunque el alumno
+                // no haya clonado bien.
+                try
+                {
+                    PullRebase(repo, branch);
+                    repo.Network.Push(repo.Network.Remotes["origin"], refSpec, pushOpts);
+                }
+                catch
+                {
+                    repo.Network.Push(repo.Network.Remotes["origin"],
+                        $"+refs/heads/{branch}:refs/heads/main", pushOpts);
+                }
             }
 
             return new PushResult
