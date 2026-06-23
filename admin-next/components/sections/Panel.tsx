@@ -13,6 +13,7 @@ import { ControlSection } from "@/components/sections/ControlSection";
 import { CoursesSection } from "@/components/sections/CoursesSection";
 import { SectionsSection } from "@/components/sections/SectionsSection";
 import { EvaluationsSection } from "@/components/sections/EvaluationsSection";
+import { RosterImportSection } from "@/components/sections/RosterImportSection";
 import { OnlineClientsSection } from "@/components/sections/OnlineClientsSection";
 import { ProcessAlertsSection } from "@/components/sections/ProcessAlertsSection";
 import { BrowsingSection } from "@/components/sections/BrowsingSection";
@@ -57,6 +58,7 @@ export function Panel({ user }: PanelProps) {
           <CoursesSection />
           <SectionsSection />
           <EvaluationsSection />
+          <RosterImportSection />
           <OnlineClientsSection
             onOpenProcesses={setModalClient}
             onOnlineCountChange={setOnlineCount}
