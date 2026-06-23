@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useMemo, useRef, useState } from "react";
-import type { EnrollmentRow, EnrollmentStatusRow } from "@/lib/types";
+import type { EnrollmentRow } from "@/lib/types";
 import { useEnrollments, type ImportStudent, type ImportSummary } from "@/hooks/useEnrollments";
 import { useSectionLookup } from "@/hooks/useSectionLookup";
 import { BADGE } from "@/lib/colors";

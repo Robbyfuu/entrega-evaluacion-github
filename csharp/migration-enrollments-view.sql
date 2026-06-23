@@ -87,19 +87,38 @@ activity_github AS (
     COALESCE(a.section_id, s_by_code.id)
 ),
 -- Igual que arriba pero desde submissions, para capturar github que
--- entrego sin tener una fila de acceptance (entrega manual directa).
--- submissions no tiene seccion propia: se hereda de la acceptance del
--- mismo github si existe; si no, queda NULL -> 'seccion sin resolver'.
+-- entrego sin tener una fila de acceptance (entrega manual directa,
+-- flujo allows_manual_submission). submissions NO tiene columna de
+-- seccion propia, asi que la seccion se resuelve en cascada:
+--   1) de la acceptance del mismo github, si existe (ag.section_id);
+--   2) si no, del ROSTER por lower(github) (e_by_gh.section_id) — el
+--      alumno inscripto que entrego manualmente sin aceptar debe contar
+--      como entregado en SU seccion, no caer en 'seccion sin resolver'.
+-- El fallback de roster se aplica SOLO si hay exactamente UN enrollment
+-- 'enrolled' que matchee el github (sub-select con LIMIT y guardado por
+-- un conteo): si el github aparece inscripto en mas de una seccion, se
+-- deja NULL (colision multi-seccion = genuinamente sin resolver). Si no
+-- hay acceptance NI match en el roster, queda NULL -> 'seccion sin
+-- resolver' (correcto: actividad sin seccion ni inscripcion).
 submission_github AS (
   SELECT
     lower(sub.github_username) AS github_lower,
     sub.github_username        AS github_username,
-    ag.section_id              AS section_id,
+    COALESCE(ag.section_id, roster_sec.section_id) AS section_id,
     COALESCE(ag.accepted, FALSE) AS accepted,
     TRUE                       AS submitted
   FROM public.assignment_submissions sub
   LEFT JOIN activity_github ag
     ON ag.github_lower = lower(sub.github_username)
+  -- Fallback al roster: section_id del unico enrollment que matchee el
+  -- github. Si matchea 0 o >1, devuelve NULL (no resuelve la seccion).
+  LEFT JOIN LATERAL (
+    SELECT CASE WHEN COUNT(*) = 1 THEN MIN(e.section_id) END AS section_id
+    FROM public.enrollments e
+    WHERE e.status = 'enrolled'
+      AND e.github_username IS NOT NULL
+      AND lower(e.github_username) = lower(sub.github_username)
+  ) roster_sec ON TRUE
   WHERE sub.github_username IS NOT NULL
 ),
 -- Union de actividad por (github_lower, section_id). Colapsa acceptance

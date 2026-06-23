@@ -105,9 +105,15 @@ export function useEnrollments(): UseEnrollmentsResult {
           p_github_username: s.github_username,
         });
         if (err) {
-          // Hard-fail: never silently drop a student. Surface to the caller.
+          // Hard-fail: never silently drop a student. The loop already
+          // committed the rows before this one (the upsert is idempotent, so a
+          // re-import is safe), so report the real state instead of implying
+          // nothing was written. successful = rows committed before the throw.
+          const successful = inserted + updated;
           throw new Error(
-            `Falló import de "${s.full_name}" (${s.blackboard_student_id}): ${err.message}`
+            `Se importaron ${successful} de ${students.length} alumnos antes del error en ` +
+              `"${s.full_name}" (${s.blackboard_student_id}): ${err.message}. ` +
+              `Puedes volver a importar el mismo archivo: el import es idempotente.`
           );
         }
         if (isUpdate) updated += 1;
