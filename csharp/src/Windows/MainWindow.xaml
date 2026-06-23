@@ -102,12 +102,6 @@
                             <ComboBox x:Name="EvaluationCombo" HorizontalAlignment="Stretch" SelectionChanged="EvaluationCombo_SelectionChanged" />
                         </StackPanel>
                     </Border>
-                    <Border x:Name="AssignmentsBanner" Background="#F3EEFF" BorderBrush="{DynamicResource InfoBrush}" BorderThickness="1" CornerRadius="8" Padding="10" Margin="0,8,0,0" Visibility="Collapsed">
-                        <StackPanel>
-                            <TextBlock x:Name="AssignmentsBannerText" Text="" Foreground="{DynamicResource InfoBrush}" FontWeight="SemiBold" FontSize="12" TextWrapping="Wrap" />
-                            <ui:HyperlinkButton x:Name="AssignmentsLink" Content="Aceptar tareas" FontSize="12" Margin="0,2,0,0" HorizontalAlignment="Left" Click="AssignmentsLink_Click" />
-                        </StackPanel>
-                    </Border>
                 </StackPanel>
             </Grid>
         </Border>
@@ -129,6 +123,14 @@
 
             <!-- ===== Header ===== -->
             <StackPanel Grid.Row="0" Margin="24,20,24,0">
+                <!-- Banner prominente de tareas pendientes: visible arriba del contenido
+                     (antes estaba al fondo del sidebar y se cortaba en proyector). -->
+                <Border x:Name="AssignmentsBanner" Background="{DynamicResource InfoBrush}" CornerRadius="10" Padding="20,14" Margin="0,0,0,16" Visibility="Collapsed">
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <TextBlock x:Name="AssignmentsBannerText" Text="" Foreground="White" FontWeight="Bold" FontSize="17" TextWrapping="Wrap" VerticalAlignment="Center" />
+                        <Button x:Name="AssignmentsLink" Content="Aceptar tarea" FontSize="16" FontWeight="Bold" Foreground="{DynamicResource InfoBrush}" Background="White" Padding="18,8" Margin="20,0,0,0" VerticalAlignment="Center" Cursor="Hand" Click="AssignmentsLink_Click" />
+                    </StackPanel>
+                </Border>
                 <TextBlock Text="Evaluacion &#8594; GitHub" Style="{StaticResource TitleText}" />
                 <TextBlock Text="Crea o conecta tu repositorio y sube tu entrega." Style="{StaticResource MutedText}" FontSize="13" Margin="0,2,0,0" />
             </StackPanel>
