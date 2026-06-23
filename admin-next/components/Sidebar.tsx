@@ -57,7 +57,7 @@ interface SidebarProps {
 
 export function Sidebar({ active, onSelect }: SidebarProps) {
   return (
-    <ShadSidebar collapsible="icon">
+    <ShadSidebar collapsible="offcanvas">
       <SidebarHeader className="px-3 py-4">
         <div className="flex items-center gap-2.5">
           <div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-primary font-bold text-primary-foreground">
