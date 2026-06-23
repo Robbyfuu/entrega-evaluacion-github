@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import type { RealtimePostgresChangesPayload } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
 
@@ -30,6 +30,14 @@ export function useRealtimeTable<T extends Record<string, unknown>>(
   options: UseRealtimeTableOptions<T>
 ): UseRealtimeTableResult<T> {
   const { table, order, limit, getId, onInsert, realtime = true } = options;
+
+  // ID unico por instancia del hook: los canales de Supabase se indexan por
+  // topic, asi que varios consumidores de la misma tabla (p. ej. useCourses
+  // montado por useSectionLookup + EvaluationsSection + SectionsSection a la
+  // vez) compartirian "rt-{table}" y el segundo .on() correria despues del
+  // subscribe() del primero ("cannot add postgres_changes callbacks after
+  // subscribe()"). Un topic por instancia evita la colision.
+  const instanceId = useId();
 
   const [rows, setRows] = useState<T[]>([]);
   const [loading, setLoading] = useState(true);
@@ -70,7 +78,7 @@ export function useRealtimeTable<T extends Record<string, unknown>>(
     if (!realtime) return;
 
     const channel = supabase
-      .channel(`rt-${table}`)
+      .channel(`rt-${table}-${instanceId}`)
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table },
@@ -113,7 +121,7 @@ export function useRealtimeTable<T extends Record<string, unknown>>(
     return () => {
       void supabase.removeChannel(channel);
     };
-  }, [table, realtime]);
+  }, [table, realtime, instanceId]);
 
   return { rows, loading, error, refresh };
 }
