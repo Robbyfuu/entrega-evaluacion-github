@@ -558,10 +558,6 @@ tbody tr:hover {
   margin-top: var(--sp-2);
 }
 
-.hidden {
-  display: none !important;
-}
-
 .row-flex {
   display: flex;
   gap: var(--sp-3);
