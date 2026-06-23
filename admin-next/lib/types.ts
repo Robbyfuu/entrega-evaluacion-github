@@ -37,6 +37,9 @@ export interface ControlRow {
   message: string | null;
   updated_at: string | null;
   updated_by: string | null;
+  // El profe lo setea = NOW() para pedir a los clientes que actualicen
+  // (update manual disparado; el cliente lo chequea en su AdminTick).
+  update_requested_at: string | null;
 }
 
 // Per-evaluation override over the global control id=1. A NULL field inherits
@@ -67,6 +70,7 @@ export interface OnlineClientRow {
   processes: ClientProcess[] | null;
   internet_state: string | null; // 'blocked' | other
   lockdown_state: string | null; // 'active' | other
+  app_version: string | null; // version del cliente que corre el alumno
 }
 
 export interface ProcessAlertRow {

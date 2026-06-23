@@ -468,10 +468,13 @@ public class SupabaseClient
         string pcName, string githubUsername, string? githubEmail,
         string? section, List<ProcessInfo> processes,
         string internetState = "free", string lockdownState = "none",
-        long? evaluationId = null)
+        long? evaluationId = null, string? appVersion = null)
     {
         try
         {
+            // p_app_version es nullable (DEFAULT NULL en la RPC) para que clientes
+            // viejos que no lo mandan sigan resolviendo. Reporta la version que
+            // corre el alumno -> el panel la muestra por PC.
             var payload = JsonSerializer.Serialize(new
             {
                 p_pc_name = pcName,
@@ -481,7 +484,8 @@ public class SupabaseClient
                 p_processes = processes,
                 p_internet_state = internetState,
                 p_lockdown_state = lockdownState,
-                p_evaluation_id = evaluationId
+                p_evaluation_id = evaluationId,
+                p_app_version = appVersion
             }, JsonOpts);
             var content = new StringContent(payload, Encoding.UTF8, "application/json");
             await _http.PostAsync(Rest("rpc/heartbeat"), content);

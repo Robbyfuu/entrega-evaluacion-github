@@ -44,6 +44,12 @@
                     <ui:Button x:Name="LoginButton" Content="Iniciar sesion" Appearance="Primary" HorizontalAlignment="Stretch" Margin="0,12,0,0" Click="LoginButton_Click" />
                     <ui:Button x:Name="LogoutButton" Content="Cerrar sesion" Appearance="Danger" HorizontalAlignment="Stretch" Margin="0,6,0,0" IsEnabled="False" Click="LogoutButton_Click" />
                     <ui:HyperlinkButton x:Name="SignupLink" Content="No tienes cuenta? Creala aqui" FontSize="11" Margin="0,6,0,0" HorizontalAlignment="Left" Click="SignupLink_Click" />
+                    <Border BorderBrush="{DynamicResource ControlElevationBorderBrush}" BorderThickness="0,1,0,0" Margin="0,12,0,0" Padding="0,10,0,0">
+                        <StackPanel>
+                            <TextBlock x:Name="VersionText" Text="" Style="{StaticResource MutedText}" FontSize="11" />
+                            <ui:Button x:Name="UpdateButton" Content="Actualizar version" Appearance="Secondary" HorizontalAlignment="Stretch" Margin="0,6,0,0" Click="UpdateButton_Click" />
+                        </StackPanel>
+                    </Border>
                 </StackPanel>
 
                 <!-- ===== Indicador de pasos ===== -->

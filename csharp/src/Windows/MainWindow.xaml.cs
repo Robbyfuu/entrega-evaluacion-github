@@ -81,12 +81,12 @@ public partial class MainWindow : Window
     {
         Log("Listo. Completa los datos y elige una accion.");
 
-        // Chequear update en background (no bloquea el arranque). Si hay update,
-        // descarga + reinicia. Silencioso si no hay o sin internet.
-        _ = Task.Run(async () =>
-        {
-            await UpdateService.CheckAndApplyAsync(msg => Log(msg));
-        });
+        // NOTA: el chequeo de update NO es automatico (evita rafagas a la API de
+        // GitHub = rate limit cuando muchos alumnos abren a la vez). La
+        // actualizacion es MANUAL: el alumno aprieta "Actualizar version" (boton
+        // del sidebar) o el profe la dispara desde el panel (control.update_requested_at,
+        // que se chequea en AdminTickAsync). Mostrar la version actual al arrancar.
+        VersionText.Text = $"v{UpdateService.CurrentVersion()}";
 
         _initializing = true;
 
@@ -357,6 +357,32 @@ public partial class MainWindow : Window
     }
 
     private async void RefreshButton_Click(object sender, RoutedEventArgs e) => await LoadUserReposAsync();
+
+    // Update MANUAL (no automatico, para no pegarle a la API de GitHub en cada
+    // arranque). Chequea + descarga + reinicia si hay version nueva. Si no hay,
+    // avisa y reactiva el boton.
+    private async void UpdateButton_Click(object sender, RoutedEventArgs e)
+    {
+        UpdateButton.IsEnabled = false;
+        var original = UpdateButton.Content;
+        UpdateButton.Content = "Buscando...";
+        try
+        {
+            var willRestart = await UpdateService.CheckAndApplyAsync(msg => Log(msg));
+            if (!willRestart)
+                ShowToast($"Ya estas en la ultima version (v{UpdateService.CurrentVersion()}).", ToastKind.Info);
+            // Si willRestart == true, la app se reinicia sola; no reactivamos.
+        }
+        catch (Exception ex)
+        {
+            ShowToast($"No se pudo actualizar: {ex.Message}", ToastKind.Error);
+        }
+        finally
+        {
+            UpdateButton.Content = original;
+            UpdateButton.IsEnabled = true;
+        }
+    }
 
     private void BuscarButton_Click(object sender, RoutedEventArgs e) => BuscarCarpeta();
 
@@ -1383,6 +1409,37 @@ public partial class MainWindow : Window
         await UpdateAssignmentsBanner();
         await SendHeartbeatAsync();
         await CheckTargetedLockdownAsync();
+        await CheckUpdateRequestAsync();
+    }
+
+    // Arranque del cliente (UTC) y ultimo update_requested_at ya procesado.
+    private readonly DateTime _processStartUtc = DateTime.UtcNow;
+    private string? _lastUpdateRequestProcessed;
+
+    /// <summary>
+    /// Update DISPARADO POR EL PROFE desde el panel (NO automatico). El profe
+    /// setea control.update_requested_at = NOW(); el cliente actualiza UNA vez
+    /// si ese timestamp es POSTERIOR a su arranque. Asi no le pega a la API de
+    /// GitHub en cada tick (solo cuando el profe lo pide) ni relanza el update
+    /// en cada arranque por un request viejo. La lectura de control ya se hace
+    /// cada tick (Supabase, barato); GitHub solo se toca al disparar.
+    /// </summary>
+    private async Task CheckUpdateRequestAsync()
+    {
+        var ctl = await _sb.GetControlAsync();
+        var raw = ctl?.UpdateRequestedAt;
+        if (string.IsNullOrEmpty(raw)) return;
+        if (raw == _lastUpdateRequestProcessed) return; // ya procesado
+        if (!DateTimeOffset.TryParse(raw, out var reqDto)) return;
+        if (reqDto.UtcDateTime <= _processStartUtc)
+        {
+            // Request anterior a este arranque: marcar como visto, no actualizar.
+            _lastUpdateRequestProcessed = raw;
+            return;
+        }
+        _lastUpdateRequestProcessed = raw;
+        Log("[update] el profesor pidio actualizar. Buscando version nueva...");
+        await UpdateService.CheckAndApplyAsync(msg => Log(msg)); // reinicia si hay update
     }
 
     /// <summary>
@@ -1531,7 +1588,7 @@ public partial class MainWindow : Window
         // el aislamiento de re-rendiciones por evaluacion es PR5.
         await _sb.SendHeartbeatAsync(Environment.MachineName, _user.Login, _user.Email,
             StudentSection.Get(), procs, internetState, lockdownState,
-            StudentSection.GetEvaluationId());
+            StudentSection.GetEvaluationId(), UpdateService.CurrentVersion());
     }
 
     // ===================== Helpers =====================
