@@ -138,8 +138,12 @@ db_pairs (repo_url, github) AS (
 -- db_norm: normaliza la clave de join.
 --   url_key  = url en minusculas, sin "/" final y sin sufijo ".git".
 --   name_key = ultimo segmento del path (nombre del repo) en minusculas.
--- name_key permite reconciliar diferencias de host/owner/case cuando la
--- url completa no coincide exacto.
+-- IMPORTANTE: name_key se calcula pero NO se usa para resolver el login.
+-- Matchear por solo-nombre es INSEGURO: un fork/clon de OTRO usuario
+-- (host/owner distinto) normaliza al MISMO name que el repo del inventario
+-- y mis-atribuiria el login de otra persona. La resolucion db-exact cruza
+-- por url_key (url COMPLETA) unicamente; el inventario vive bajo la org de
+-- Classroom, asi que el match por url completa lo cubre 1:1.
 -- ------------------------------------------------------------
 db_norm (url_key, name_key, github) AS (
   SELECT
@@ -155,9 +159,19 @@ db_norm (url_key, name_key, github) AS (
 ),
 
 -- ------------------------------------------------------------
--- auth_by_url: login autenticado por url_key, EXCLUYENDO los ambiguos
--- (un mismo repo que aparece con >1 login distinto). Si es ambiguo no
--- adivinamos: lo dejamos fuera para que caiga al fallback heuristico.
+-- auth_by_url: login autenticado por url_key (url normalizada COMPLETA:
+-- host + owner + nombre), EXCLUYENDO los ambiguos (un mismo repo que
+-- aparece con >1 login distinto). Si es ambiguo no adivinamos: lo dejamos
+-- fuera para que caiga al fallback heuristico.
+-- MIN(github) es seguro SOLO por el guard HAVING COUNT(*) = 1 sobre el
+-- conjunto DISTINCT: el grupo tiene exactamente un login, asi que MIN
+-- devuelve ese unico valor (no colapsa logins distintos).
+-- NO se matchea por name_key (ultimo segmento) a proposito: un fork o
+-- clon de OTRO usuario (p.ej. github.com/<otro>/evaluacion-3-awooga93)
+-- normaliza al MISMO name que el repo del inventario y mis-atribuiria el
+-- login de otra persona. Todos los repos del inventario viven bajo la org
+-- de Classroom (Fundamentos-de-la-Programacion), por lo que el match por
+-- url COMPLETA es 1:1 y cubre el inventario sin la via insegura por nombre.
 -- ------------------------------------------------------------
 auth_by_url (url_key, github) AS (
   SELECT url_key, MIN(github) AS github
@@ -167,39 +181,22 @@ auth_by_url (url_key, github) AS (
 ),
 
 -- ------------------------------------------------------------
--- auth_by_name: idem por name_key (fallback de matcheo cuando la url
--- completa difiere). Tambien excluye ambiguos.
--- ------------------------------------------------------------
-auth_by_name (name_key, github) AS (
-  SELECT name_key, MIN(github) AS github
-    FROM (SELECT DISTINCT name_key, github FROM db_norm) n
-   GROUP BY name_key
-  HAVING COUNT(*) = 1
-),
-
--- ------------------------------------------------------------
--- bb_norm: normaliza la url del inventario con la MISMA receta, mas el
--- name_key del repo, para poder cruzar contra auth_by_url / auth_by_name.
+-- bb_norm: normaliza la url del inventario con la MISMA receta para poder
+-- cruzar contra auth_by_url (match por url COMPLETA).
 -- ------------------------------------------------------------
 bb_norm AS (
   SELECT
     bb.blackboard_id,
     bb.section_code,
     bb.suffix_candidate,
-    regexp_replace(regexp_replace(lower(bb.repo_url), '\.git$', ''), '/+$', '') AS url_key,
-    lower(
-      regexp_replace(
-        regexp_replace(regexp_replace(lower(bb.repo_url), '\.git$', ''), '/+$', ''),
-        '^.*/', ''
-      )
-    ) AS name_key
+    regexp_replace(regexp_replace(lower(bb.repo_url), '\.git$', ''), '/+$', '') AS url_key
   FROM bb
 ),
 
 -- ------------------------------------------------------------
 -- resolution: por cada fila del inventario, resuelve el login y la
 -- fuente. Prioridad EXACTO antes que heuristico:
---   db_github  = match por url_key, si no por name_key.
+--   db_github  = match por url_key (url COMPLETA) UNICAMENTE.
 --   github     = COALESCE(db_github, suffix_candidate).
 --   source     = 'db-exact'        cuando db_github no es NULL;
 --                'suffix-heuristic' cuando solo hay suffix_candidate;
@@ -210,16 +207,15 @@ resolution AS (
     n.blackboard_id,
     n.section_code,
     n.suffix_candidate,
-    COALESCE(au.github, an.github) AS db_github,
-    COALESCE(COALESCE(au.github, an.github), n.suffix_candidate) AS github,
+    au.github AS db_github,
+    COALESCE(au.github, n.suffix_candidate) AS github,
     CASE
-      WHEN COALESCE(au.github, an.github) IS NOT NULL THEN 'db-exact'
-      WHEN n.suffix_candidate IS NOT NULL              THEN 'suffix-heuristic'
+      WHEN au.github IS NOT NULL          THEN 'db-exact'
+      WHEN n.suffix_candidate IS NOT NULL THEN 'suffix-heuristic'
       ELSE 'none'
     END AS source
   FROM bb_norm n
-  LEFT JOIN auth_by_url  au ON au.url_key  = n.url_key
-  LEFT JOIN auth_by_name an ON an.name_key = n.name_key
+  LEFT JOIN auth_by_url au ON au.url_key = n.url_key
 )
 
 -- ============================================================
@@ -345,16 +341,13 @@ db_norm (url_key, name_key, github) AS (
     github
   FROM db_pairs
 ),
+-- MIN(github) es seguro SOLO por el guard HAVING COUNT(*) = 1 sobre el
+-- conjunto DISTINCT (un unico login por url_key). El match es por url
+-- COMPLETA, no por nombre, para no mis-atribuir forks/clones de terceros.
 auth_by_url (url_key, github) AS (
   SELECT url_key, MIN(github) AS github
     FROM (SELECT DISTINCT url_key, github FROM db_norm) u
    GROUP BY url_key
-  HAVING COUNT(*) = 1
-),
-auth_by_name (name_key, github) AS (
-  SELECT name_key, MIN(github) AS github
-    FROM (SELECT DISTINCT name_key, github FROM db_norm) n
-   GROUP BY name_key
   HAVING COUNT(*) = 1
 ),
 bb_norm AS (
@@ -362,28 +355,21 @@ bb_norm AS (
     bb.blackboard_id,
     bb.section_code,
     bb.suffix_candidate,
-    regexp_replace(regexp_replace(lower(bb.repo_url), '\.git$', ''), '/+$', '') AS url_key,
-    lower(
-      regexp_replace(
-        regexp_replace(regexp_replace(lower(bb.repo_url), '\.git$', ''), '/+$', ''),
-        '^.*/', ''
-      )
-    ) AS name_key
+    regexp_replace(regexp_replace(lower(bb.repo_url), '\.git$', ''), '/+$', '') AS url_key
   FROM bb
 ),
 resolution AS (
   SELECT
     n.blackboard_id,
     n.section_code,
-    COALESCE(COALESCE(au.github, an.github), n.suffix_candidate) AS github,
+    COALESCE(au.github, n.suffix_candidate) AS github,
     CASE
-      WHEN COALESCE(au.github, an.github) IS NOT NULL THEN 'db-exact'
-      WHEN n.suffix_candidate IS NOT NULL              THEN 'suffix-heuristic'
+      WHEN au.github IS NOT NULL          THEN 'db-exact'
+      WHEN n.suffix_candidate IS NOT NULL THEN 'suffix-heuristic'
       ELSE 'none'
     END AS source
   FROM bb_norm n
-  LEFT JOIN auth_by_url  au ON au.url_key  = n.url_key
-  LEFT JOIN auth_by_name an ON an.name_key = n.name_key
+  LEFT JOIN auth_by_url au ON au.url_key = n.url_key
 )
 SELECT
   r.blackboard_id,
@@ -496,16 +482,13 @@ db_norm (url_key, name_key, github) AS (
     github
   FROM db_pairs
 ),
+-- MIN(github) es seguro SOLO por el guard HAVING COUNT(*) = 1 sobre el
+-- conjunto DISTINCT (un unico login por url_key). El match es por url
+-- COMPLETA, no por nombre, para no mis-atribuir forks/clones de terceros.
 auth_by_url (url_key, github) AS (
   SELECT url_key, MIN(github) AS github
     FROM (SELECT DISTINCT url_key, github FROM db_norm) u
    GROUP BY url_key
-  HAVING COUNT(*) = 1
-),
-auth_by_name (name_key, github) AS (
-  SELECT name_key, MIN(github) AS github
-    FROM (SELECT DISTINCT name_key, github FROM db_norm) n
-   GROUP BY name_key
   HAVING COUNT(*) = 1
 ),
 bb_norm AS (
@@ -513,25 +496,18 @@ bb_norm AS (
     bb.blackboard_id,
     bb.section_code,
     bb.suffix_candidate,
-    regexp_replace(regexp_replace(lower(bb.repo_url), '\.git$', ''), '/+$', '') AS url_key,
-    lower(
-      regexp_replace(
-        regexp_replace(regexp_replace(lower(bb.repo_url), '\.git$', ''), '/+$', ''),
-        '^.*/', ''
-      )
-    ) AS name_key
+    regexp_replace(regexp_replace(lower(bb.repo_url), '\.git$', ''), '/+$', '') AS url_key
   FROM bb
 ),
 resolution AS (
   SELECT
     CASE
-      WHEN COALESCE(au.github, an.github) IS NOT NULL THEN 'db-exact'
-      WHEN n.suffix_candidate IS NOT NULL              THEN 'suffix-heuristic'
+      WHEN au.github IS NOT NULL          THEN 'db-exact'
+      WHEN n.suffix_candidate IS NOT NULL THEN 'suffix-heuristic'
       ELSE 'none'
     END AS source
   FROM bb_norm n
-  LEFT JOIN auth_by_url  au ON au.url_key  = n.url_key
-  LEFT JOIN auth_by_name an ON an.name_key = n.name_key
+  LEFT JOIN auth_by_url au ON au.url_key = n.url_key
 )
 SELECT source AS fuente, COUNT(*) AS cantidad
 FROM resolution
