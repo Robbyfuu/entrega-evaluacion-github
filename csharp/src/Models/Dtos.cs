@@ -11,6 +11,21 @@ public class ControlState
     [JsonPropertyName("updated_by")] public string? UpdatedBy { get; set; }
 }
 
+// Override de control por evaluacion (tabla evaluation_control).
+// A diferencia de ControlState (control global id=1), aca los campos son
+// NULLABLE: NULL significa "heredar el valor del control global". El control
+// EFECTIVO de una evaluacion se resuelve campo a campo como
+// (override.campo ?? global.campo). Ver SupabaseClient.GetEvaluationControlAsync.
+public class EvaluationControl
+{
+    [JsonPropertyName("evaluation_id")] public long EvaluationId { get; set; }
+    [JsonPropertyName("internet_block")] public bool? InternetBlock { get; set; }
+    [JsonPropertyName("force_lockdown")] public bool? ForceLockdown { get; set; }
+    [JsonPropertyName("message")] public string? Message { get; set; }
+    [JsonPropertyName("updated_at")] public string? UpdatedAt { get; set; }
+    [JsonPropertyName("updated_by")] public string? UpdatedBy { get; set; }
+}
+
 // ===== Multi-evaluacion: curso > seccion > evaluacion =====
 // Fetcheados de Supabase al arrancar; fallback a Config.cs si la BD no responde.
 

@@ -28,7 +28,10 @@ export function OnlineClientsSection({
     table: "online_clients",
     order: { column: "last_seen", ascending: false },
     limit: 100,
-    getId: (r) => `${r.pc_name}|${r.github_username}`,
+    // Identity mirrors the (pc_name, github_username, COALESCE(evaluation_id,0))
+    // re-sit isolation key: the same PC re-sitting another evaluation is a
+    // distinct live row, not an overwrite.
+    getId: (r) => `${r.pc_name}|${r.github_username}|${r.evaluation_id ?? 0}`,
   });
 
   const { sectionCodeById } = useSectionLookup();
@@ -185,7 +188,7 @@ export function OnlineClientsSection({
               ).length;
               return (
                 <tr
-                  key={`${c.pc_name}|${c.github_username}`}
+                  key={`${c.pc_name}|${c.github_username}|${c.evaluation_id ?? 0}`}
                   style={{ cursor: "pointer" }}
                   onClick={() => onOpenProcesses(c)}
                 >

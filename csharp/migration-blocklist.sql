@@ -66,13 +66,24 @@ ON CONFLICT (process_name, COALESCE(section, '')) DO NOTHING;
 --  a esta RPC server-side. Mirror de heartbeat / record_acceptance.
 --  Rate-limit: si existe un alert identico (mismo pc_name +
 --  process_name) en los ultimos 30 segundos, NO inserta (anti-flood).
+--  p_evaluation_id es nullable (DEFAULT NULL): los clientes viejos que
+--  llaman con la firma de 5 args siguen resolviendo y el comportamiento
+--  con NULL es identico al de hoy. DROP previo de la firma vieja (5
+--  params) antes del CREATE para evitar el overload (PostgREST 300):
+--  exactamente UNA firma por nombre. Espejo de la definicion en
+--  setup-supabase.sql; ambas convergen a la misma firma para que
+--  re-correr cualquiera de los dos archivos no resucite el overload.
 -- ============================================================
+DROP FUNCTION IF EXISTS public.report_process_alert(
+  TEXT, TEXT, TEXT, TEXT, TEXT);
+
 CREATE OR REPLACE FUNCTION public.report_process_alert(
   p_github_username TEXT,
   p_pc_name TEXT,
   p_section TEXT,
   p_process_name TEXT,
-  p_window_title TEXT
+  p_window_title TEXT,
+  p_evaluation_id BIGINT DEFAULT NULL
 ) RETURNS VOID
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
 BEGIN
@@ -87,13 +98,13 @@ BEGIN
   END IF;
 
   INSERT INTO public.process_alerts
-    (pc_name, github_username, section, process_name, window_title, detected_at)
+    (pc_name, github_username, section, process_name, window_title, evaluation_id, detected_at)
   VALUES
-    (p_pc_name, p_github_username, p_section, p_process_name, p_window_title, NOW());
+    (p_pc_name, p_github_username, p_section, p_process_name, p_window_title, p_evaluation_id, NOW());
 END;
 $$;
 
-GRANT EXECUTE ON FUNCTION public.report_process_alert(TEXT,TEXT,TEXT,TEXT,TEXT)
+GRANT EXECUTE ON FUNCTION public.report_process_alert(TEXT,TEXT,TEXT,TEXT,TEXT,BIGINT)
   TO anon, authenticated;
 
 -- ============================================================
