@@ -19,6 +19,15 @@ public class SupabaseClient
         DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull
     };
 
+    // ===== Fail-safe del lockdown (degradar CERRADO) =====
+    // Ultimo estado de force_lockdown EFECTIVO conocido (override ?? global)
+    // para la evaluacion actual del cliente. null = nunca se resolvio.
+    // Si una resolucion/fetch falla (red/null), RETENEMOS este valor en vez de
+    // soltar a un alumno bloqueado por un parpadeo de red. Solo el primer arranque
+    // sin estado previo (cache vacio) cae al default global (false). Asi un corte
+    // de red transitorio NUNCA puede liberar a un alumno en medio del examen.
+    private bool? _lastKnownLock;
+
     public SupabaseClient()
     {
         // CRITICO: UseProxy=false. Sin esto, cuando bloqueamos internet (proxy
@@ -44,6 +53,83 @@ public class SupabaseClient
             return arr is { Length: > 0 } ? arr[0] : null;
         }
         catch { return null; }
+    }
+
+    /// <summary>
+    /// Lee el override de control de una evaluacion (tabla evaluation_control)
+    /// distinguiendo tres casos:
+    ///   - fila encontrada  => (true, fila)
+    ///   - sin fila (la evaluacion hereda el global) => (true, null)
+    ///   - FETCH FALLIDO (red/parseo)               => (false, null)
+    /// El tercer flag (ok=false) permite al resolver degradar CERRADO en vez de
+    /// confundir "no hay override" con "no pude leer el override". Los campos de
+    /// la fila son nullables: NULL en un campo = heredar el global para ESE campo.
+    /// </summary>
+    public async Task<(bool ok, EvaluationControl? row)> GetEvaluationControlAsync(long evaluationId)
+    {
+        try
+        {
+            var json = await _http.GetStringAsync(
+                Rest($"evaluation_control?evaluation_id=eq.{evaluationId}&select=*"));
+            var arr = JsonSerializer.Deserialize<EvaluationControl[]>(json, JsonOpts);
+            return (true, arr is { Length: > 0 } ? arr[0] : null);
+        }
+        catch { return (false, null); }
+    }
+
+    /// <summary>
+    /// Resuelve el control EFECTIVO de la evaluacion actual del cliente:
+    /// override por evaluacion (si existe la fila) ELSE control global id=1,
+    /// resolviendo campo a campo como (override.campo ?? global.campo).
+    ///
+    /// REGLA DE RESOLUCION (la misma en todos los call sites):
+    ///   EFFECTIVE = per-eval override (si hay fila) ELSE global id=1.
+    ///   Cada campo individual: override.campo ?? global.campo.
+    ///
+    /// FAIL-SAFE (degradar CERRADO): si NO se puede resolver el control con
+    /// certeza, devolvemos null para que el caller retenga su ultimo estado
+    /// conocido en vez de soltar al alumno. Un null aqui NUNCA debe
+    /// interpretarse como "desbloquear". Casos que devuelven null:
+    ///   - sin evaluacion elegida y el global no respondio;
+    ///   - el fetch del override fallo (no pude confirmar si hay override);
+    ///   - hay override pero el global no respondio y el override deja
+    ///     force_lockdown en NULL (heredaria un global que no conozco).
+    ///
+    /// evaluationId == null (alumno sin evaluacion elegida): no hay override
+    /// posible, se usa el global directamente (null si el global fallo).
+    /// </summary>
+    public async Task<ControlState?> GetEffectiveControlAsync(long? evaluationId)
+    {
+        var global = await GetControlAsync();
+
+        if (evaluationId is not { } evalId)
+            return global; // sin evaluacion elegida => global tal cual (o null si fallo).
+
+        var (ok, ovr) = await GetEvaluationControlAsync(evalId);
+
+        // No pude leer el override: no se si hay lock por evaluacion. Degradar
+        // CERRADO: devolver null para que el caller retenga el ultimo conocido.
+        if (!ok) return null;
+
+        // Sin override: el control efectivo es el global (null si el global fallo
+        // => el caller degrada CERRADO reteniendo el ultimo conocido).
+        if (ovr == null) return global;
+
+        // Con override: si el override NO fija force_lockdown (lo deja NULL) y el
+        // global no respondio, no puedo resolver el lock efectivo => null
+        // (degradar CERRADO). Si el override fija force_lockdown explicitamente,
+        // ese valor manda aunque el global no responda.
+        if (ovr.ForceLockdown == null && global == null) return null;
+
+        // Resolucion campo a campo: override.campo ?? global.campo.
+        return new ControlState
+        {
+            InternetBlock = ovr.InternetBlock ?? global?.InternetBlock ?? false,
+            ForceLockdown = ovr.ForceLockdown ?? global?.ForceLockdown ?? false,
+            Message = ovr.Message ?? global?.Message,
+            UpdatedAt = ovr.UpdatedAt ?? global?.UpdatedAt,
+            UpdatedBy = ovr.UpdatedBy ?? global?.UpdatedBy
+        };
     }
 
     // ===== Multi-evaluacion: cursos, secciones, evaluaciones =====
@@ -297,10 +383,29 @@ public class SupabaseClient
         catch { return null; }
     }
 
+    /// <summary>
+    /// Predicado de force_lockdown EFECTIVO para la evaluacion actual del
+    /// cliente: resuelve override por evaluacion ?? global id=1. Es a la vez el
+    /// predicado de APERTURA (CheckAdminConfigAsync) y de LIBERACION
+    /// (checkStillLocked de CheatWindow). Si la resolucion falla (red/null),
+    /// degrada CERRADO reteniendo el ultimo estado conocido (_lastKnownLock):
+    /// un parpadeo de red NUNCA libera a un alumno bloqueado en medio del examen.
+    /// Solo el primer arranque sin estado previo cae al default global (false).
+    /// </summary>
     public async Task<bool> IsForceLockdownAsync()
     {
-        var ctl = await GetControlAsync();
-        return ctl?.ForceLockdown ?? false;
+        var ctl = await GetEffectiveControlAsync(StudentSection.GetEvaluationId());
+        if (ctl != null)
+        {
+            // Resolucion exitosa: actualizamos el cache y devolvemos el valor.
+            _lastKnownLock = ctl.ForceLockdown;
+            return ctl.ForceLockdown;
+        }
+
+        // Fail-safe CERRADO: no se pudo resolver (global fallo y no hubo override
+        // utilizable). Retenemos el ultimo lock conocido. Si nunca conocimos uno
+        // (primer arranque, cache vacio), recien ahi caemos al default global false.
+        return _lastKnownLock ?? false;
     }
 
     // ===== Reportes (INSERT directo, RLS anon insert) =====
