@@ -9,6 +9,11 @@ public class ControlState
     [JsonPropertyName("message")] public string? Message { get; set; }
     [JsonPropertyName("updated_at")] public string? UpdatedAt { get; set; }
     [JsonPropertyName("updated_by")] public string? UpdatedBy { get; set; }
+    // El profe setea esto (= NOW()) desde el panel para pedir a los clientes
+    // que actualicen. El cliente solo dispara el update si este timestamp es
+    // POSTERIOR a su arranque (ver MainWindow.CheckUpdateRequestAsync), asi un
+    // request viejo no relanza updates en cada arranque.
+    [JsonPropertyName("update_requested_at")] public string? UpdateRequestedAt { get; set; }
 }
 
 // Override de control por evaluacion (tabla evaluation_control).

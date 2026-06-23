@@ -68,15 +68,27 @@ public static class UpdateService
         }
     }
 
-    /// <summary>Version actual de la app (para reportar al panel).</summary>
+    /// <summary>
+    /// Version actual de la app (para mostrar en la UI y reportar al panel).
+    /// Lazy-init del UpdateManager: leer CurrentVersion NO toca la red (solo
+    /// CheckForUpdatesAsync lo hace), asi que es seguro instanciarlo aca para
+    /// obtener la version REAL del paquete Velopack (la del tag de release),
+    /// que puede diferir de la version del ensamblado. Fallback a assembly.
+    /// </summary>
     public static string CurrentVersion()
     {
         try
         {
-            return _mgr?.CurrentVersion?.ToString()
+            _mgr ??= new UpdateManager(new GithubSource(RepoUrl, null, prerelease: false));
+            var v = _mgr.IsInstalled ? _mgr.CurrentVersion?.ToString() : null;
+            return v
                 ?? System.Reflection.Assembly.GetEntryAssembly()?
                     .GetName().Version?.ToString() ?? "dev";
         }
-        catch { return "dev"; }
+        catch
+        {
+            return System.Reflection.Assembly.GetEntryAssembly()?
+                .GetName().Version?.ToString() ?? "dev";
+        }
     }
 }

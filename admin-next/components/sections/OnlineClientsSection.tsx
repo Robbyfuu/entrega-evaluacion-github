@@ -30,6 +30,17 @@ import { Skeleton } from "@/components/ui/skeleton";
 
 const ONLINE_WINDOW_MS = 90_000;
 
+// Compara versiones "x.y.z": >0 si a>b, <0 si a<b, 0 iguales.
+function cmpVer(a: string, b: string): number {
+  const pa = a.split(".").map((n) => parseInt(n, 10) || 0);
+  const pb = b.split(".").map((n) => parseInt(n, 10) || 0);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const d = (pa[i] ?? 0) - (pb[i] ?? 0);
+    if (d !== 0) return d;
+  }
+  return 0;
+}
+
 interface OnlineClientsSectionProps {
   onOpenProcesses: (client: OnlineClientRow) => void;
   onOnlineCountChange: (count: number) => void;
@@ -150,6 +161,37 @@ export function OnlineClientsSection({
     );
   }
 
+  // Pide a TODOS los clientes que actualicen: setea control.update_requested_at
+  // = NOW(). Los clientes que ya estaban abiertos lo ven en su AdminTick y
+  // disparan el update (manual; no hay fetch automatico). Update real solo si
+  // hay version nueva publicada.
+  async function requestUpdateForAll() {
+    if (
+      !window.confirm(
+        "Pedir a TODOS los PCs conectados que busquen actualizacion?\n" +
+          "Los que tengan version nueva se reiniciaran para aplicarla."
+      )
+    )
+      return;
+    const { error: err } = await supabase
+      .from("control")
+      .update({ update_requested_at: new Date().toISOString() })
+      .eq("id", 1);
+    window.alert(
+      err
+        ? "Error: " + err.message
+        : "✓ Solicitud enviada. Los PCs abiertos buscaran actualizacion en <20s."
+    );
+  }
+
+  // Version mas alta vista entre los conectados = referencia para marcar
+  // desactualizados (no hardcodeamos la ultima version).
+  const latestVersion = onlineData.reduce<string | null>((max, c) => {
+    const v = c.app_version;
+    if (!v) return max;
+    return !max || cmpVer(v, max) > 0 ? v : max;
+  }, null);
+
   const emptyMessage =
     rows.length > 0
       ? `Sin PCs conectados ahora (${rows.length} en total, ninguno con heartbeat reciente).`
@@ -167,9 +209,16 @@ export function OnlineClientsSection({
           <span className="ml-auto inline-flex h-6 min-w-6 items-center justify-center rounded-full bg-emerald-500/10 px-2 text-sm font-semibold text-emerald-500 tabular-nums">
             {onlineData.length}
           </span>
+          <Button variant="outline" size="sm" onClick={requestUpdateForAll}>
+            <RefreshCw className="size-3.5" />
+            Solicitar actualización
+          </Button>
         </CardTitle>
         <CardDescription>
           Click en una fila para ver los programas abiertos en ese PC.
+          {latestVersion ? (
+            <> Última versión vista: <strong className="font-semibold text-foreground">v{latestVersion}</strong>.</>
+          ) : null}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -183,6 +232,7 @@ export function OnlineClientsSection({
               <TableHead className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Apps abiertas</TableHead>
               <TableHead className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Internet</TableHead>
               <TableHead className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Lockdown</TableHead>
+              <TableHead className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Versión</TableHead>
               <TableHead className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Acción</TableHead>
             </TableRow>
           </TableHeader>
@@ -202,13 +252,13 @@ export function OnlineClientsSection({
               ))
             ) : error ? (
               <TableRow>
-                <TableCell colSpan={8} className="py-8 text-center text-destructive">
+                <TableCell colSpan={9} className="py-8 text-center text-destructive">
                   Error: {error}
                 </TableCell>
               </TableRow>
             ) : onlineData.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={8} className="py-10">
+                <TableCell colSpan={9} className="py-10">
                   <div className="flex flex-col items-center gap-2 text-center text-muted-foreground">
                     <MonitorOff className="size-8 text-muted-foreground/40" />
                     <p className="text-sm">{emptyMessage}</p>
@@ -271,6 +321,24 @@ export function OnlineClientsSection({
                       >
                         {c.lockdown_state === "active" ? "ACTIVO" : "no"}
                       </Badge>
+                    </TableCell>
+                    <TableCell>
+                      {c.app_version ? (
+                        <Badge
+                          solidColor={
+                            latestVersion && cmpVer(c.app_version, latestVersion) < 0
+                              ? BADGE.danger
+                              : BADGE.neutral
+                          }
+                        >
+                          v{c.app_version}
+                          {latestVersion && cmpVer(c.app_version, latestVersion) < 0
+                            ? " ⚠"
+                            : ""}
+                        </Badge>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
                     </TableCell>
                     <TableCell onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center gap-1.5">
