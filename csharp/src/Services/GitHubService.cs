@@ -267,16 +267,26 @@ public class GitHubService
         catch { return null; }
     }
 
-    public async Task<List<RepoInvitation>> GetPendingInvitationsAsync()
+    /// <summary>
+    /// Lista las invitaciones de repo pendientes del alumno.
+    ///
+    /// Devuelve null en CUALQUIER error de red/parseo o sin sesion => el caller
+    /// trata null como "no se pudo verificar invitaciones" y NUNCA como "0
+    /// invitaciones". Mismo patron null-vs-vacio que SupabaseClient.GetBlocklistAsync:
+    /// null y [] significan cosas distintas (null=fallo/desconocido, []=no hay
+    /// invitaciones pendientes). Tragarse el error a lista vacia hacia que el
+    /// banner mostrara "0 pendientes" cuando en realidad no se pudo consultar.
+    /// </summary>
+    public async Task<List<RepoInvitation>?> GetPendingInvitationsAsync()
     {
-        if (!IsAuthenticated) return new();
+        if (!IsAuthenticated) return null;
         try
         {
             var json = await Http.GetStringAsync(
                 "https://api.github.com/user/repository_invitations");
-            return JsonSerializer.Deserialize<List<RepoInvitation>>(json, JsonOpts) ?? new();
+            return JsonSerializer.Deserialize<List<RepoInvitation>>(json, JsonOpts);
         }
-        catch { return new(); }
+        catch { return null; }
     }
 
     public async Task<bool> AcceptInvitationAsync(long invitationId)

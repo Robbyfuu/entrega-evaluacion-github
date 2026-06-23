@@ -5,6 +5,7 @@ import { supabase } from "@/lib/supabase";
 import type { AssignmentRow, AssignmentAcceptanceRow, AssignmentSubmissionRow, EvaluationRow } from "@/lib/types";
 import { useSectionLookup } from "@/hooks/useSectionLookup";
 import { useEvaluations } from "@/hooks/useEvaluations";
+import { useEnrollmentCounts } from "@/hooks/useEnrollmentCounts";
 import { BADGE } from "@/lib/colors";
 import { Badge } from "@/components/ui/Badge";
 
@@ -24,6 +25,7 @@ export function AssignmentsSection() {
 
   const { sections, sectionById, courseById } = useSectionLookup();
   const { rows: evaluations } = useEvaluations();
+  const { countForSection } = useEnrollmentCounts();
 
   // Section codes come from the DB (dynamic) plus any extra value seen in
   // existing rows, so the editor never hides a row.
@@ -115,6 +117,28 @@ export function AssignmentsSection() {
       }
     }
     return r.section || "Todas";
+  };
+
+  // Resolves the section_id an assignment belongs to: prefer its evaluation's
+  // section, fall back to its section TEXT code -> sections lookup. Returns null
+  // for "all sections" assignments (no roster denominator applies).
+  const sectionIdForAssignment = (r: AssignmentRow): number | null => {
+    if (r.evaluation_id) {
+      const ev = evaluations.find((e) => e.id === r.evaluation_id);
+      if (ev) return ev.section_id;
+    }
+    if (r.section) {
+      const sec = sections.find((s) => s.code === r.section);
+      if (sec) return sec.id;
+    }
+    return null;
+  };
+
+  // Renders "X de N" when the assignment maps to a section with a roster,
+  // otherwise just "X" (no enrolled denominator for all-sections tasks).
+  const tally = (count: number, sectionId: number | null) => {
+    const denom = countForSection(sectionId);
+    return denom && denom > 0 ? `${count} de ${denom}` : String(count);
   };
 
   async function addAssignment() {
@@ -286,6 +310,9 @@ export function AssignmentsSection() {
           ) : (
             rows.map((a) => {
               const label = sectionLabel(a);
+              const secId = sectionIdForAssignment(a);
+              const accepted = acceptanceCount.get(String(a.id)) ?? 0;
+              const submitted = submissionCount.get(String(a.id)) ?? 0;
               return (
                 <tr key={a.id}>
                   <td>
@@ -316,8 +343,8 @@ export function AssignmentsSection() {
                       <span style={{ color: "var(--text-faint)", fontSize: 12 }}>—</span>
                     )}
                   </td>
-                  <td className="mono">{acceptanceCount.get(String(a.id)) ?? 0}</td>
-                  <td className="mono">{submissionCount.get(String(a.id)) ?? 0}</td>
+                  <td className="mono">{tally(accepted, secId)}</td>
+                  <td className="mono">{tally(submitted, secId)}</td>
                   <td>
                     <Badge solidColor={a.active ? BADGE.success : BADGE.neutral}>
                       {a.active ? "ACTIVA" : "inactiva"}

@@ -40,6 +40,14 @@ public partial class MainWindow : Window
     private List<SectionRow> _sections = new();
     private List<Evaluation> _currentEvaluations = new();
 
+    // Roster: confirmacion de matricula del alumno actual contra enrollments
+    // (via RPC get_my_enrollment, no-PII). null = todavia no consultado.
+    // Confirmed=false => no se pudo confirmar (NO equivale a "no matriculado").
+    // Es ADITIVO: solo endurece EXPECTED cuando hay match; en no-match o
+    // no-confirmado se cae al comportamiento por defecto, sin hard-block y sin
+    // suprimir entregas pendientes (la verdad de entrega es por github_username).
+    private MyEnrollment? _enrollment;
+
     private DispatcherTimer _adminTimer = null!;
 
     // Evita disparar handlers durante la carga inicial de combos.
@@ -609,15 +617,25 @@ public partial class MainWindow : Window
         Log($"OK {count} repos cargados.");
         Status($"Repos disponibles: {count}");
 
+        // Chequear invitaciones pendientes SIEMPRE, sin importar cuantos repos
+        // tenga el alumno: un alumno que ya posee >=1 repo igual puede tener
+        // invitaciones nuevas sin aceptar. Antes esto vivia detras del gate
+        // "if (count == 0)" y se perdia para alumnos que ya tenian repos.
+        // null = no se pudo verificar (sentinel de error), distinto de lista
+        // vacia = no hay invitaciones.
+        var invites = await _gh.GetPendingInvitationsAsync();
+        if (invites == null)
+        {
+            Log("No se pudo verificar invitaciones (error de red/API). Reintenta.");
+        }
+        else if (invites.Count > 0)
+        {
+            Log($"Tienes {invites.Count} invitacion(es) pendiente(s).");
+            if (await AcceptInvitationsAsync(invites)) { await Task.Delay(2000); await LoadUserReposAsync(); return; }
+        }
+
         if (count == 0)
         {
-            // Chequear invitaciones pendientes SIEMPRE
-            var invites = await _gh.GetPendingInvitationsAsync();
-            if (invites.Count > 0)
-            {
-                Log($"Tienes {invites.Count} invitacion(es) pendiente(s).");
-                if (await AcceptInvitationsAsync(invites)) { await Task.Delay(2000); await LoadUserReposAsync(); return; }
-            }
             var asg = await _sb.GetActiveAssignmentsAsync(StudentSection.GetEvaluationId());
             asg = FilterBySection(asg);
             if (asg.Count > 0)
@@ -632,11 +650,43 @@ public partial class MainWindow : Window
         var list = string.Join("\n", invites.Select(i => $"  - {i.Repository?.FullName} (de @{i.Inviter?.Login})"));
         var r = MessageBox.Show($"Tienes {invites.Count} invitacion(es):\n\n{list}\n\nAceptar todas?", "Invitaciones pendientes", MessageBoxButton.YesNo, MessageBoxImage.Question);
         if (r != MessageBoxResult.Yes) return false;
+
+        // Tareas activas de la seccion para mapear invitacion -> assignment por
+        // prefijo de slug y registrar la aceptacion en BD.
+        var asg = FilterBySection(await _sb.GetActiveAssignmentsAsync(StudentSection.GetEvaluationId()));
+        var me = _user?.Login;
+        var evalOrg = CurrentEvaluationOrg();
+
         int ok = 0;
         var urls = new List<string>();
         foreach (var inv in invites)
         {
-            if (await _gh.AcceptInvitationAsync(inv.Id)) { ok++; if (inv.Repository != null) urls.Add($"https://github.com/{inv.Repository.FullName}"); }
+            if (!await _gh.AcceptInvitationAsync(inv.Id)) continue;
+            ok++;
+            var repoFullName = inv.Repository?.FullName;
+            if (inv.Repository != null) urls.Add($"https://github.com/{repoFullName}");
+
+            // record_acceptance SINCRONO antes de cualquier recompute del banner:
+            // cierra el transitorio "aceptada en GitHub pero sin reconciliar en
+            // BD". Al await aqui, el recompute posterior (LoadUserReposAsync /
+            // UpdateAssignmentsBanner) ya ve la aceptacion registrada. Reusa el
+            // MISMO matcher LONGEST-PREFIX-WINS que el banner para no divergir y
+            // evitar que un slug corto registre la aceptacion contra la tarea
+            // equivocada.
+            if (!string.IsNullOrEmpty(me))
+            {
+                var repoName = inv.Repository?.Name ?? "";
+                var match = PickAssignmentByLongestPrefix(
+                    asg, repoName, inv.Inviter?.Login, evalOrg);
+                if (match != null)
+                {
+                    var repoUrl = repoFullName != null
+                        ? $"https://github.com/{repoFullName}"
+                        : $"https://github.com/{me}/{repoName}";
+                    await _sb.RecordAcceptanceAsync(me, match.Id, match.Title,
+                        StudentSection.Get(), repoName, repoUrl, StudentSection.GetEvaluationId());
+                }
+            }
         }
         if (ok > 0)
         {
@@ -772,6 +822,45 @@ public partial class MainWindow : Window
     }
 
     // ===================== Classroom assignments =====================
+
+    /// <summary>
+    /// Confirma la matricula del alumno contra el roster (RPC get_my_enrollment,
+    /// no-PII) y cachea el resultado en _enrollment. Es ADITIVO: el alumno sigue
+    /// eligiendo su seccion como hasta ahora; esto SOLO agrega una confirmacion
+    /// (y un endurecimiento opcional de EXPECTED cuando hay match).
+    ///
+    /// NUNCA bloquea: si no hay sesion o seccion, o si la RPC no responde
+    /// (Confirmed=false), se cae al comportamiento por defecto sin endurecer.
+    /// </summary>
+    private async Task RefreshEnrollmentAsync()
+    {
+        var me = _user?.Login;
+        var sectionId = StudentSection.GetSectionId();
+        if (string.IsNullOrEmpty(me) || sectionId is not { } sid)
+        {
+            // Sin datos para consultar: no hay confirmacion. No es "no
+            // matriculado"; simplemente no se intento. Comportamiento por
+            // defecto (sin endurecer EXPECTED).
+            _enrollment = null;
+            return;
+        }
+
+        _enrollment = await _sb.GetMyEnrollmentAsync(me, sid);
+    }
+
+    /// <summary>
+    /// true solo cuando hay una matricula CONFIRMADA con match en la seccion
+    /// actual. Unica condicion bajo la que se endurece EXPECTED. En no-match o
+    /// no-confirmado (red caida) devuelve false => comportamiento por defecto.
+    /// </summary>
+    private bool RosterMatchConfirmed()
+    {
+        var sectionId = StudentSection.GetSectionId();
+        return _enrollment is { Confirmed: true, Found: true }
+            && sectionId is { } sid
+            && _enrollment.SectionId == sid;
+    }
+
     private List<Assignment> FilterBySection(List<Assignment> all)
     {
         var sec = StudentSection.Get().Trim().ToUpperInvariant();
@@ -790,15 +879,55 @@ public partial class MainWindow : Window
         => $"{Sanitize(title)}-{username.ToLowerInvariant()}";
 
     /// <summary>
-    /// Determina, para cada assignment de la seccion, si el alumno ya lo acepto.
-    /// Una tarea esta ACEPTADA si existe el repo esperado en su cuenta
-    /// ({slug}-{username}) O hay un registro en assignment_acceptances.
-    /// Devuelve el estado por assignment (incluye el repo encontrado si lo hay).
+    /// Prefijo de slug de una tarea de Classroom: {slug-del-titulo}-. GitHub
+    /// Classroom nombra el repo del alumno como {slug}-{login}, pero el login
+    /// puede no coincidir byte a byte con el username GitHub (mayusculas,
+    /// reclaim de cuenta). La invitacion se asocia por PREFIJO de slug, no por
+    /// igualdad exacta con ExpectedClassroomRepo, para no perder invitaciones
+    /// con login distinto al esperado.
     /// </summary>
-    private async Task<List<AssignmentStatus>> ComputeAssignmentStatusesAsync(List<Assignment> asg)
+    private static string ClassroomRepoPrefix(string title)
+        => $"{Sanitize(title)}-";
+
+    /// <summary>
+    /// Org efectiva de la evaluacion activa (para el desempate de invitaciones
+    /// por inviter-org). Resuelve la Evaluation cargada que matchea el
+    /// evaluation_id activo; null si no hay evaluacion resuelta.
+    /// </summary>
+    private string? CurrentEvaluationOrg()
+    {
+        var evalId = StudentSection.GetEvaluationId();
+        if (evalId is not { } id) return null;
+        return _currentEvaluations.FirstOrDefault(e => e.Id == id)?.Org;
+    }
+
+    /// <summary>
+    /// Determina, para cada assignment de la seccion, su estado segun las 5
+    /// senales: OWNED (repo esperado existe), ACCEPTED_DB (assignment_acceptances),
+    /// SUBMITTED (assignment_submissions), INVITED (repository_invitations) y
+    /// EXPECTED (la propia lista asg). Las invitaciones se asocian por PREFIJO
+    /// de slug ({slug}-) con desempate por inviter-org vs Evaluation.Org/Assignment.Org.
+    ///
+    /// El parametro invitations puede ser null (no se pudo consultar la API de
+    /// invitaciones): en ese caso InvitationPending queda en false y el caller
+    /// debe distinguir "desconocido" de "0 invitaciones".
+    ///
+    /// unassociatedInvitations recibe las invitaciones vivas que NO matchean
+    /// ninguna tarea esperada, para que el banner las muestre como
+    /// "invitaciones sin asociar" en vez de descartarlas.
+    /// </summary>
+    private async Task<List<AssignmentStatus>> ComputeAssignmentStatusesAsync(
+        List<Assignment> asg,
+        List<RepoInvitation>? invitations,
+        List<RepoInvitation> unassociatedInvitations)
     {
         var result = new List<AssignmentStatus>();
-        if (asg.Count == 0) return result;
+        if (asg.Count == 0)
+        {
+            // Sin tareas esperadas, toda invitacion viva queda sin asociar.
+            if (invitations != null) unassociatedInvitations.AddRange(invitations);
+            return result;
+        }
 
         // Sin sesion no podemos cruzar contra repos; usamos solo acceptances
         // si hubiera username, pero sin user todo queda pendiente.
@@ -832,6 +961,13 @@ public partial class MainWindow : Window
                 submissionsByAssignment[s.AssignmentId] = s;
             }
 
+        // Invitaciones vivas pendientes de consumir. Se van quitando de este set
+        // a medida que se asocian a una tarea, para luego reportar las sobrantes
+        // como "sin asociar". null = no se pudo consultar (no es lista vacia).
+        var remainingInvites = invitations != null
+            ? new List<RepoInvitation>(invitations)
+            : new List<RepoInvitation>();
+
         foreach (var a in asg)
         {
             string? repoName = null;
@@ -854,6 +990,31 @@ public partial class MainWindow : Window
             var accepted = hasRepo || acceptedIds.Contains(a.Id);
             var submitted = submittedIds.Contains(a.Id);
             submissionsByAssignment.TryGetValue(a.Id, out var sub);
+
+            // Endurecimiento de EXPECTED por roster (solo con match confirmado):
+            // una tarea EXPECTED-only (no la posee, no la acepto, no la entrego)
+            // de seccion GLOBAL/vacia se omite, porque con matricula confirmada
+            // conocemos la seccion exacta del alumno y no necesitamos la pista
+            // global. CRITICO: las tareas que el alumno posee/acepto/entrego
+            // (hasRepo || accepted || submitted) SIEMPRE pasan, sin importar su
+            // seccion ni el roster -> una entrega pendiente real (pendienteEntregar)
+            // NUNCA se suprime. Sin match confirmado, nada se omite (default).
+            // Esto solo filtra que filas EXPECTED entran a result ANTES del
+            // bucketing de 5 senales: no toca filas OWNED/ACCEPTED/SUBMITTED ni
+            // INVITED, asi que el algebra de 3 buckets disjuntos se preserva.
+            if (RosterMatchConfirmed()
+                && !hasRepo && !accepted && !submitted
+                && string.IsNullOrEmpty(a.Section))
+            {
+                continue;
+            }
+
+            // INVITED: la asociacion invitacion<->tarea se resuelve mas abajo en
+            // un paso aparte (longest-prefix-wins), porque procesar las tareas en
+            // el orden de asg permitiria que un slug corto ("tarea-") robe la
+            // invitacion de uno mas especifico ("tarea-extra-"). Aqui solo se
+            // arma el AssignmentStatus; InvitationId/InvitationPending se rellenan
+            // luego con el match determinista.
             result.Add(new AssignmentStatus
             {
                 Assignment = a,
@@ -865,20 +1026,204 @@ public partial class MainWindow : Window
                 SubmittedAt = sub?.SubmittedAt
             });
         }
+
+        // Asociacion determinista invitacion -> tarea con LONGEST-PREFIX-WINS:
+        // se procesan las invitaciones contra las tareas ordenadas por prefijo
+        // descendente (mas especifico primero), de modo que "tarea-extra-"
+        // reclame "tarea-extra-login" antes de que "tarea-" lo capture. Cada
+        // invitacion se asigna a lo sumo a una tarea; el orden de salida (result)
+        // se mantiene en el orden original de asg.
+        foreach (var inv in remainingInvites.ToList())
+        {
+            var match = MatchAssignmentForRepo(result, inv);
+            if (match == null) continue;
+            match.InvitationId = inv.Id;
+            match.InvitationPending = true;
+            remainingInvites.Remove(inv);
+        }
+
+        // Invitaciones vivas que no matchearon ninguna tarea esperada.
+        unassociatedInvitations.AddRange(remainingInvites);
         return result;
+    }
+
+    /// <summary>
+    /// Resuelve, para una invitacion de repo, la tarea (AssignmentStatus) a la
+    /// que pertenece usando LONGEST-PREFIX-WINS. Solo considera tareas aun sin
+    /// invitacion asociada (InvitationPending=false) y delega el algoritmo de
+    /// matching al core compartido PickAssignmentByLongestPrefix para que el
+    /// banner y AcceptInvitationsAsync usen EXACTAMENTE la misma logica.
+    /// </summary>
+    private AssignmentStatus? MatchAssignmentForRepo(
+        List<AssignmentStatus> statuses, RepoInvitation inv)
+    {
+        var repoName = inv.Repository?.Name ?? "";
+        if (repoName.Length == 0) return null;
+
+        // Solo tareas que aun no tienen invitacion: asi cada invitacion se
+        // asigna a lo sumo a una tarea (matching bipartito).
+        var unclaimed = statuses.Where(s => !s.InvitationPending).ToList();
+        var match = PickAssignmentByLongestPrefix(
+            unclaimed.Select(s => s.Assignment),
+            repoName, inv.Inviter?.Login, CurrentEvaluationOrg());
+        if (match == null) return null;
+        return unclaimed.FirstOrDefault(s => ReferenceEquals(s.Assignment, match));
+    }
+
+    /// <summary>
+    /// Core compartido de asociacion invitacion -> tarea con LONGEST-PREFIX-WINS.
+    ///
+    /// Entre las tareas cuyo prefijo de slug ({Sanitize(title)}-) es prefijo del
+    /// nombre del repo invitado, gana la del prefijo MAS LARGO (mas especifica):
+    /// asi "Tarea Extra" ("tarea-extra-") reclama "tarea-extra-login" en vez de
+    /// "Tarea" ("tarea-"), eliminando la colision de prefijos dependiente del
+    /// orden. Desempate entre prefijos de IGUAL longitud: preferir la tarea cuyo
+    /// expectedOrg (evalOrg ?? Assignment.Org) coincide con el inviter; ante
+    /// empate total gana la primera en orden estable de entrada. Devuelve null
+    /// si ninguna tarea matchea. El resultado es DETERMINISTA.
+    /// </summary>
+    private static Assignment? PickAssignmentByLongestPrefix(
+        IEnumerable<Assignment> candidates, string repoName, string? inviter, string? evalOrg)
+    {
+        if (string.IsNullOrEmpty(repoName)) return null;
+
+        Assignment? best = null;
+        int bestLen = -1;
+        bool bestOrgMatch = false;
+        foreach (var a in candidates)
+        {
+            var prefix = ClassroomRepoPrefix(a.Title);
+            if (!repoName.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) continue;
+
+            var expectedOrg = evalOrg ?? a.Org;
+            bool orgMatch = !string.IsNullOrEmpty(expectedOrg)
+                && string.Equals(inviter, expectedOrg, StringComparison.OrdinalIgnoreCase);
+
+            // Prioridad: (1) prefijo mas largo; (2) a igual longitud, el que
+            // coincide en org. Determinista: el primer candidato estable gana
+            // ante empate total.
+            if (prefix.Length > bestLen
+                || (prefix.Length == bestLen && orgMatch && !bestOrgMatch))
+            {
+                best = a;
+                bestLen = prefix.Length;
+                bestOrgMatch = orgMatch;
+            }
+        }
+        return best;
     }
 
     private async Task UpdateAssignmentsBanner()
     {
+        // Confirmar matricula contra el roster ANTES de calcular (el resultado
+        // endurece EXPECTED solo con match; ComputeAssignmentStatusesAsync lo
+        // consulta via RosterMatchConfirmed). Es aditivo y nunca bloquea.
+        await RefreshEnrollmentAsync();
+
         var asg = FilterBySection(await _sb.GetActiveAssignmentsAsync(StudentSection.GetEvaluationId()));
-        var statuses = await ComputeAssignmentStatusesAsync(asg);
-        var pending = statuses.Count(s => !s.Accepted && !s.Submitted);
-        if (pending > 0)
+
+        // Las invitaciones son verdad VIVA y se consultan SIEMPRE (no detras del
+        // gate de "0 repos"): un alumno que ya posee >=1 repo igual puede tener
+        // invitaciones nuevas sin aceptar. null = no se pudo verificar (sentinel
+        // de error), distinto de lista vacia = no hay invitaciones.
+        var invitations = await _gh.GetPendingInvitationsAsync();
+        var unassociated = new List<RepoInvitation>();
+        var statuses = await ComputeAssignmentStatusesAsync(asg, invitations, unassociated);
+
+        // Sentinel de error: si la API de invitaciones fallo, NO afirmar "0
+        // pendientes". El alumno debe saber que el dato no se pudo verificar.
+        if (invitations == null)
         {
-            AssignmentsBannerText.Text = $"Tienes {pending} tarea(s) pendientes";
+            AssignmentsBannerText.Text =
+                "No se pudo verificar invitaciones. Reintenta o avisa al profesor.";
             AssignmentsBanner.Visibility = Visibility.Visible;
+            // No podemos afirmar que haya o no pendientes: dejar el link visible
+            // para que el alumno pueda abrir el dialogo y reintentar.
+            AssignmentsLink.Visibility = Visibility.Visible;
+            return;
         }
-        else AssignmentsBanner.Visibility = Visibility.Collapsed;
+
+        // 5-senales -> 3 buckets DISJUNTOS (nunca sumar conjuntos solapados):
+        //   pendienteAceptar  = EXPECTED ∩ INVITED − OWNED − ACCEPTED_DB
+        //   esperandoInvite   = EXPECTED − INVITED − OWNED − ACCEPTED_DB − SUBMITTED
+        //   pendienteEntregar = (OWNED ∨ ACCEPTED_DB) ∧ ¬SUBMITTED
+        var pendienteAceptar = statuses.Count(s =>
+            s.InvitationPending && !s.Accepted);
+        var esperandoInvite = statuses.Count(s =>
+            !s.InvitationPending && !s.Accepted && !s.Submitted);
+        var pendienteEntregar = statuses.Count(s =>
+            s.Accepted && !s.Submitted);
+
+        // Pendientes accionables: equivalente exacto, en el algebra de 5 senales,
+        // del antiguo `pending = !Accepted && !Submitted` de roster-client. Manda
+        // la visibilidad del link "Aceptar tareas" (que abre el dialogo). Las
+        // invitaciones sin asociar son SOLO informativas y no cuentan aqui.
+        var pendingActionable = pendienteAceptar + esperandoInvite + pendienteEntregar;
+
+        var partes = new List<string>();
+        // Conteo primario del banner: pendienteAceptar.
+        if (pendienteAceptar > 0)
+            partes.Add($"Tienes {pendienteAceptar} tarea(s) pendientes de aceptar");
+        if (esperandoInvite > 0)
+            partes.Add($"{esperandoInvite} esperando invitacion del profesor");
+        if (pendienteEntregar > 0)
+            partes.Add($"{pendienteEntregar} pendientes de entregar");
+        if (unassociated.Count > 0)
+            partes.Add($"{unassociated.Count} invitacion(es) sin asociar");
+
+        // Nota suave de matricula (roster-client R3): cuando NO hay match
+        // confirmado (no matriculado o no se pudo confirmar) se avisa, pero NUNCA
+        // se bloquea ni se ponen los contadores en cero. Las entregas pendientes
+        // (por github_username) se siguen mostrando igual. Compone con el banner
+        // de 5 senales: la nota es una linea adicional, no reemplaza los buckets.
+        var note = EnrollmentSoftNote();
+
+        if (partes.Count > 0 || note != null)
+        {
+            // Buckets en una linea (separados por ' · '); la nota suave, si la
+            // hay, va en una linea aparte debajo.
+            var lineas = new List<string>();
+            if (partes.Count > 0) lineas.Add(string.Join(" · ", partes));
+            if (note != null) lineas.Add(note);
+            AssignmentsBannerText.Text = string.Join("\n", lineas);
+            AssignmentsBanner.Visibility = Visibility.Visible;
+            // El link "Aceptar tareas" solo tiene sentido si hay pendientes
+            // accionables (no por una nota de matricula sola ni por invitaciones
+            // sin asociar, que son informativas).
+            AssignmentsLink.Visibility = pendingActionable > 0 ? Visibility.Visible : Visibility.Collapsed;
+        }
+        else
+        {
+            AssignmentsBanner.Visibility = Visibility.Collapsed;
+            AssignmentsLink.Visibility = Visibility.Visible;
+        }
+    }
+
+    /// <summary>
+    /// Texto suave de confirmacion de matricula (o null si no corresponde).
+    /// SOLO informativo: nunca bloquea ni altera contadores. Se muestra cuando
+    /// hay sesion + seccion elegidas pero el roster no confirma el match:
+    ///   - Confirmed=false  => "No pudimos confirmar tu matricula" (red caida).
+    ///   - Confirmed + !Found => "No encontramos tu matricula..." (no en roster).
+    /// Con match confirmado (o sin datos para consultar) no se muestra nota.
+    /// </summary>
+    private string? EnrollmentSoftNote()
+    {
+        // Sin sesion o seccion no intentamos confirmar: sin nota.
+        if (string.IsNullOrEmpty(_user?.Login) || StudentSection.GetSectionId() is null)
+            return null;
+
+        if (_enrollment is null)
+            return null;
+
+        if (RosterMatchConfirmed())
+            return null;
+
+        if (!_enrollment.Confirmed)
+            return "No pudimos confirmar tu matricula (sin conexion). Igual puedes trabajar normalmente.";
+
+        // Confirmado pero sin match en el roster de esta seccion.
+        return "No encontramos tu matricula en esta seccion. Revisa la seccion elegida o avisa al profesor.";
     }
 
     private async Task ShowAssignmentsDialog()
@@ -886,7 +1231,11 @@ public partial class MainWindow : Window
         var asg = FilterBySection(await _sb.GetActiveAssignmentsAsync(StudentSection.GetEvaluationId()));
         if (asg.Count == 0) { MessageBox.Show("No hay tareas activas.", "Sin tareas", MessageBoxButton.OK, MessageBoxImage.Information); return; }
 
-        var statuses = await ComputeAssignmentStatusesAsync(asg);
+        // Consultar invitaciones para mostrar el estado "Invitacion pendiente"
+        // en el dialogo (null = no se pudo verificar; el dialogo igual abre).
+        var invitations = await _gh.GetPendingInvitationsAsync();
+        var unassociated = new List<RepoInvitation>();
+        var statuses = await ComputeAssignmentStatusesAsync(asg, invitations, unassociated);
         var dlg = new AssignmentsWindow(statuses, OpenAcceptUrl, OpenUrl, SubmitRepo) { Owner = this };
         dlg.ShowDialog();
         // Al cerrar, refrescar el banner por si el alumno acepto o entrego algo.
@@ -914,10 +1263,14 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// Abre la URL de aceptacion de una tarea en el navegador embebido y, en
-    /// paralelo, registra la aceptacion en BD para que el profesor la vea.
+    /// Abre la URL de aceptacion de una tarea en el navegador embebido y
+    /// registra la aceptacion en BD para que el profesor la vea. La aceptacion
+    /// se registra SINCRONAMENTE (await) antes de abrir el navegador, de modo
+    /// que el recompute del banner al cerrar el dialogo ya vea la fila en BD.
+    /// Es async void porque es un callback de AssignmentsWindow (Action), pero
+    /// el await ocurre mientras el dialogo sigue abierto.
     /// </summary>
-    private void OpenAcceptUrl(AssignmentStatus status)
+    private async void OpenAcceptUrl(AssignmentStatus status)
     {
         var a = status.Assignment;
         var me = _user?.Login;
@@ -925,7 +1278,7 @@ public partial class MainWindow : Window
         {
             var repoName = status.RepoName ?? ExpectedClassroomRepo(a.Title, me);
             var repoUrl = status.RepoUrl ?? $"https://github.com/{me}/{repoName}";
-            _ = _sb.RecordAcceptanceAsync(me, a.Id, a.Title, StudentSection.Get(), repoName, repoUrl, StudentSection.GetEvaluationId());
+            await _sb.RecordAcceptanceAsync(me, a.Id, a.Title, StudentSection.Get(), repoName, repoUrl, StudentSection.GetEvaluationId());
         }
         if (!string.IsNullOrEmpty(a.ClassroomUrl))
             OpenUrl(a.ClassroomUrl);
@@ -1047,7 +1400,16 @@ public partial class MainWindow : Window
 
     private async Task CheckAdminConfigAsync()
     {
-        var cfg = await _sb.GetControlAsync();
+        // Control EFECTIVO de la evaluacion actual: override por evaluacion ??
+        // global id=1 (no el global pelado). Si no se puede resolver (red/null)
+        // degradamos CERRADO: no tocamos el estado actual (return) en vez de
+        // soltar un bloqueo activo. La APERTURA (aca) y la LIBERACION
+        // (IsForceLockdownAsync en checkStillLocked) leen EXACTAMENTE la misma
+        // resolucion y comparten el cache _lastKnownLock: esta llamada de
+        // apertura ya SIEMBRA el cache (lo hace GetEffectiveControlAsync), asi el
+        // primer poll de liberacion -aunque su fetch falle- retiene el lock
+        // recien aplicado en vez de soltarlo.
+        var cfg = await _sb.GetEffectiveControlAsync(StudentSection.GetEvaluationId());
         if (cfg == null) return;
 
         if (cfg.InternetBlock && !_internetBlocked) { Log("[ADMIN] Bloqueo de internet activado."); InternetBlockService.Block(); _internetBlocked = true; }
@@ -1110,8 +1472,12 @@ public partial class MainWindow : Window
 
         var internetState = InternetBlockService.IsBlocked() ? "blocked" : "free";
         var lockdownState = (_remoteLockdownActive || _targetedLockdownActive) ? "active" : "none";
+        // Atribuye la presencia a la evaluacion actual del alumno. El ON CONFLICT
+        // de online_clients NO cambia en este slice (sigue pc_name+github_username);
+        // el aislamiento de re-rendiciones por evaluacion es PR5.
         await _sb.SendHeartbeatAsync(Environment.MachineName, _user.Login, _user.Email,
-            StudentSection.Get(), procs, internetState, lockdownState);
+            StudentSection.Get(), procs, internetState, lockdownState,
+            StudentSection.GetEvaluationId());
     }
 
     // ===================== Helpers =====================

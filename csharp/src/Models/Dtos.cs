@@ -11,6 +11,21 @@ public class ControlState
     [JsonPropertyName("updated_by")] public string? UpdatedBy { get; set; }
 }
 
+// Override de control por evaluacion (tabla evaluation_control).
+// A diferencia de ControlState (control global id=1), aca los campos son
+// NULLABLE: NULL significa "heredar el valor del control global". El control
+// EFECTIVO de una evaluacion se resuelve campo a campo como
+// (override.campo ?? global.campo). Ver SupabaseClient.GetEvaluationControlAsync.
+public class EvaluationControl
+{
+    [JsonPropertyName("evaluation_id")] public long EvaluationId { get; set; }
+    [JsonPropertyName("internet_block")] public bool? InternetBlock { get; set; }
+    [JsonPropertyName("force_lockdown")] public bool? ForceLockdown { get; set; }
+    [JsonPropertyName("message")] public string? Message { get; set; }
+    [JsonPropertyName("updated_at")] public string? UpdatedAt { get; set; }
+    [JsonPropertyName("updated_by")] public string? UpdatedBy { get; set; }
+}
+
 // ===== Multi-evaluacion: curso > seccion > evaluacion =====
 // Fetcheados de Supabase al arrancar; fallback a Config.cs si la BD no responde.
 
@@ -92,10 +107,21 @@ public class AssignmentStatus
     public string? SubmittedRepoUrl { get; set; }
     public string? SubmittedAt { get; set; }
 
+    // Invitacion de repo pendiente (repository_invitations) asociada a esta
+    // tarea por prefijo de slug. InvitationId es el id de la invitacion en
+    // GitHub (para aceptarla); InvitationPending indica que hay una invitacion
+    // viva que el alumno aun no acepta. Estas dos senales alimentan el banner
+    // (bucket pendienteAceptar) y son independientes de Accepted/Submitted.
+    public long? InvitationId { get; set; }
+    public bool InvitationPending { get; set; }
+
     // Bindings para la UI (DataTemplate de AssignmentsWindow).
     public string Title => Assignment.Title;
     public string? ClassroomUrl => Assignment.ClassroomUrl;
-    public string StatusLabel => Submitted ? "Entregada ✓" : Accepted ? "Aceptada ✓" : "Pendiente";
+    public string StatusLabel => Submitted ? "Entregada ✓"
+        : Accepted ? "Aceptada ✓"
+        : InvitationPending ? "Invitacion pendiente"
+        : "Pendiente";
     public bool IsPending => !Accepted && !string.IsNullOrEmpty(Assignment.ClassroomUrl);
     public bool HasRepoLink => Accepted && !string.IsNullOrEmpty(RepoUrl);
     public bool CanSubmit => Accepted || Assignment.AllowsManualSubmission;
@@ -111,6 +137,43 @@ public class AssignmentStatus
             (System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#16A34A"))
         : new System.Windows.Media.SolidColorBrush(
             (System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#D97706"));
+}
+
+// Confirmacion de matricula del alumno actual contra el roster (enrollments).
+// Se obtiene SOLO via la RPC get_my_enrollment (SECURITY DEFINER, no-PII): el
+// cliente anon NO puede leer enrollments directo (RLS authenticated-only).
+// La RPC devuelve unicamente campos de confirmacion (section_id, status, found),
+// nunca full_name/email/blackboard_student_id.
+//
+// Confirmed distingue los tres estados que el cliente necesita:
+//   - Confirmed=true,  Found=true  => matricula confirmada (match en roster).
+//   - Confirmed=true,  Found=false => la RPC respondio que NO hay matricula.
+//   - Confirmed=false             => no se pudo confirmar (red/parseo fallo);
+//                                     NO es lo mismo que "no matriculado".
+// El cliente NUNCA debe tratar Confirmed=false como un "no matriculado"
+// definitivo: en ese caso se cae al comportamiento por defecto (sin endurecer
+// EXPECTED y sin suprimir entregas pendientes).
+public sealed class MyEnrollment
+{
+    public bool Found { get; init; }
+    public long? SectionId { get; init; }
+    public string? Status { get; init; }
+
+    // true solo cuando la RPC respondio (con o sin match). false = no se pudo
+    // confirmar (fallo de red/parseo): centinela "could not confirm".
+    public bool Confirmed { get; init; }
+
+    // Centinela: la RPC no respondio (fallo de red/parseo). No es "no matriculado".
+    public static MyEnrollment CouldNotConfirm => new() { Confirmed = false, Found = false };
+}
+
+// Fila cruda devuelta por la RPC get_my_enrollment (PostgREST la entrega como
+// arreglo de filas con estas columnas). Se mapea a MyEnrollment en el cliente.
+public sealed class MyEnrollmentRow
+{
+    [JsonPropertyName("section_id")] public long? SectionId { get; set; }
+    [JsonPropertyName("status")] public string? Status { get; set; }
+    [JsonPropertyName("found")] public bool Found { get; set; }
 }
 
 public class TargetedLockdown

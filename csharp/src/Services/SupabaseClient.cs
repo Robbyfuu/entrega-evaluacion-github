@@ -19,6 +19,21 @@ public class SupabaseClient
         DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull
     };
 
+    // ===== Fail-safe del lockdown (degradar CERRADO) =====
+    // Ultimo estado de force_lockdown EFECTIVO conocido (override ?? global)
+    // para la evaluacion actual del cliente. null = nunca se resolvio.
+    // Si una resolucion/fetch falla (red/null), RETENEMOS este valor en vez de
+    // soltar a un alumno bloqueado por un parpadeo de red. Solo el primer arranque
+    // sin estado previo (cache vacio) cae al default global (false). Asi un corte
+    // de red transitorio NUNCA puede liberar a un alumno en medio del examen.
+    private bool? _lastKnownLock;
+
+    // Mismo fail-safe CERRADO para el lockdown DIRIGIDO (targeted_lockdowns).
+    // null = nunca se resolvio. Distingue "query OK, sin fila activa" (=> false,
+    // siembra cache) de "fetch fallido" (=> retener cache). Un blip de red en un
+    // lock dirigido NUNCA libera al alumno.
+    private bool? _lastKnownTargeted;
+
     public SupabaseClient()
     {
         // CRITICO: UseProxy=false. Sin esto, cuando bloqueamos internet (proxy
@@ -44,6 +59,111 @@ public class SupabaseClient
             return arr is { Length: > 0 } ? arr[0] : null;
         }
         catch { return null; }
+    }
+
+    /// <summary>
+    /// Lee el override de control de una evaluacion (tabla evaluation_control)
+    /// distinguiendo tres casos:
+    ///   - fila encontrada  => (true, fila)
+    ///   - sin fila (la evaluacion hereda el global) => (true, null)
+    ///   - FETCH FALLIDO (red/parseo)               => (false, null)
+    /// El tercer flag (ok=false) permite al resolver degradar CERRADO en vez de
+    /// confundir "no hay override" con "no pude leer el override". Los campos de
+    /// la fila son nullables: NULL en un campo = heredar el global para ESE campo.
+    /// </summary>
+    public async Task<(bool ok, EvaluationControl? row)> GetEvaluationControlAsync(long evaluationId)
+    {
+        try
+        {
+            var json = await _http.GetStringAsync(
+                Rest($"evaluation_control?evaluation_id=eq.{evaluationId}&select=*"));
+            var arr = JsonSerializer.Deserialize<EvaluationControl[]>(json, JsonOpts);
+            return (true, arr is { Length: > 0 } ? arr[0] : null);
+        }
+        catch { return (false, null); }
+    }
+
+    /// <summary>
+    /// Resuelve el control EFECTIVO de la evaluacion actual del cliente:
+    /// override por evaluacion (si existe la fila) ELSE control global id=1,
+    /// resolviendo campo a campo como (override.campo ?? global.campo).
+    ///
+    /// REGLA DE RESOLUCION (la misma en todos los call sites):
+    ///   EFFECTIVE = per-eval override (si hay fila) ELSE global id=1.
+    ///   Cada campo individual: override.campo ?? global.campo.
+    /// Orden de resolucion concreto:
+    ///   1. override row existe                 -> usar override (?? global por campo)
+    ///   2. override query OK pero vacia        -> usar global
+    ///   3. override query FALLA                -> intentar global; si global OK -> global
+    ///                                             (asi el control GLOBAL sigue vivo aunque
+    ///                                              evaluation_control no este desplegada/falle)
+    ///   4. override FALLA y global FALLA        -> null (degradar CERRADO)
+    ///
+    /// FUENTE UNICA DEL CACHE: cada vez que esto RESUELVE un ControlState
+    /// no-null (override o global), siembra _lastKnownLock con el
+    /// force_lockdown resuelto. Asi TANTO la ruta de APERTURA
+    /// (CheckAdminConfigAsync) COMO la de LIBERACION (IsForceLockdownAsync)
+    /// calientan/leen el MISMO cache, y un lock recien aplicado por la apertura
+    /// queda cacheado antes del primer poll de liberacion.
+    ///
+    /// FAIL-SAFE (degradar CERRADO): solo devuelve null cuando NO puede resolver
+    /// el control con certeza (ambos fetch fallan). Un null aqui NUNCA debe
+    /// interpretarse como "desbloquear": el caller retiene su ultimo conocido.
+    ///
+    /// evaluationId == null (alumno sin evaluacion elegida): no hay override
+    /// posible, se usa el global directamente (null si el global fallo).
+    /// </summary>
+    public async Task<ControlState?> GetEffectiveControlAsync(long? evaluationId)
+    {
+        if (evaluationId is not { } evalId)
+        {
+            // Sin evaluacion elegida => control global tal cual (o null si fallo).
+            var g0 = await GetControlAsync();
+            if (g0 != null) _lastKnownLock = g0.ForceLockdown;
+            return g0;
+        }
+
+        var (ok, ovr) = await GetEvaluationControlAsync(evalId);
+
+        if (!ok)
+        {
+            // FIX 3: el fetch del override fallo. NO degradamos CERRADO de una:
+            // primero intentamos el control global, asi el alumno NO pierde el
+            // bloqueo/internet_block global cuando evaluation_control no esta
+            // desplegada o tuvo un blip. Solo si el global TAMBIEN falla
+            // devolvemos null (degradar CERRADO; el caller retiene su cache).
+            var gFallback = await GetControlAsync();
+            if (gFallback != null) _lastKnownLock = gFallback.ForceLockdown;
+            return gFallback;
+        }
+
+        var global = await GetControlAsync();
+
+        // Sin override: el control efectivo es el global (null si el global fallo
+        // => el caller degrada CERRADO reteniendo el ultimo conocido).
+        if (ovr == null)
+        {
+            if (global != null) _lastKnownLock = global.ForceLockdown;
+            return global;
+        }
+
+        // Con override: si el override NO fija force_lockdown (lo deja NULL) y el
+        // global no respondio, no puedo resolver el lock efectivo => null
+        // (degradar CERRADO). Si el override fija force_lockdown explicitamente,
+        // ese valor manda aunque el global no responda.
+        if (ovr.ForceLockdown == null && global == null) return null;
+
+        // Resolucion campo a campo: override.campo ?? global.campo.
+        var effective = new ControlState
+        {
+            InternetBlock = ovr.InternetBlock ?? global?.InternetBlock ?? false,
+            ForceLockdown = ovr.ForceLockdown ?? global?.ForceLockdown ?? false,
+            Message = ovr.Message ?? global?.Message,
+            UpdatedAt = ovr.UpdatedAt ?? global?.UpdatedAt,
+            UpdatedBy = ovr.UpdatedBy ?? global?.UpdatedBy
+        };
+        _lastKnownLock = effective.ForceLockdown;
+        return effective;
     }
 
     // ===== Multi-evaluacion: cursos, secciones, evaluaciones =====
@@ -242,13 +362,81 @@ public class SupabaseClient
         catch { }
     }
 
+    // ===== Roster: confirmacion de matricula (RPC SECURITY DEFINER) =====
+
+    /// <summary>
+    /// Confirma la matricula del alumno actual contra el roster (enrollments)
+    /// via la RPC get_my_enrollment. Es el UNICO acceso del cliente anon a esa
+    /// tabla: enrollments tiene RLS authenticated-only y la RPC (SECURITY
+    /// DEFINER) devuelve SOLO campos de confirmacion no-PII (section_id, status,
+    /// found). Nunca expone full_name/email/blackboard_student_id.
+    ///
+    /// Distingue tres resultados:
+    ///   - Confirmed=true, Found=true  => match en el roster (matricula confirmada).
+    ///   - Confirmed=true, Found=false => la RPC respondio sin match (no matriculado).
+    ///   - Confirmed=false             => no se pudo confirmar (red/parseo fallo).
+    ///
+    /// CRITICO: en error de red/parseo devuelve el centinela CouldNotConfirm
+    /// (Confirmed=false), NUNCA un found=false que se haga pasar por un "no
+    /// matriculado" definitivo. El caller cae al comportamiento por defecto en
+    /// ese caso (no endurece EXPECTED, no suprime entregas pendientes).
+    /// Devuelve null solo cuando faltan datos para llamar (sin username/seccion).
+    /// </summary>
+    public async Task<MyEnrollment?> GetMyEnrollmentAsync(string githubUsername, long sectionId)
+    {
+        if (string.IsNullOrWhiteSpace(githubUsername)) return null;
+        try
+        {
+            var payload = JsonSerializer.Serialize(new
+            {
+                p_github_username = githubUsername,
+                p_section_id = sectionId
+            }, JsonOpts);
+            var content = new StringContent(payload, Encoding.UTF8, "application/json");
+            var resp = await _http.PostAsync(Rest("rpc/get_my_enrollment"), content);
+
+            // Un status no-exitoso NO es un "no matriculado": no podemos
+            // confirmar. Centinela could-not-confirm.
+            if (!resp.IsSuccessStatusCode)
+                return MyEnrollment.CouldNotConfirm;
+
+            var json = await resp.Content.ReadAsStringAsync();
+            var rows = JsonSerializer.Deserialize<List<MyEnrollmentRow>>(json, JsonOpts);
+
+            // La RPC siempre devuelve al menos una fila (match o fila de
+            // confirmacion negativa con found=false). Si el parseo no produjo
+            // filas, no podemos confirmar (no asumimos "no matriculado").
+            if (rows is not { Count: > 0 })
+                return MyEnrollment.CouldNotConfirm;
+
+            var row = rows[0];
+            return new MyEnrollment
+            {
+                Confirmed = true,
+                Found = row.Found,
+                SectionId = row.SectionId,
+                Status = row.Status
+            };
+        }
+        catch
+        {
+            // Red/parseo fallo: NO es "no matriculado". Could-not-confirm.
+            return MyEnrollment.CouldNotConfirm;
+        }
+    }
+
     // ===== Heartbeat (RPC SECURITY DEFINER) =====
     // section_id se sincroniza via trigger trg_sync_section_online desde
     // section TEXT; la RPC heartbeat no acepta p_section_id (forward-compat).
+    // p_evaluation_id (nullable, default NULL en la RPC desde PR2) atribuye la
+    // presencia a la evaluacion actual del alumno. NO se cambia el ON CONFLICT
+    // de online_clients (sigue siendo pc_name+github_username): el swap a
+    // COALESCE(evaluation_id,0) es PR5 (gate 4-antes-de-5), no este slice.
     public async Task SendHeartbeatAsync(
         string pcName, string githubUsername, string? githubEmail,
         string? section, List<ProcessInfo> processes,
-        string internetState = "free", string lockdownState = "none")
+        string internetState = "free", string lockdownState = "none",
+        long? evaluationId = null)
     {
         try
         {
@@ -260,7 +448,8 @@ public class SupabaseClient
                 p_section = section,
                 p_processes = processes,
                 p_internet_state = internetState,
-                p_lockdown_state = lockdownState
+                p_lockdown_state = lockdownState,
+                p_evaluation_id = evaluationId
             }, JsonOpts);
             var content = new StringContent(payload, Encoding.UTF8, "application/json");
             await _http.PostAsync(Rest("rpc/heartbeat"), content);
@@ -269,6 +458,17 @@ public class SupabaseClient
     }
 
     // ===== Targeted lockdown =====
+    /// <summary>
+    /// Indica si hay un lockdown DIRIGIDO activo para este PC+usuario, con
+    /// fail-safe CERRADO igual que el force_lockdown:
+    ///   - query OK con fila activa  => true  (siembra _lastKnownTargeted)
+    ///   - query OK sin fila activa  => false (siembra _lastKnownTargeted=false:
+    ///                                          una liberacion genuina si libera)
+    ///   - FETCH FALLIDO (blip)      => retiene _lastKnownTargeted ?? false
+    /// Asi un parpadeo de red en un lock DIRIGIDO (aunque no haya force_lockdown
+    /// global/por-eval activo) NUNCA libera al alumno: el catch retiene el ultimo
+    /// estado conocido en vez de devolver false a ciegas.
+    /// </summary>
     public async Task<bool> IsTargetedLockedAsync(string pcName, string githubUsername)
     {
         try
@@ -278,9 +478,18 @@ public class SupabaseClient
             var json = await _http.GetStringAsync(
                 Rest($"targeted_lockdowns?pc_name=eq.{pc}&github_username=eq.{user}&active=eq.true&select=id,reason"));
             var arr = JsonSerializer.Deserialize<TargetedLockdown[]>(json, JsonOpts);
-            return arr is { Length: > 0 };
+            var locked = arr is { Length: > 0 };
+            // Query exitosa: este es el estado REAL (haya o no fila). Sembramos el
+            // cache; una liberacion genuina (sin fila activa) si debe liberar.
+            _lastKnownTargeted = locked;
+            return locked;
         }
-        catch { return false; }
+        catch
+        {
+            // Fetch fallido: degradar CERRADO reteniendo el ultimo conocido. Solo
+            // el primer arranque sin estado previo cae a false.
+            return _lastKnownTargeted ?? false;
+        }
     }
 
     public async Task<string?> GetTargetedReasonAsync(string pcName, string githubUsername)
@@ -297,10 +506,24 @@ public class SupabaseClient
         catch { return null; }
     }
 
+    /// <summary>
+    /// Predicado de force_lockdown EFECTIVO para la evaluacion actual del
+    /// cliente: resuelve override por evaluacion ?? global id=1. Es a la vez el
+    /// predicado de APERTURA (CheckAdminConfigAsync) y de LIBERACION
+    /// (checkStillLocked de CheatWindow), leyendo EXACTAMENTE la misma
+    /// resolucion. GetEffectiveControlAsync es la fuente unica del cache
+    /// _lastKnownLock: lo siembra en cada resolucion no-null (incluida la
+    /// apertura). Por eso aca solo leemos: si la resolucion devuelve null
+    /// (ambos fetch fallan) degradamos CERRADO reteniendo _lastKnownLock, asi un
+    /// parpadeo de red NUNCA libera a un alumno bloqueado en medio del examen.
+    /// Solo el primer arranque sin estado previo cae al default global (false).
+    /// </summary>
     public async Task<bool> IsForceLockdownAsync()
     {
-        var ctl = await GetControlAsync();
-        return ctl?.ForceLockdown ?? false;
+        var ctl = await GetEffectiveControlAsync(StudentSection.GetEvaluationId());
+        // ctl no-null: el resolver ya sembro _lastKnownLock con ctl.ForceLockdown.
+        // ctl null (ambos fetch fallaron): fail-safe CERRADO reteniendo el cache.
+        return ctl?.ForceLockdown ?? _lastKnownLock ?? false;
     }
 
     // ===== Reportes (INSERT directo, RLS anon insert) =====
