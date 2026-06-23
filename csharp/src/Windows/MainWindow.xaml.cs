@@ -1236,7 +1236,7 @@ public partial class MainWindow : Window
         var invitations = await _gh.GetPendingInvitationsAsync();
         var unassociated = new List<RepoInvitation>();
         var statuses = await ComputeAssignmentStatusesAsync(asg, invitations, unassociated);
-        var dlg = new AssignmentsWindow(statuses, OpenAcceptUrl, OpenUrl, SubmitRepo) { Owner = this };
+        var dlg = new AssignmentsWindow(statuses, OpenAcceptUrl, (u) => OpenUrl(u), SubmitRepo) { Owner = this };
         dlg.ShowDialog();
         // Al cerrar, refrescar el banner por si el alumno acepto o entrego algo.
         await UpdateAssignmentsBanner();
@@ -1281,7 +1281,7 @@ public partial class MainWindow : Window
             await _sb.RecordAcceptanceAsync(me, a.Id, a.Title, StudentSection.Get(), repoName, repoUrl, StudentSection.GetEvaluationId());
         }
         if (!string.IsNullOrEmpty(a.ClassroomUrl))
-            OpenUrl(a.ClassroomUrl);
+            OpenUrl(a.ClassroomUrl, onClosed: () => _ = RefreshReposAfterAcceptAsync());
     }
 
     /// <summary>
@@ -1571,7 +1571,7 @@ public partial class MainWindow : Window
     // fallback al navegador externo: si WebView2 falla, la propia ventana avisa
     // y se cierra. El navegador filtra por whitelist y, ante un dominio
     // prohibido, llama a OnForbiddenNavigation para disparar la trampa.
-    private void OpenUrl(string url)
+    private void OpenUrl(string url, Action? onClosed = null)
     {
         var ctx = new BrowseContext
         {
@@ -1580,7 +1580,34 @@ public partial class MainWindow : Window
             Section = StudentSection.Get()
         };
         var win = new WebBrowserWindow(url, "Navegador", ctx, OnForbiddenNavigation) { Owner = this };
+        if (onClosed != null) win.Closed += (_, _) => onClosed();
         win.Show();
+    }
+
+    /// <summary>
+    /// Tras aceptar una tarea en Classroom, GitHub tarda unos segundos en crear
+    /// el repo (en la org, con el alumno como colaborador). Antes el alumno tenia
+    /// que apretar "Refrescar" a mano y, si lo hacia muy rapido, el repo todavia
+    /// no existia => "no aparece el repo". Aca poll-eamos hasta ~15s tras cerrar
+    /// el navegador de aceptacion y refrescamos la lista cuando aparece.
+    /// </summary>
+    private async Task RefreshReposAfterAcceptAsync()
+    {
+        int before;
+        try { before = (await _gh.ListReposAsync()).Count; }
+        catch { before = -1; }
+
+        for (int i = 0; i < 6; i++)
+        {
+            await Task.Delay(2500);
+            int now;
+            try { now = (await _gh.ListReposAsync()).Count; }
+            catch { continue; }
+            if (now != before) break; // aparecio el repo recien creado
+        }
+
+        await LoadUserReposAsync();
+        await UpdateAssignmentsBanner();
     }
 
     /// <summary>

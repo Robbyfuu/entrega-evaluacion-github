@@ -248,8 +248,13 @@ public class GitHubService
         if (!IsAuthenticated) return new();
         try
         {
+            // affiliation explicito: incluye repos donde el alumno es COLABORADOR
+            // (los de GitHub Classroom viven en la org y el alumno se agrega como
+            // colaborador). Es el default de la API, pero lo dejamos explicito
+            // para que un repo de Classroom recien aceptado aparezca seguro.
             var json = await Http.GetStringAsync(
-                "https://api.github.com/user/repos?per_page=100&sort=updated");
+                "https://api.github.com/user/repos?per_page=100&sort=updated" +
+                "&affiliation=owner,collaborator,organization_member");
             return JsonSerializer.Deserialize<List<GitHubRepo>>(json, JsonOpts) ?? new();
         }
         catch { return new(); }
