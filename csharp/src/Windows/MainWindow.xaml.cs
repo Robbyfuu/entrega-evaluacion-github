@@ -40,6 +40,14 @@ public partial class MainWindow : Window
     private List<SectionRow> _sections = new();
     private List<Evaluation> _currentEvaluations = new();
 
+    // Roster: confirmacion de matricula del alumno actual contra enrollments
+    // (via RPC get_my_enrollment, no-PII). null = todavia no consultado.
+    // Confirmed=false => no se pudo confirmar (NO equivale a "no matriculado").
+    // Es ADITIVO: solo endurece EXPECTED cuando hay match; en no-match o
+    // no-confirmado se cae al comportamiento por defecto, sin hard-block y sin
+    // suprimir entregas pendientes (la verdad de entrega es por github_username).
+    private MyEnrollment? _enrollment;
+
     private DispatcherTimer _adminTimer = null!;
 
     // Evita disparar handlers durante la carga inicial de combos.
@@ -772,6 +780,45 @@ public partial class MainWindow : Window
     }
 
     // ===================== Classroom assignments =====================
+
+    /// <summary>
+    /// Confirma la matricula del alumno contra el roster (RPC get_my_enrollment,
+    /// no-PII) y cachea el resultado en _enrollment. Es ADITIVO: el alumno sigue
+    /// eligiendo su seccion como hasta ahora; esto SOLO agrega una confirmacion
+    /// (y un endurecimiento opcional de EXPECTED cuando hay match).
+    ///
+    /// NUNCA bloquea: si no hay sesion o seccion, o si la RPC no responde
+    /// (Confirmed=false), se cae al comportamiento por defecto sin endurecer.
+    /// </summary>
+    private async Task RefreshEnrollmentAsync()
+    {
+        var me = _user?.Login;
+        var sectionId = StudentSection.GetSectionId();
+        if (string.IsNullOrEmpty(me) || sectionId is not { } sid)
+        {
+            // Sin datos para consultar: no hay confirmacion. No es "no
+            // matriculado"; simplemente no se intento. Comportamiento por
+            // defecto (sin endurecer EXPECTED).
+            _enrollment = null;
+            return;
+        }
+
+        _enrollment = await _sb.GetMyEnrollmentAsync(me, sid);
+    }
+
+    /// <summary>
+    /// true solo cuando hay una matricula CONFIRMADA con match en la seccion
+    /// actual. Unica condicion bajo la que se endurece EXPECTED. En no-match o
+    /// no-confirmado (red caida) devuelve false => comportamiento por defecto.
+    /// </summary>
+    private bool RosterMatchConfirmed()
+    {
+        var sectionId = StudentSection.GetSectionId();
+        return _enrollment is { Confirmed: true, Found: true }
+            && sectionId is { } sid
+            && _enrollment.SectionId == sid;
+    }
+
     private List<Assignment> FilterBySection(List<Assignment> all)
     {
         var sec = StudentSection.Get().Trim().ToUpperInvariant();
@@ -854,6 +901,22 @@ public partial class MainWindow : Window
             var accepted = hasRepo || acceptedIds.Contains(a.Id);
             var submitted = submittedIds.Contains(a.Id);
             submissionsByAssignment.TryGetValue(a.Id, out var sub);
+
+            // Endurecimiento de EXPECTED por roster (solo con match confirmado):
+            // una tarea EXPECTED-only (no la posee, no la acepto, no la entrego)
+            // de seccion GLOBAL/vacia se omite, porque con matricula confirmada
+            // conocemos la seccion exacta del alumno y no necesitamos la pista
+            // global. CRITICO: las tareas que el alumno posee/acepto/entrego
+            // (hasRepo || accepted || submitted) SIEMPRE pasan, sin importar su
+            // seccion ni el roster -> una entrega pendiente real (pendienteEntregar)
+            // NUNCA se suprime. Sin match confirmado, nada se omite (default).
+            if (RosterMatchConfirmed()
+                && !hasRepo && !accepted && !submitted
+                && string.IsNullOrEmpty(a.Section))
+            {
+                continue;
+            }
+
             result.Add(new AssignmentStatus
             {
                 Assignment = a,
@@ -870,15 +933,63 @@ public partial class MainWindow : Window
 
     private async Task UpdateAssignmentsBanner()
     {
+        // Confirmar matricula contra el roster ANTES de calcular (el resultado
+        // endurece EXPECTED solo con match; ComputeAssignmentStatusesAsync lo
+        // consulta via RosterMatchConfirmed). Es aditivo y nunca bloquea.
+        await RefreshEnrollmentAsync();
+
         var asg = FilterBySection(await _sb.GetActiveAssignmentsAsync(StudentSection.GetEvaluationId()));
         var statuses = await ComputeAssignmentStatusesAsync(asg);
         var pending = statuses.Count(s => !s.Accepted && !s.Submitted);
-        if (pending > 0)
+
+        // Nota suave de matricula: cuando NO hay match confirmado (no matriculado
+        // o no se pudo confirmar) se avisa, pero NUNCA se bloquea ni se ponen los
+        // contadores en cero. Las entregas pendientes (por github_username) se
+        // siguen mostrando igual.
+        var note = EnrollmentSoftNote();
+
+        if (pending > 0 || note != null)
         {
-            AssignmentsBannerText.Text = $"Tienes {pending} tarea(s) pendientes";
+            var lines = new List<string>();
+            if (pending > 0) lines.Add($"Tienes {pending} tarea(s) pendientes");
+            if (note != null) lines.Add(note);
+            AssignmentsBannerText.Text = string.Join("\n", lines);
             AssignmentsBanner.Visibility = Visibility.Visible;
+            // El link "Aceptar tareas" solo tiene sentido si hay pendientes.
+            AssignmentsLink.Visibility = pending > 0 ? Visibility.Visible : Visibility.Collapsed;
         }
-        else AssignmentsBanner.Visibility = Visibility.Collapsed;
+        else
+        {
+            AssignmentsBanner.Visibility = Visibility.Collapsed;
+            AssignmentsLink.Visibility = Visibility.Visible;
+        }
+    }
+
+    /// <summary>
+    /// Texto suave de confirmacion de matricula (o null si no corresponde).
+    /// SOLO informativo: nunca bloquea ni altera contadores. Se muestra cuando
+    /// hay sesion + seccion elegidas pero el roster no confirma el match:
+    ///   - Confirmed=false  => "No pudimos confirmar tu matricula" (red caida).
+    ///   - Confirmed + !Found => "No encontramos tu matricula..." (no en roster).
+    /// Con match confirmado (o sin datos para consultar) no se muestra nota.
+    /// </summary>
+    private string? EnrollmentSoftNote()
+    {
+        // Sin sesion o seccion no intentamos confirmar: sin nota.
+        if (string.IsNullOrEmpty(_user?.Login) || StudentSection.GetSectionId() is null)
+            return null;
+
+        if (_enrollment is null)
+            return null;
+
+        if (RosterMatchConfirmed())
+            return null;
+
+        if (!_enrollment.Confirmed)
+            return "No pudimos confirmar tu matricula (sin conexion). Igual puedes trabajar normalmente.";
+
+        // Confirmado pero sin match en el roster de esta seccion.
+        return "No encontramos tu matricula en esta seccion. Revisa la seccion elegida o avisa al profesor.";
     }
 
     private async Task ShowAssignmentsDialog()
