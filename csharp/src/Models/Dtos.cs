@@ -212,6 +212,20 @@ public class SuspiciousProcess
     [JsonPropertyName("section_id")] public long? SectionId { get; set; }
 }
 
+// Fila de la tabla `allowed_urls` (allowlist del navegador embebido).
+// section=NULL => regla global; section=X => extra de la seccion X.
+// kind='domain' => match por sufijo de host (IsDomainAllowed);
+// kind='exact_url' => match por prefijo de scheme://host/path (IsUrlAllowed).
+// El cliente lee pattern+kind para armar la allowlist dinamica
+// (ver SupabaseClient.GetAllowlistAsync y Config.IsUrlAllowed).
+public class AllowedUrl
+{
+    [JsonPropertyName("pattern")] public string Pattern { get; set; } = "";
+    [JsonPropertyName("kind")] public string Kind { get; set; } = "domain";
+    [JsonPropertyName("section")] public string? Section { get; set; }
+    [JsonPropertyName("section_id")] public long? SectionId { get; set; }
+}
+
 // DTOs para repos de GitHub (deserializar /user/repos y /repos/{owner}/{repo})
 public class GitHubRepo
 {
