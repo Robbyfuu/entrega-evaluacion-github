@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { RefreshCw, ShieldAlert } from "lucide-react";
+import { RefreshCw, ShieldAlert, ShieldCheck } from "lucide-react";
 import type { CheatEventRow } from "@/lib/types";
 import { useRealtimeTable } from "@/hooks/useRealtimeTable";
 import { fmt } from "@/lib/format";
@@ -23,6 +23,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Skeleton } from "@/components/ui/skeleton";
 
 // Eventos de trampa detectados (últimos 50). Live via cheat_events with a
 // visual flash + sound cue when a new event arrives.
@@ -69,23 +70,24 @@ export function CheatEventsSection() {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Fecha</TableHead>
-              <TableHead>Usuario GitHub</TableHead>
-              <TableHead>PC</TableHead>
-              <TableHead>Repo</TableHead>
-              <TableHead>Archivos</TableHead>
+              <TableHead className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Fecha</TableHead>
+              <TableHead className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Usuario GitHub</TableHead>
+              <TableHead className="text-xs font-medium uppercase tracking-wide text-muted-foreground">PC</TableHead>
+              <TableHead className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Repo</TableHead>
+              <TableHead className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Archivos</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {loading && rows.length === 0 ? (
-              <TableRow>
-                <TableCell
-                  colSpan={5}
-                  className="py-8 text-center text-muted-foreground"
-                >
-                  Cargando...
-                </TableCell>
-              </TableRow>
+              Array.from({ length: 4 }).map((_, i) => (
+                <TableRow key={`sk-${i}`}>
+                  <TableCell><Skeleton className="h-4 w-32" /></TableCell>
+                  <TableCell><Skeleton className="h-5 w-24 rounded-full" /></TableCell>
+                  <TableCell><Skeleton className="h-4 w-24" /></TableCell>
+                  <TableCell><Skeleton className="h-4 w-28" /></TableCell>
+                  <TableCell><Skeleton className="h-4 w-40" /></TableCell>
+                </TableRow>
+              ))
             ) : error ? (
               <TableRow>
                 <TableCell colSpan={5} className="py-8 text-center text-destructive">
@@ -94,11 +96,12 @@ export function CheatEventsSection() {
               </TableRow>
             ) : rows.length === 0 ? (
               <TableRow>
-                <TableCell
-                  colSpan={5}
-                  className="py-8 text-center text-muted-foreground"
-                >
-                  Sin eventos de trampa registrados.
+                <TableCell colSpan={5} className="py-10">
+                  <div className="flex flex-col items-center gap-2 text-center text-muted-foreground">
+                    <ShieldCheck className="size-8 text-emerald-500/50" />
+                    <p className="text-sm">Sin eventos de trampa registrados.</p>
+                    <p className="text-xs text-muted-foreground/70">No se ha detectado manipulación de archivos ni repos.</p>
+                  </div>
                 </TableCell>
               </TableRow>
             ) : (
@@ -110,7 +113,7 @@ export function CheatEventsSection() {
                     key={e.id ?? i}
                     className={flashIds.has(id) ? "row-flash" : undefined}
                   >
-                    <TableCell className="text-muted-foreground">
+                    <TableCell className="text-muted-foreground tabular-nums">
                       {fmt(e.detected_at)}
                     </TableCell>
                     <TableCell>
@@ -123,7 +126,7 @@ export function CheatEventsSection() {
                       </code>
                     </TableCell>
                     <TableCell className="text-muted-foreground">
-                      <span className="font-medium text-foreground">
+                      <span className="font-medium text-foreground tabular-nums">
                         {e.files_count}
                       </span>
                       {sample ? `: ${sample}` : ""}

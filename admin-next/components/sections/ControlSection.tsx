@@ -248,7 +248,7 @@ export function ControlSection({
             </StatusItem>
             <StatusItem label="Última actualización">
               {updatedSource ? (
-                <span className="text-muted-foreground">
+                <span className="text-muted-foreground tabular-nums">
                   {fmt(updatedSource.updated_at)}
                   {updatedSource.updated_by ? ` por ${updatedSource.updated_by}` : ""}
                 </span>

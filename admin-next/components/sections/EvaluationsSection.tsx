@@ -2,12 +2,13 @@
 
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
-import { ExternalLink, Plus, RefreshCw, Trash2 } from "lucide-react";
+import { ClipboardList, ExternalLink, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import type { EvaluationRow, SectionRow } from "@/lib/types";
 import { useEvaluations } from "@/hooks/useEvaluations";
 import { useSections } from "@/hooks/useSections";
 import { useCourses } from "@/hooks/useCourses";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Card,
   CardContent,
@@ -185,20 +186,24 @@ export function EvaluationsSection() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="w-[25%]">Título</TableHead>
-                <TableHead className="w-[20%]">Sección</TableHead>
-                <TableHead className="w-[25%]">URL</TableHead>
-                <TableHead className="w-[12%]">Estado</TableHead>
-                <TableHead className="w-[18%] text-right">Acciones</TableHead>
+                <TableHead className="w-[25%] text-xs font-medium uppercase tracking-wide text-muted-foreground">Título</TableHead>
+                <TableHead className="w-[20%] text-xs font-medium uppercase tracking-wide text-muted-foreground">Sección</TableHead>
+                <TableHead className="w-[25%] text-xs font-medium uppercase tracking-wide text-muted-foreground">URL</TableHead>
+                <TableHead className="w-[12%] text-xs font-medium uppercase tracking-wide text-muted-foreground">Estado</TableHead>
+                <TableHead className="w-[18%] text-right text-xs font-medium uppercase tracking-wide text-muted-foreground">Acciones</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {loading && rows.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={5} className="text-center text-muted-foreground">
-                    Cargando...
-                  </TableCell>
-                </TableRow>
+                Array.from({ length: 3 }).map((_, i) => (
+                  <TableRow key={`sk-${i}`}>
+                    <TableCell><Skeleton className="h-4 w-32" /></TableCell>
+                    <TableCell><Skeleton className="h-5 w-20 rounded-md" /></TableCell>
+                    <TableCell><Skeleton className="h-4 w-44" /></TableCell>
+                    <TableCell><Skeleton className="h-5 w-16 rounded-full" /></TableCell>
+                    <TableCell className="text-right"><Skeleton className="ml-auto h-8 w-24" /></TableCell>
+                  </TableRow>
+                ))
               ) : error ? (
                 <TableRow>
                   <TableCell colSpan={5} className="text-center text-destructive">
@@ -207,8 +212,12 @@ export function EvaluationsSection() {
                 </TableRow>
               ) : rows.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={5} className="text-center text-muted-foreground">
-                    Sin evaluaciones configuradas.
+                  <TableCell colSpan={5} className="py-10">
+                    <div className="flex flex-col items-center gap-2 text-center text-muted-foreground">
+                      <ClipboardList className="size-8 text-muted-foreground/40" />
+                      <p className="text-sm">Sin evaluaciones configuradas.</p>
+                      <p className="text-xs text-muted-foreground/70">Crea una evaluación por sección y actívala cuando el alumno deba verla.</p>
+                    </div>
                   </TableCell>
                 </TableRow>
               ) : (

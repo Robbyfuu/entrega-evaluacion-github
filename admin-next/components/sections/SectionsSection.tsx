@@ -2,11 +2,12 @@
 
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
-import { Plus, RefreshCw, Trash2 } from "lucide-react";
+import { LayoutGrid, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import type { SectionRow } from "@/lib/types";
 import { useSections } from "@/hooks/useSections";
 import { useCourses } from "@/hooks/useCourses";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Card,
   CardContent,
@@ -148,19 +149,22 @@ export function SectionsSection() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="w-[20%]">Curso</TableHead>
-                <TableHead className="w-[20%]">Código</TableHead>
-                <TableHead className="w-[40%]">Nombre</TableHead>
-                <TableHead className="w-[20%] text-right">Acciones</TableHead>
+                <TableHead className="w-[20%] text-xs font-medium uppercase tracking-wide text-muted-foreground">Curso</TableHead>
+                <TableHead className="w-[20%] text-xs font-medium uppercase tracking-wide text-muted-foreground">Código</TableHead>
+                <TableHead className="w-[40%] text-xs font-medium uppercase tracking-wide text-muted-foreground">Nombre</TableHead>
+                <TableHead className="w-[20%] text-right text-xs font-medium uppercase tracking-wide text-muted-foreground">Acciones</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {loading && rows.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={4} className="text-center text-muted-foreground">
-                    Cargando...
-                  </TableCell>
-                </TableRow>
+                Array.from({ length: 3 }).map((_, i) => (
+                  <TableRow key={`sk-${i}`}>
+                    <TableCell><Skeleton className="h-5 w-16 rounded-md" /></TableCell>
+                    <TableCell><Skeleton className="h-4 w-16" /></TableCell>
+                    <TableCell><Skeleton className="h-4 w-40" /></TableCell>
+                    <TableCell className="text-right"><Skeleton className="ml-auto size-8 rounded-md" /></TableCell>
+                  </TableRow>
+                ))
               ) : error ? (
                 <TableRow>
                   <TableCell colSpan={4} className="text-center text-destructive">
@@ -169,8 +173,12 @@ export function SectionsSection() {
                 </TableRow>
               ) : rows.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={4} className="text-center text-muted-foreground">
-                    Sin secciones configuradas.
+                  <TableCell colSpan={4} className="py-10">
+                    <div className="flex flex-col items-center gap-2 text-center text-muted-foreground">
+                      <LayoutGrid className="size-8 text-muted-foreground/40" />
+                      <p className="text-sm">Sin secciones configuradas.</p>
+                      <p className="text-xs text-muted-foreground/70">Crea una sección bajo un curso para asignarle evaluaciones.</p>
+                    </div>
                   </TableCell>
                 </TableRow>
               ) : (
@@ -181,7 +189,7 @@ export function SectionsSection() {
                         {courseMap.get(s.course_id) ?? "?"}
                       </span>
                     </TableCell>
-                    <TableCell className="font-mono">{s.code}</TableCell>
+                    <TableCell className="font-mono tabular-nums">{s.code}</TableCell>
                     <TableCell>{s.name}</TableCell>
                     <TableCell className="text-right">
                       <Button

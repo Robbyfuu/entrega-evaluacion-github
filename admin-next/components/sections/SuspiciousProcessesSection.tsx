@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { CheckCircle2, RefreshCw, Trash2, XCircle } from "lucide-react";
+import { CheckCircle2, ListChecks, RefreshCw, Trash2, XCircle } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import type { SuspiciousProcess } from "@/lib/types";
 import { useRealtimeTable } from "@/hooks/useRealtimeTable";
@@ -35,6 +35,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 
 const GLOBAL_LABEL = "Global (todas las secciones)";
@@ -224,7 +225,17 @@ export function SuspiciousProcessesSection() {
         ) : null}
 
         {loading && rows.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Cargando...</p>
+          <div className="rounded-lg border">
+            <div className="flex flex-col gap-2 p-3">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <div key={`sk-${i}`} className="flex items-center justify-between gap-3">
+                  <Skeleton className="h-4 w-40" />
+                  <Skeleton className="h-4 w-28" />
+                  <Skeleton className="size-8 rounded-md" />
+                </div>
+              ))}
+            </div>
+          </div>
         ) : error ? (
           <p className="text-sm text-destructive">Error: {error}</p>
         ) : (
@@ -239,24 +250,25 @@ export function SuspiciousProcessesSection() {
                   >
                     {group.label}
                   </Badge>
-                  <span className="text-xs text-muted-foreground">
+                  <span className="text-xs text-muted-foreground tabular-nums">
                     {group.items.length}
                   </span>
                 </div>
                 {group.items.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">
+                  <div className="flex items-center gap-2 rounded-lg border border-dashed px-3 py-4 text-sm text-muted-foreground">
+                    <ListChecks className="size-4 text-muted-foreground/50" />
                     Sin procesos en este grupo.
-                  </p>
+                  </div>
                 ) : (
                   <div className="rounded-lg border">
                     <Table>
                       <TableHeader>
                         <TableRow>
-                          <TableHead className="w-1/2">
+                          <TableHead className="w-1/2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
                             Nombre del proceso
                           </TableHead>
-                          <TableHead className="w-[35%]">Agregado</TableHead>
-                          <TableHead className="w-[15%] text-right">
+                          <TableHead className="w-[35%] text-xs font-medium uppercase tracking-wide text-muted-foreground">Agregado</TableHead>
+                          <TableHead className="w-[15%] text-right text-xs font-medium uppercase tracking-wide text-muted-foreground">
                             Acciones
                           </TableHead>
                         </TableRow>
@@ -267,7 +279,7 @@ export function SuspiciousProcessesSection() {
                             <TableCell className="font-mono">
                               {p.process_name}
                             </TableCell>
-                            <TableCell className="text-xs text-muted-foreground">
+                            <TableCell className="text-xs text-muted-foreground tabular-nums">
                               {fmt(p.created_at)}
                             </TableCell>
                             <TableCell className="text-right">

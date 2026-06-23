@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-import { RefreshCw, TriangleAlert } from "lucide-react";
+import { RefreshCw, ShieldCheck, TriangleAlert } from "lucide-react";
 import type { ProcessAlertRow } from "@/lib/types";
 import { useRealtimeTable } from "@/hooks/useRealtimeTable";
 import { useSectionLookup } from "@/hooks/useSectionLookup";
@@ -24,6 +24,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Skeleton } from "@/components/ui/skeleton";
 
 interface ProcessAlertsSectionProps {
   onCountChange: (count: number) => void;
@@ -68,24 +69,26 @@ export function ProcessAlertsSection({ onCountChange }: ProcessAlertsSectionProp
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Fecha</TableHead>
-              <TableHead>Usuario</TableHead>
-              <TableHead>PC</TableHead>
-              <TableHead>Sección</TableHead>
-              <TableHead>Proceso</TableHead>
-              <TableHead>Título ventana</TableHead>
+              <TableHead className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Fecha</TableHead>
+              <TableHead className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Usuario</TableHead>
+              <TableHead className="text-xs font-medium uppercase tracking-wide text-muted-foreground">PC</TableHead>
+              <TableHead className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Sección</TableHead>
+              <TableHead className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Proceso</TableHead>
+              <TableHead className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Título ventana</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {loading && rows.length === 0 ? (
-              <TableRow>
-                <TableCell
-                  colSpan={6}
-                  className="py-8 text-center text-muted-foreground"
-                >
-                  Cargando...
-                </TableCell>
-              </TableRow>
+              Array.from({ length: 4 }).map((_, i) => (
+                <TableRow key={`sk-${i}`}>
+                  <TableCell><Skeleton className="h-4 w-32" /></TableCell>
+                  <TableCell><Skeleton className="h-5 w-28 rounded-full" /></TableCell>
+                  <TableCell><Skeleton className="h-4 w-24" /></TableCell>
+                  <TableCell><Skeleton className="h-4 w-12" /></TableCell>
+                  <TableCell><Skeleton className="h-5 w-24 rounded-full" /></TableCell>
+                  <TableCell><Skeleton className="h-4 w-44" /></TableCell>
+                </TableRow>
+              ))
             ) : error ? (
               <TableRow>
                 <TableCell colSpan={6} className="py-8 text-center text-destructive">
@@ -94,17 +97,18 @@ export function ProcessAlertsSection({ onCountChange }: ProcessAlertsSectionProp
               </TableRow>
             ) : rows.length === 0 ? (
               <TableRow>
-                <TableCell
-                  colSpan={6}
-                  className="py-8 text-center text-muted-foreground"
-                >
-                  Sin alertas.
+                <TableCell colSpan={6} className="py-10">
+                  <div className="flex flex-col items-center gap-2 text-center text-muted-foreground">
+                    <ShieldCheck className="size-8 text-emerald-500/50" />
+                    <p className="text-sm">Sin alertas de procesos.</p>
+                    <p className="text-xs text-muted-foreground/70">Ningún alumno ha abierto procesos sospechosos.</p>
+                  </div>
                 </TableCell>
               </TableRow>
             ) : (
               rows.map((a, i) => (
                 <TableRow key={a.id ?? i}>
-                  <TableCell className="text-muted-foreground">
+                  <TableCell className="text-muted-foreground tabular-nums">
                     {fmt(a.detected_at)}
                   </TableCell>
                   <TableCell>

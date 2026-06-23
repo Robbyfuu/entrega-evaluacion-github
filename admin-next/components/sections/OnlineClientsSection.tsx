@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Lock, MonitorSmartphone, RefreshCw, Unlock } from "lucide-react";
+import { Lock, MonitorOff, MonitorSmartphone, RefreshCw, Unlock } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import type { OnlineClientRow, SuspiciousProcess } from "@/lib/types";
 import { useRealtimeTable } from "@/hooks/useRealtimeTable";
@@ -26,6 +26,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Skeleton } from "@/components/ui/skeleton";
 
 const ONLINE_WINDOW_MS = 90_000;
 
@@ -175,26 +176,30 @@ export function OnlineClientsSection({
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>PC</TableHead>
-              <TableHead>Usuario GitHub</TableHead>
-              <TableHead>Sección</TableHead>
-              <TableHead>Última señal</TableHead>
-              <TableHead>Apps abiertas</TableHead>
-              <TableHead>Internet</TableHead>
-              <TableHead>Lockdown</TableHead>
-              <TableHead>Acción</TableHead>
+              <TableHead className="text-xs font-medium uppercase tracking-wide text-muted-foreground">PC</TableHead>
+              <TableHead className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Usuario GitHub</TableHead>
+              <TableHead className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Sección</TableHead>
+              <TableHead className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Última señal</TableHead>
+              <TableHead className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Apps abiertas</TableHead>
+              <TableHead className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Internet</TableHead>
+              <TableHead className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Lockdown</TableHead>
+              <TableHead className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Acción</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {loading && rows.length === 0 ? (
-              <TableRow>
-                <TableCell
-                  colSpan={8}
-                  className="py-8 text-center text-muted-foreground"
-                >
-                  Cargando...
-                </TableCell>
-              </TableRow>
+              Array.from({ length: 4 }).map((_, i) => (
+                <TableRow key={`sk-${i}`}>
+                  <TableCell><Skeleton className="h-4 w-24" /></TableCell>
+                  <TableCell><Skeleton className="h-5 w-28 rounded-full" /></TableCell>
+                  <TableCell><Skeleton className="h-5 w-16 rounded-full" /></TableCell>
+                  <TableCell><Skeleton className="h-4 w-32" /></TableCell>
+                  <TableCell><Skeleton className="h-4 w-10" /></TableCell>
+                  <TableCell><Skeleton className="h-5 w-20 rounded-full" /></TableCell>
+                  <TableCell><Skeleton className="h-5 w-16 rounded-full" /></TableCell>
+                  <TableCell><Skeleton className="h-8 w-28" /></TableCell>
+                </TableRow>
+              ))
             ) : error ? (
               <TableRow>
                 <TableCell colSpan={8} className="py-8 text-center text-destructive">
@@ -203,11 +208,11 @@ export function OnlineClientsSection({
               </TableRow>
             ) : onlineData.length === 0 ? (
               <TableRow>
-                <TableCell
-                  colSpan={8}
-                  className="py-8 text-center text-muted-foreground"
-                >
-                  {emptyMessage}
+                <TableCell colSpan={8} className="py-10">
+                  <div className="flex flex-col items-center gap-2 text-center text-muted-foreground">
+                    <MonitorOff className="size-8 text-muted-foreground/40" />
+                    <p className="text-sm">{emptyMessage}</p>
+                  </div>
                 </TableCell>
               </TableRow>
             ) : (
@@ -238,11 +243,11 @@ export function OnlineClientsSection({
                         "-"
                       )}
                     </TableCell>
-                    <TableCell className="text-muted-foreground">
+                    <TableCell className="text-muted-foreground tabular-nums">
                       {fmt(c.last_seen)} ({timeAgo(c.last_seen, now)})
                     </TableCell>
                     <TableCell>
-                      <span className="font-medium">{procs.length}</span>
+                      <span className="font-medium tabular-nums">{procs.length}</span>
                       {suspCount > 0 ? (
                         <Badge solidColor={BADGE.danger} style={{ marginLeft: 8 }}>
                           ⚠ {suspCount} sosp.

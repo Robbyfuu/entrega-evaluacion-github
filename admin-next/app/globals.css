@@ -23,8 +23,8 @@
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.21 0.034 264.36);
 
-  /* Sober institutional blue */
-  --primary: oklch(0.52 0.17 258.6);
+  /* Dashboard primary — institutional blue (~#1E40AF) */
+  --primary: oklch(0.43 0.16 264);
   --primary-foreground: oklch(0.985 0.002 247.86);
 
   --secondary: oklch(0.967 0.003 264.54);
@@ -33,31 +33,32 @@
   --muted: oklch(0.967 0.003 264.54);
   --muted-foreground: oklch(0.55 0.022 257.42);
 
-  --accent: oklch(0.967 0.003 264.54);
-  --accent-foreground: oklch(0.27 0.029 256.85);
+  /* Accent — amber (~#D97706) for operational highlights */
+  --accent: oklch(0.967 0.012 70);
+  --accent-foreground: oklch(0.42 0.12 58);
 
   --destructive: oklch(0.577 0.245 27.33);
   --destructive-foreground: oklch(0.985 0.002 247.86);
 
   --border: oklch(0.928 0.006 264.53);
   --input: oklch(0.928 0.006 264.53);
-  --ring: oklch(0.52 0.17 258.6);
+  --ring: oklch(0.43 0.16 264);
 
-  --chart-1: oklch(0.52 0.17 258.6);
-  --chart-2: oklch(0.6 0.118 184.7);
-  --chart-3: oklch(0.398 0.07 227.39);
-  --chart-4: oklch(0.828 0.189 84.43);
-  --chart-5: oklch(0.769 0.188 70.08);
+  --chart-1: oklch(0.43 0.16 264);
+  --chart-2: oklch(0.55 0.13 230);
+  --chart-3: oklch(0.65 0.16 58);
+  --chart-4: oklch(0.6 0.16 145);
+  --chart-5: oklch(0.58 0.22 27);
 
   /* Sidebar tokens (shadcn Sidebar component) */
   --sidebar: oklch(0.985 0.002 247.86);
   --sidebar-foreground: oklch(0.21 0.034 264.36);
-  --sidebar-primary: oklch(0.52 0.17 258.6);
+  --sidebar-primary: oklch(0.43 0.16 264);
   --sidebar-primary-foreground: oklch(0.985 0.002 247.86);
   --sidebar-accent: oklch(0.967 0.003 264.54);
   --sidebar-accent-foreground: oklch(0.27 0.029 256.85);
   --sidebar-border: oklch(0.928 0.006 264.53);
-  --sidebar-ring: oklch(0.52 0.17 258.6);
+  --sidebar-ring: oklch(0.43 0.16 264);
 }
 
 .dark,
@@ -71,7 +72,7 @@
   --popover: oklch(0.22 0.025 264.36);
   --popover-foreground: oklch(0.95 0.005 247.86);
 
-  --primary: oklch(0.62 0.17 258.6);
+  --primary: oklch(0.62 0.15 262);
   --primary-foreground: oklch(0.985 0.002 247.86);
 
   --secondary: oklch(0.28 0.025 264.36);
@@ -80,30 +81,30 @@
   --muted: oklch(0.28 0.025 264.36);
   --muted-foreground: oklch(0.7 0.02 257.42);
 
-  --accent: oklch(0.3 0.028 264.36);
-  --accent-foreground: oklch(0.95 0.005 247.86);
+  --accent: oklch(0.34 0.05 64);
+  --accent-foreground: oklch(0.9 0.08 75);
 
   --destructive: oklch(0.704 0.191 22.22);
   --destructive-foreground: oklch(0.985 0.002 247.86);
 
   --border: oklch(1 0 0 / 12%);
   --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.62 0.17 258.6);
+  --ring: oklch(0.62 0.15 262);
 
-  --chart-1: oklch(0.62 0.17 258.6);
-  --chart-2: oklch(0.696 0.17 162.48);
-  --chart-3: oklch(0.769 0.188 70.08);
-  --chart-4: oklch(0.627 0.265 303.9);
-  --chart-5: oklch(0.645 0.246 16.44);
+  --chart-1: oklch(0.62 0.15 262);
+  --chart-2: oklch(0.68 0.12 230);
+  --chart-3: oklch(0.75 0.15 68);
+  --chart-4: oklch(0.7 0.15 145);
+  --chart-5: oklch(0.68 0.2 22);
 
   --sidebar: oklch(0.22 0.025 264.36);
   --sidebar-foreground: oklch(0.95 0.005 247.86);
-  --sidebar-primary: oklch(0.62 0.17 258.6);
+  --sidebar-primary: oklch(0.62 0.15 262);
   --sidebar-primary-foreground: oklch(0.985 0.002 247.86);
   --sidebar-accent: oklch(0.3 0.028 264.36);
   --sidebar-accent-foreground: oklch(0.95 0.005 247.86);
   --sidebar-border: oklch(1 0 0 / 12%);
-  --sidebar-ring: oklch(0.62 0.17 258.6);
+  --sidebar-ring: oklch(0.62 0.15 262);
 }
 
 @theme inline {
@@ -158,6 +159,15 @@
   }
 }
 
+@layer utilities {
+  /* Tabular numbers — for KPIs, counters, dates and numeric columns so
+     digits keep a fixed advance width and do not jump when values change. */
+  .tabular {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum";
+  }
+}
+
 /* ============================================================
    LEGACY design tokens ("Consola Ops") — kept so the panel sections
    that have NOT yet been migrated to shadcn primitives keep rendering
@@ -183,8 +193,8 @@
   --warning: #d97706;
   --warning-bg: #fffbeb;
   --info: #7c3aed;
-  --font-ui: "Inter", -apple-system, "Segoe UI", system-ui, sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Consolas, monospace;
+  --font-ui: var(--font-fira-sans), "Fira Sans", -apple-system, "Segoe UI", system-ui, sans-serif;
+  --font-mono: var(--font-fira-code), "Fira Code", ui-monospace, "SF Mono", Consolas, monospace;
   --sp-1: 4px;
   --sp-2: 8px;
   --sp-3: 12px;

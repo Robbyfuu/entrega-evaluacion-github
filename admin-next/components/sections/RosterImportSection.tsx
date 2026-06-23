@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useMemo, useRef, useState } from "react";
-import { Check, CheckCircle2, X, XCircle } from "lucide-react";
+import { Check, CheckCircle2, Users, X, XCircle } from "lucide-react";
 import type { EnrollmentRow } from "@/lib/types";
 import { useEnrollments, type ImportStudent, type ImportSummary } from "@/hooks/useEnrollments";
 import { useSectionLookup } from "@/hooks/useSectionLookup";
@@ -32,6 +32,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 
 // Sentinel for the radix Select item mapped to the empty filter ("" = todas).
@@ -339,27 +340,51 @@ export function RosterImportSection() {
         </div>
 
         {loading && enrollments.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Cargando…</p>
+          <div className="rounded-lg border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-[12%] text-xs font-medium uppercase tracking-wide text-muted-foreground">Sección</TableHead>
+                  <TableHead className="w-[26%] text-xs font-medium uppercase tracking-wide text-muted-foreground">Nombre</TableHead>
+                  <TableHead className="w-[22%] text-xs font-medium uppercase tracking-wide text-muted-foreground">Email</TableHead>
+                  <TableHead className="w-[12%] text-xs font-medium uppercase tracking-wide text-muted-foreground">Estado</TableHead>
+                  <TableHead className="w-[28%] text-xs font-medium uppercase tracking-wide text-muted-foreground">Github</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {Array.from({ length: 4 }).map((_, i) => (
+                  <TableRow key={`sk-${i}`}>
+                    <TableCell><Skeleton className="h-5 w-16 rounded-full" /></TableCell>
+                    <TableCell><Skeleton className="h-4 w-40" /></TableCell>
+                    <TableCell><Skeleton className="h-4 w-44" /></TableCell>
+                    <TableCell><Skeleton className="h-5 w-16 rounded-full" /></TableCell>
+                    <TableCell><Skeleton className="h-8 w-32" /></TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
         ) : (
           <div className="rounded-lg border">
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-[12%]">Sección</TableHead>
-                  <TableHead className="w-[26%]">Nombre</TableHead>
-                  <TableHead className="w-[22%]">Email</TableHead>
-                  <TableHead className="w-[12%]">Estado</TableHead>
-                  <TableHead className="w-[28%]">Github</TableHead>
+                  <TableHead className="w-[12%] text-xs font-medium uppercase tracking-wide text-muted-foreground">Sección</TableHead>
+                  <TableHead className="w-[26%] text-xs font-medium uppercase tracking-wide text-muted-foreground">Nombre</TableHead>
+                  <TableHead className="w-[22%] text-xs font-medium uppercase tracking-wide text-muted-foreground">Email</TableHead>
+                  <TableHead className="w-[12%] text-xs font-medium uppercase tracking-wide text-muted-foreground">Estado</TableHead>
+                  <TableHead className="w-[28%] text-xs font-medium uppercase tracking-wide text-muted-foreground">Github</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {visibleEnrollments.length === 0 ? (
                   <TableRow>
-                    <TableCell
-                      colSpan={5}
-                      className="text-center text-muted-foreground"
-                    >
-                      Sin alumnos en el roster. Importa un archivo roster JSON.
+                    <TableCell colSpan={5} className="py-10">
+                      <div className="flex flex-col items-center gap-2 text-center text-muted-foreground">
+                        <Users className="size-8 text-muted-foreground/40" />
+                        <p className="text-sm">Sin alumnos en el roster.</p>
+                        <p className="text-xs text-muted-foreground/70">Importa un archivo roster JSON para poblar esta sección.</p>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ) : (
@@ -371,7 +396,7 @@ export function RosterImportSection() {
                         </Badge>
                       </TableCell>
                       <TableCell>{e.full_name}</TableCell>
-                      <TableCell className="font-mono text-xs">
+                      <TableCell className="font-mono text-xs tabular-nums">
                         {e.email ?? (
                           <span className="text-muted-foreground">—</span>
                         )}

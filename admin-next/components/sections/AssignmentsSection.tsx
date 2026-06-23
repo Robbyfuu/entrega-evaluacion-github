@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { ExternalLink, Plus, Trash2 } from "lucide-react";
+import { ClipboardList, ExternalLink, Plus, Trash2 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import type { AssignmentRow, AssignmentAcceptanceRow, AssignmentSubmissionRow, EvaluationRow } from "@/lib/types";
 import { useSectionLookup } from "@/hooks/useSectionLookup";
@@ -339,20 +339,24 @@ export function AssignmentsSection() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="w-[18%]">Título</TableHead>
-                <TableHead className="w-[12%]">Sección</TableHead>
-                <TableHead className="w-[22%]">URL</TableHead>
-                <TableHead className="w-[8%]">Acept.</TableHead>
-                <TableHead className="w-[8%]">Entr.</TableHead>
-                <TableHead className="w-[12%]">Estado</TableHead>
-                <TableHead className="w-[15%] text-right">Acciones</TableHead>
+                <TableHead className="w-[18%] text-xs font-medium uppercase tracking-wide text-muted-foreground">Título</TableHead>
+                <TableHead className="w-[12%] text-xs font-medium uppercase tracking-wide text-muted-foreground">Sección</TableHead>
+                <TableHead className="w-[22%] text-xs font-medium uppercase tracking-wide text-muted-foreground">URL</TableHead>
+                <TableHead className="w-[8%] text-xs font-medium uppercase tracking-wide text-muted-foreground">Acept.</TableHead>
+                <TableHead className="w-[8%] text-xs font-medium uppercase tracking-wide text-muted-foreground">Entr.</TableHead>
+                <TableHead className="w-[12%] text-xs font-medium uppercase tracking-wide text-muted-foreground">Estado</TableHead>
+                <TableHead className="w-[15%] text-right text-xs font-medium uppercase tracking-wide text-muted-foreground">Acciones</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {rows.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center text-muted-foreground">
-                    Sin tareas configuradas. Agrega una pegando el link de Classroom.
+                  <TableCell colSpan={7} className="py-10">
+                    <div className="flex flex-col items-center gap-2 text-center text-muted-foreground">
+                      <ClipboardList className="size-8 text-muted-foreground/40" />
+                      <p className="text-sm">Sin tareas configuradas.</p>
+                      <p className="text-xs text-muted-foreground/70">Agrega una pegando el link de un assignment de Classroom.</p>
+                    </div>
                   </TableCell>
                 </TableRow>
               ) : (
@@ -397,8 +401,8 @@ export function AssignmentsSection() {
                           <span className="text-xs text-muted-foreground">—</span>
                         )}
                       </TableCell>
-                      <TableCell className="font-mono text-sm">{tally(accepted, secId)}</TableCell>
-                      <TableCell className="font-mono text-sm">{tally(submitted, secId)}</TableCell>
+                      <TableCell className="font-mono text-sm tabular-nums">{tally(accepted, secId)}</TableCell>
+                      <TableCell className="font-mono text-sm tabular-nums">{tally(submitted, secId)}</TableCell>
                       <TableCell>
                         <span
                           className={

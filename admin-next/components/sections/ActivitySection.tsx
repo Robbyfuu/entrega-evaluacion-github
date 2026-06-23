@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Activity, ExternalLink, RefreshCw } from "lucide-react";
+import { Activity, ExternalLink, Inbox, RefreshCw } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import type { StudentActivityRow } from "@/lib/types";
 import { useSectionLookup } from "@/hooks/useSectionLookup";
@@ -31,6 +31,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Skeleton } from "@/components/ui/skeleton";
 
 // Sentinel value for the "all" option in shadcn Select (it cannot hold "").
 const ALL = "__all__";
@@ -153,25 +154,28 @@ export function ActivitySection() {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Fecha</TableHead>
-              <TableHead>Sección</TableHead>
-              <TableHead>Usuario GitHub</TableHead>
-              <TableHead>Email</TableHead>
-              <TableHead>PC</TableHead>
-              <TableHead>Acción</TableHead>
-              <TableHead>Repo</TableHead>
+              <TableHead className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Fecha</TableHead>
+              <TableHead className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Sección</TableHead>
+              <TableHead className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Usuario GitHub</TableHead>
+              <TableHead className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Email</TableHead>
+              <TableHead className="text-xs font-medium uppercase tracking-wide text-muted-foreground">PC</TableHead>
+              <TableHead className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Acción</TableHead>
+              <TableHead className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Repo</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {loading && rows.length === 0 ? (
-              <TableRow>
-                <TableCell
-                  colSpan={7}
-                  className="py-8 text-center text-muted-foreground"
-                >
-                  Cargando...
-                </TableCell>
-              </TableRow>
+              Array.from({ length: 4 }).map((_, i) => (
+                <TableRow key={`sk-${i}`}>
+                  <TableCell><Skeleton className="h-4 w-32" /></TableCell>
+                  <TableCell><Skeleton className="h-5 w-14 rounded-full" /></TableCell>
+                  <TableCell><Skeleton className="h-4 w-24" /></TableCell>
+                  <TableCell><Skeleton className="h-4 w-40" /></TableCell>
+                  <TableCell><Skeleton className="h-4 w-20" /></TableCell>
+                  <TableCell><Skeleton className="h-5 w-16 rounded-full" /></TableCell>
+                  <TableCell><Skeleton className="h-4 w-32" /></TableCell>
+                </TableRow>
+              ))
             ) : error ? (
               <TableRow>
                 <TableCell colSpan={7} className="py-8 text-center text-destructive">
@@ -180,11 +184,12 @@ export function ActivitySection() {
               </TableRow>
             ) : rows.length === 0 ? (
               <TableRow>
-                <TableCell
-                  colSpan={7}
-                  className="py-8 text-center text-muted-foreground"
-                >
-                  Sin actividad registrada.
+                <TableCell colSpan={7} className="py-10">
+                  <div className="flex flex-col items-center gap-2 text-center text-muted-foreground">
+                    <Inbox className="size-8 text-muted-foreground/40" />
+                    <p className="text-sm">Sin actividad registrada.</p>
+                    <p className="text-xs text-muted-foreground/70">No hay eventos para los filtros seleccionados.</p>
+                  </div>
                 </TableCell>
               </TableRow>
             ) : (
@@ -192,7 +197,7 @@ export function ActivitySection() {
                 const sec = sectionLabel(e);
                 return (
                   <TableRow key={e.id ?? i}>
-                    <TableCell className="text-muted-foreground">
+                    <TableCell className="text-muted-foreground tabular-nums">
                       {fmt(e.created_at)}
                     </TableCell>
                     <TableCell>

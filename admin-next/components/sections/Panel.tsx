@@ -10,7 +10,7 @@ import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { Topbar } from "@/components/Topbar";
 import { Sidebar } from "@/components/Sidebar";
 import { ProcessModal } from "@/components/ProcessModal";
-import { KpiRow } from "@/components/sections/KpiRow";
+import { OverviewSection } from "@/components/sections/OverviewSection";
 import { ControlSection } from "@/components/sections/ControlSection";
 import { CoursesSection } from "@/components/sections/CoursesSection";
 import { SectionsSection } from "@/components/sections/SectionsSection";
@@ -66,7 +66,7 @@ export function Panel({ user }: PanelProps) {
         <Topbar userEmail={user.email ?? ""} isDark={isDark} onToggleTheme={toggle} />
         <main className="w-full flex-1 px-4 py-6 sm:px-6 lg:px-8">
           <div className={view("sec-kpi")}>
-            <KpiRow control={control} onlineCount={onlineCount} alertCount={alertCount} />
+            <OverviewSection control={control} onlineCount={onlineCount} alertCount={alertCount} />
           </div>
           <div className={view("sec-control")}>
             <ControlSection

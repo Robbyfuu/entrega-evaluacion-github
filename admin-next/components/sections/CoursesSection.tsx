@@ -2,10 +2,11 @@
 
 import { useState } from "react";
 import { toast } from "sonner";
-import { Plus, RefreshCw, Trash2 } from "lucide-react";
+import { BookOpen, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import type { CourseRow } from "@/lib/types";
 import { useCourses } from "@/hooks/useCourses";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Card,
   CardContent,
@@ -130,19 +131,22 @@ export function CoursesSection() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="w-[20%]">Código</TableHead>
-                <TableHead className="w-[40%]">Nombre</TableHead>
-                <TableHead className="w-[15%]">Estado</TableHead>
-                <TableHead className="w-[25%] text-right">Acciones</TableHead>
+                <TableHead className="w-[20%] text-xs font-medium uppercase tracking-wide text-muted-foreground">Código</TableHead>
+                <TableHead className="w-[40%] text-xs font-medium uppercase tracking-wide text-muted-foreground">Nombre</TableHead>
+                <TableHead className="w-[15%] text-xs font-medium uppercase tracking-wide text-muted-foreground">Estado</TableHead>
+                <TableHead className="w-[25%] text-right text-xs font-medium uppercase tracking-wide text-muted-foreground">Acciones</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {loading && rows.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={4} className="text-center text-muted-foreground">
-                    Cargando...
-                  </TableCell>
-                </TableRow>
+                Array.from({ length: 3 }).map((_, i) => (
+                  <TableRow key={`sk-${i}`}>
+                    <TableCell><Skeleton className="h-4 w-20" /></TableCell>
+                    <TableCell><Skeleton className="h-4 w-40" /></TableCell>
+                    <TableCell><Skeleton className="h-5 w-16 rounded-full" /></TableCell>
+                    <TableCell className="text-right"><Skeleton className="ml-auto h-8 w-24" /></TableCell>
+                  </TableRow>
+                ))
               ) : error ? (
                 <TableRow>
                   <TableCell colSpan={4} className="text-center text-destructive">
@@ -151,14 +155,18 @@ export function CoursesSection() {
                 </TableRow>
               ) : rows.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={4} className="text-center text-muted-foreground">
-                    Sin cursos configurados.
+                  <TableCell colSpan={4} className="py-10">
+                    <div className="flex flex-col items-center gap-2 text-center text-muted-foreground">
+                      <BookOpen className="size-8 text-muted-foreground/40" />
+                      <p className="text-sm">Sin cursos configurados.</p>
+                      <p className="text-xs text-muted-foreground/70">Crea el primer curso con el formulario de arriba.</p>
+                    </div>
                   </TableCell>
                 </TableRow>
               ) : (
                 rows.map((c) => (
                   <TableRow key={c.id}>
-                    <TableCell className="font-mono">{c.code}</TableCell>
+                    <TableCell className="font-mono tabular-nums">{c.code}</TableCell>
                     <TableCell>{c.name}</TableCell>
                     <TableCell>
                       <span
