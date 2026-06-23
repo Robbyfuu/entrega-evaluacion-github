@@ -1,10 +1,25 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { CheckCircle2, RefreshCw, ShieldAlert, XCircle } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import type { ControlRow, EvaluationControlRow } from "@/lib/types";
 import { fmt } from "@/lib/format";
 import { EvaluationSelector } from "@/components/sections/EvaluationSelector";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
+import { Separator } from "@/components/ui/separator";
+import { cn } from "@/lib/utils";
 
 interface ControlSectionProps {
   // Global control (id=1) — legacy blast-radius path, affects ALL students.
@@ -148,162 +163,236 @@ export function ControlSection({
     : control?.message ?? "";
   const statusError = perEvalActive ? evalControlError : error;
   const updatedSource = perEvalActive ? evalControl : control;
+  const hasState = !!(control || updatedSource);
 
   return (
-    <>
+    <div className="mb-4 flex flex-col gap-4">
       {/* Selector de evaluación a controlar */}
-      <div className="card" id="sec-control-selector">
-        <h2>Alcance del control</h2>
-        <p className="muted-note">
-          Elige una evaluación para controlarla de forma aislada (no afecta a
-          otras secciones que rinden en paralelo). Deja{" "}
-          <strong>Control global</strong> solo si quieres afectar a TODAS las
-          secciones a la vez.
-        </p>
-        <div className="row-flex">
+      <Card id="sec-control-selector" className="scroll-mt-20">
+        <CardHeader>
+          <CardTitle>Alcance del control</CardTitle>
+          <CardDescription>
+            Elige una evaluación para controlarla de forma aislada (no afecta a
+            otras secciones que rinden en paralelo). Deja{" "}
+            <strong className="font-semibold text-foreground">Control global</strong>{" "}
+            solo si quieres afectar a TODAS las secciones a la vez.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-3">
           <EvaluationSelector
             selectedEvaluationId={selectedEvaluationId}
             onSelect={onSelectEvaluation}
           />
-        </div>
-        {perEvalActive ? (
-          <div className="ok" style={{ marginTop: 12 }}>
-            Controlando solo esta evaluación. El control global queda oculto para
-            evitar congelar otras secciones por error.
-          </div>
-        ) : null}
-      </div>
+          {perEvalActive ? (
+            <div className="flex items-start gap-2 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-600 dark:text-emerald-400">
+              <ShieldAlert className="mt-0.5 size-4 shrink-0" />
+              <span>
+                Controlando solo esta evaluación. El control global queda oculto
+                para evitar congelar otras secciones por error.
+              </span>
+            </div>
+          ) : null}
+        </CardContent>
+      </Card>
 
       {/* Estado actual */}
-      <div className="card">
-        <h2>
-          Estado actual
-          {perEvalActive ? (
-            <span className="pill" style={{ marginLeft: 8 }}>
-              por evaluación
-            </span>
-          ) : (
-            <span className="pill" style={{ marginLeft: 8 }}>
-              global
-            </span>
-          )}
-        </h2>
-        <div className="status-grid">
-          <div className="status-label">Internet:</div>
-          <div className="status-value">
-            {statusError ? (
-              "Error: " + statusError
-            ) : control || updatedSource ? (
-              <span className={effInternet ? "status-on" : "status-off"}>
-                {effInternet ? "BLOQUEADO" : "libre"}
-              </span>
-            ) : (
-              "..."
-            )}
+      <Card>
+        <CardHeader className="flex flex-row items-center gap-2 space-y-0">
+          <CardTitle>Estado actual</CardTitle>
+          <Badge variant={perEvalActive ? "info" : "neutral"}>
+            {perEvalActive ? "por evaluación" : "global"}
+          </Badge>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-4">
+          <dl className="grid grid-cols-1 gap-x-6 gap-y-3 sm:grid-cols-2">
+            <StatusItem label="Internet">
+              {statusError ? (
+                <span className="text-destructive">Error: {statusError}</span>
+              ) : hasState ? (
+                <span
+                  className={cn(
+                    "font-semibold",
+                    effInternet ? "text-destructive" : "text-emerald-500"
+                  )}
+                >
+                  {effInternet ? "BLOQUEADO" : "libre"}
+                </span>
+              ) : (
+                <span className="text-muted-foreground">…</span>
+              )}
+            </StatusItem>
+            <StatusItem label="Lockdown remoto">
+              {statusError ? (
+                <span className="text-destructive">Error: {statusError}</span>
+              ) : hasState ? (
+                <span
+                  className={cn(
+                    "font-semibold",
+                    effLockdown ? "text-destructive" : "text-emerald-500"
+                  )}
+                >
+                  {effLockdown ? "ACTIVO" : "inactivo"}
+                </span>
+              ) : (
+                <span className="text-muted-foreground">…</span>
+              )}
+            </StatusItem>
+            <StatusItem label="Mensaje activo">
+              {hasState ? (
+                effMessage || (
+                  <span className="text-muted-foreground">(ninguno)</span>
+                )
+              ) : (
+                <span className="text-muted-foreground">…</span>
+              )}
+            </StatusItem>
+            <StatusItem label="Última actualización">
+              {updatedSource ? (
+                <span className="text-muted-foreground">
+                  {fmt(updatedSource.updated_at)}
+                  {updatedSource.updated_by ? ` por ${updatedSource.updated_by}` : ""}
+                </span>
+              ) : perEvalActive ? (
+                <span className="text-muted-foreground">
+                  (sin override aún — hereda del global)
+                </span>
+              ) : (
+                <span className="text-muted-foreground">…</span>
+              )}
+            </StatusItem>
+          </dl>
+          <div>
+            <Button variant="outline" size="sm" onClick={onRefresh}>
+              <RefreshCw className="size-4" />
+              Refrescar
+            </Button>
           </div>
-          <div className="status-label">Lockdown remoto:</div>
-          <div className="status-value">
-            {statusError ? (
-              "Error: " + statusError
-            ) : control || updatedSource ? (
-              <span className={effLockdown ? "status-on" : "status-off"}>
-                {effLockdown ? "ACTIVO" : "inactivo"}
-              </span>
-            ) : (
-              "..."
-            )}
-          </div>
-          <div className="status-label">Mensaje activo:</div>
-          <div className="status-value">
-            {control || updatedSource ? effMessage || "(ninguno)" : "..."}
-          </div>
-          <div className="status-label">Última actualización:</div>
-          <div className="status-value">
-            {updatedSource
-              ? fmt(updatedSource.updated_at) +
-                (updatedSource.updated_by ? ` por ${updatedSource.updated_by}` : "")
-              : perEvalActive
-                ? "(sin override aún — hereda del global)"
-                : "..."}
-          </div>
-        </div>
-        <button className="btn-secondary" style={{ marginTop: 16 }} onClick={onRefresh}>
-          Refrescar
-        </button>
-      </div>
+        </CardContent>
+      </Card>
 
       {/* Controles remotos */}
-      <div className="card" id="sec-control">
-        <h2>
-          {perEvalActive
-            ? "Controles de esta evaluación (afectan solo a sus alumnos en menos de 60s)"
-            : "Controles remotos (afectan a todos los alumnos en menos de 60s)"}
-        </h2>
+      <Card id="sec-control" className="scroll-mt-20">
+        <CardHeader>
+          <CardTitle>
+            {perEvalActive
+              ? "Controles de esta evaluación"
+              : "Controles remotos"}
+          </CardTitle>
+          <CardDescription>
+            {perEvalActive
+              ? "Afectan solo a los alumnos de esta evaluación en menos de 60s."
+              : "Afectan a todos los alumnos en menos de 60s."}
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-5">
+          {perEvalActive ? (
+            <p className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-400">
+              El control global (que afecta a TODAS las secciones) está oculto
+              mientras controlas una evaluación específica. Esto evita congelar
+              otras secciones que rinden en paralelo. Recuerda: el bloqueo por
+              evaluación solo es confiable cuando TODOS los PCs de esa sección ya
+              corren el cliente actualizado; mientras quede un PC con cliente
+              antiguo, ese PC lee solo el control global.
+            </p>
+          ) : null}
 
-        {perEvalActive ? (
-          <p className="muted-note">
-            El control global (que afecta a TODAS las secciones) está oculto
-            mientras controlas una evaluación específica. Esto evita congelar
-            otras secciones que rinden en paralelo. Recuerda: el bloqueo por
-            evaluación solo es confiable cuando TODOS los PCs de esa sección ya
-            corren el cliente actualizado; mientras quede un PC con cliente
-            antiguo, ese PC lee solo el control global.
-          </p>
-        ) : null}
-
-        <div className="btn-row">
-          <button
-            className="btn-danger"
-            onClick={() => applyControl({ internet_block: true })}
-          >
-            Bloquear internet
-          </button>
-          <button
-            className="btn-success"
-            onClick={() => applyControl({ internet_block: false })}
-          >
-            Desbloquear internet
-          </button>
-          <button
-            className="btn-danger"
-            style={{ background: "#b71c1c" }}
-            onClick={confirmLockdown}
-          >
-            LOCKDOWN remoto
-          </button>
-          <button
-            className="btn-secondary"
-            onClick={() => applyControl({ force_lockdown: false })}
-          >
-            Liberar lockdown
-          </button>
-        </div>
-
-        <div className="row-flex" style={{ marginTop: 24 }}>
-          <div className="field">
-            <label htmlFor="msgInput">Mensaje al aula</label>
-            <input
-              type="text"
-              id="msgInput"
-              placeholder="Ej: Quedan 10 minutos para entregar"
-              value={msgInput}
-              onChange={(e) => setMsgInput(e.target.value)}
-            />
+          {/* Toggles de internet / lockdown */}
+          <div className="flex flex-col gap-3 sm:flex-row">
+            <div className="flex flex-1 items-center justify-between gap-3 rounded-lg border px-4 py-3">
+              <div className="flex flex-col gap-0.5">
+                <Label htmlFor="internetToggle">Bloquear internet</Label>
+                <span className="text-xs text-muted-foreground">
+                  {effInternet ? "Internet bloqueado" : "Internet libre"}
+                </span>
+              </div>
+              <Switch
+                id="internetToggle"
+                checked={effInternet}
+                onCheckedChange={(checked) =>
+                  applyControl({ internet_block: checked })
+                }
+              />
+            </div>
+            <div className="flex flex-1 items-center justify-between gap-3 rounded-lg border px-4 py-3">
+              <div className="flex flex-col gap-0.5">
+                <Label htmlFor="lockdownToggle">Lockdown remoto</Label>
+                <span className="text-xs text-muted-foreground">
+                  {effLockdown ? "Lockdown activo" : "Lockdown inactivo"}
+                </span>
+              </div>
+              <Switch
+                id="lockdownToggle"
+                checked={effLockdown}
+                onCheckedChange={(checked) => {
+                  if (checked) {
+                    confirmLockdown();
+                  } else {
+                    void applyControl({ force_lockdown: false });
+                  }
+                }}
+              />
+            </div>
           </div>
-          <button className="btn-primary" onClick={sendMessage}>
-            Enviar mensaje
-          </button>
-          <button
-            className="btn-secondary"
-            onClick={() => applyControl({ message: "" })}
-          >
-            Borrar mensaje
-          </button>
-        </div>
-        {feedback ? (
-          <div className={feedback.ok ? "ok" : "err"}>{feedback.text}</div>
-        ) : null}
-      </div>
-    </>
+
+          <Separator />
+
+          {/* Mensaje al aula */}
+          <div className="flex flex-col gap-3">
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="msgInput">Mensaje al aula</Label>
+              <Input
+                type="text"
+                id="msgInput"
+                placeholder="Ej: Quedan 10 minutos para entregar"
+                value={msgInput}
+                onChange={(e) => setMsgInput(e.target.value)}
+              />
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button onClick={sendMessage}>Enviar mensaje</Button>
+              <Button
+                variant="outline"
+                onClick={() => applyControl({ message: "" })}
+              >
+                Borrar mensaje
+              </Button>
+            </div>
+          </div>
+
+          {feedback ? (
+            <div
+              className={cn(
+                "flex items-start gap-2 rounded-md border px-3 py-2 text-sm",
+                feedback.ok
+                  ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                  : "border-destructive/30 bg-destructive/10 text-destructive"
+              )}
+            >
+              {feedback.ok ? (
+                <CheckCircle2 className="mt-0.5 size-4 shrink-0" />
+              ) : (
+                <XCircle className="mt-0.5 size-4 shrink-0" />
+              )}
+              <span>{feedback.text}</span>
+            </div>
+          ) : null}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function StatusItem({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex flex-col gap-0.5">
+      <dt className="text-xs font-medium text-muted-foreground">{label}</dt>
+      <dd className="text-sm">{children}</dd>
+    </div>
   );
 }

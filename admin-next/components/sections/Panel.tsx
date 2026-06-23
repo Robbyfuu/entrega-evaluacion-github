@@ -6,6 +6,7 @@ import type { OnlineClientRow } from "@/lib/types";
 import { useTheme } from "@/hooks/useTheme";
 import { useControl } from "@/hooks/useControl";
 import { useEvaluationControl } from "@/hooks/useEvaluationControl";
+import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { Topbar } from "@/components/Topbar";
 import { Sidebar } from "@/components/Sidebar";
 import { ProcessModal } from "@/components/ProcessModal";
@@ -55,11 +56,11 @@ export function Panel({ user }: PanelProps) {
   }, []);
 
   return (
-    <>
-      <Topbar userEmail={user.email ?? ""} isDark={isDark} onToggleTheme={toggle} />
-      <div className="shell">
-        <Sidebar active={activeNav} onSelect={handleNav} />
-        <main className="content">
+    <SidebarProvider>
+      <Sidebar active={activeNav} onSelect={handleNav} />
+      <SidebarInset>
+        <Topbar userEmail={user.email ?? ""} isDark={isDark} onToggleTheme={toggle} />
+        <main className="mx-auto w-full max-w-[1400px] flex-1 px-4 py-6 sm:px-6">
           <KpiRow control={control} onlineCount={onlineCount} alertCount={alertCount} />
           <ControlSection
             control={control}
@@ -86,10 +87,12 @@ export function Panel({ user }: PanelProps) {
           <ActivitySection />
           <CheatEventsSection />
 
-          <div className="footer">Realtime · Backend: Supabase · Consola Ops</div>
+          <div className="py-8 text-center text-xs text-muted-foreground">
+            Realtime · Backend: Supabase · Consola Ops
+          </div>
         </main>
-      </div>
+      </SidebarInset>
       <ProcessModal client={modalClient} onClose={() => setModalClient(null)} />
-    </>
+    </SidebarProvider>
   );
 }

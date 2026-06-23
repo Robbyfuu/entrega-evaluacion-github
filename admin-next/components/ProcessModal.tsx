@@ -1,8 +1,25 @@
 "use client";
 
-import { useEffect } from "react";
+import { AlertTriangle } from "lucide-react";
 import type { OnlineClientRow } from "@/lib/types";
 import { isSuspicious } from "@/lib/suspicious";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { cn } from "@/lib/utils";
 
 interface ProcessModalProps {
   client: OnlineClientRow | null;
@@ -11,76 +28,52 @@ interface ProcessModalProps {
 
 // Modal listing the open processes of a single PC. Replicates #processModal.
 export function ProcessModal({ client, onClose }: ProcessModalProps) {
-  useEffect(() => {
-    if (!client) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [client, onClose]);
-
-  if (!client) return null;
-
-  const procs = Array.isArray(client.processes) ? client.processes : [];
+  const procs = client && Array.isArray(client.processes) ? client.processes : [];
 
   return (
-    <div
-      className="modal-overlay"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-    >
-      <div className="modal-box">
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            marginBottom: 16,
-          }}
-        >
-          <h2 style={{ margin: 0 }}>
-            Programas abiertos en {client.pc_name} (@{client.github_username || "?"})
-          </h2>
-          <button className="btn-secondary" onClick={onClose}>
-            Cerrar ✕
-          </button>
-        </div>
-        <table>
-          <thead>
-            <tr>
-              <th>Proceso</th>
-              <th>Título de ventana</th>
-            </tr>
-          </thead>
-          <tbody>
-            {procs.length === 0 ? (
-              <tr>
-                <td colSpan={2} style={{ textAlign: "center", color: "var(--text-faint)" }}>
-                  Sin procesos con ventana visible.
-                </td>
-              </tr>
-            ) : (
-              procs.map((p, i) => {
-                const susp = isSuspicious(p.name);
-                return (
-                  <tr key={i} className={susp ? "row-blocked" : undefined}>
-                    <td
-                      style={
-                        susp ? { color: "var(--danger)", fontWeight: 600 } : undefined
-                      }
-                    >
-                      {susp ? `⚠ ${p.name}` : p.name || "-"}
-                    </td>
-                    <td>{p.title || "-"}</td>
-                  </tr>
-                );
-              })
-            )}
-          </tbody>
-        </table>
-      </div>
-    </div>
+    <Dialog open={!!client} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>Programas abiertos en {client?.pc_name}</DialogTitle>
+          <DialogDescription>@{client?.github_username || "?"}</DialogDescription>
+        </DialogHeader>
+        <ScrollArea className="max-h-[60vh]">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Proceso</TableHead>
+                <TableHead>Título de ventana</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {procs.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={2} className="text-center text-muted-foreground">
+                    Sin procesos con ventana visible.
+                  </TableCell>
+                </TableRow>
+              ) : (
+                procs.map((p, i) => {
+                  const susp = isSuspicious(p.name);
+                  return (
+                    <TableRow key={i} className={susp ? "bg-destructive/10" : undefined}>
+                      <TableCell
+                        className={cn(susp && "font-semibold text-destructive")}
+                      >
+                        <span className="inline-flex items-center gap-1.5">
+                          {susp ? <AlertTriangle className="size-3.5" /> : null}
+                          {p.name || "-"}
+                        </span>
+                      </TableCell>
+                      <TableCell>{p.title || "-"}</TableCell>
+                    </TableRow>
+                  );
+                })
+              )}
+            </TableBody>
+          </Table>
+        </ScrollArea>
+      </DialogContent>
+    </Dialog>
   );
 }

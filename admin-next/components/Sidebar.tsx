@@ -1,26 +1,53 @@
 "use client";
 
+import type { LucideIcon } from "lucide-react";
+import {
+  Activity,
+  AlertTriangle,
+  BookOpen,
+  ClipboardList,
+  Globe,
+  LayoutDashboard,
+  ListChecks,
+  Monitor,
+  ScrollText,
+  ShieldAlert,
+  ShieldX,
+  Users,
+} from "lucide-react";
+import {
+  Sidebar as ShadSidebar,
+  SidebarContent,
+  SidebarGroup,
+  SidebarGroupLabel,
+  SidebarHeader,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarRail,
+} from "@/components/ui/sidebar";
+
 interface NavItem {
   target: string;
   label: string;
-  dot: string;
+  icon: LucideIcon;
 }
 
-// Same nav items + colored dots as the original sidebar.
+// Same nav items + targets/ids as the original sidebar. Icons added per item.
 const NAV_ITEMS: NavItem[] = [
-  { target: "sec-kpi", label: "Resumen", dot: "var(--primary)" },
-  { target: "sec-control", label: "Controles", dot: "var(--danger)" },
-  { target: "sec-courses", label: "Cursos", dot: "var(--info)" },
-  { target: "sec-sections", label: "Secciones", dot: "var(--info)" },
-  { target: "sec-evaluations", label: "Evaluaciones", dot: "var(--primary)" },
-  { target: "sec-roster", label: "Roster", dot: "var(--info)" },
-  { target: "sec-pcs", label: "PCs conectados", dot: "var(--success)" },
-  { target: "sec-alerts", label: "Alertas", dot: "var(--warning)" },
-  { target: "sec-browsing", label: "Navegación", dot: "var(--info)" },
-  { target: "sec-suspicious", label: "Procesos", dot: "var(--warning)" },
-  { target: "sec-tareas", label: "Tareas Classroom", dot: "var(--info)" },
-  { target: "sec-activity", label: "Actividad", dot: "var(--text-faint)" },
-  { target: "sec-cheat", label: "Trampas", dot: "var(--danger)" },
+  { target: "sec-kpi", label: "Resumen", icon: LayoutDashboard },
+  { target: "sec-control", label: "Controles", icon: ShieldAlert },
+  { target: "sec-courses", label: "Cursos", icon: BookOpen },
+  { target: "sec-sections", label: "Secciones", icon: ListChecks },
+  { target: "sec-evaluations", label: "Evaluaciones", icon: ClipboardList },
+  { target: "sec-roster", label: "Roster", icon: Users },
+  { target: "sec-pcs", label: "PCs conectados", icon: Monitor },
+  { target: "sec-alerts", label: "Alertas", icon: AlertTriangle },
+  { target: "sec-browsing", label: "Navegación", icon: Globe },
+  { target: "sec-suspicious", label: "Procesos", icon: ShieldX },
+  { target: "sec-tareas", label: "Tareas Classroom", icon: ScrollText },
+  { target: "sec-activity", label: "Actividad", icon: Activity },
+  { target: "sec-cheat", label: "Trampas", icon: ShieldX },
 ];
 
 interface SidebarProps {
@@ -30,17 +57,41 @@ interface SidebarProps {
 
 export function Sidebar({ active, onSelect }: SidebarProps) {
   return (
-    <nav className="sidebar">
-      {NAV_ITEMS.map((item) => (
-        <button
-          key={item.target}
-          className={`nav-item${active === item.target ? " active" : ""}`}
-          onClick={() => onSelect(item.target)}
-        >
-          <span className="dot" style={{ background: item.dot }} />
-          {item.label}
-        </button>
-      ))}
-    </nav>
+    <ShadSidebar collapsible="icon">
+      <SidebarHeader className="px-3 py-4">
+        <div className="flex items-center gap-2.5">
+          <div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-primary font-bold text-primary-foreground">
+            D
+          </div>
+          <div className="flex flex-col leading-tight group-data-[collapsible=icon]:hidden">
+            <span className="text-sm font-semibold">Panel Docente</span>
+            <span className="text-xs text-muted-foreground">Entrega Evaluación</span>
+          </div>
+        </div>
+      </SidebarHeader>
+      <SidebarContent>
+        <SidebarGroup>
+          <SidebarGroupLabel>Navegación</SidebarGroupLabel>
+          <SidebarMenu>
+            {NAV_ITEMS.map((item) => {
+              const Icon = item.icon;
+              return (
+                <SidebarMenuItem key={item.target}>
+                  <SidebarMenuButton
+                    isActive={active === item.target}
+                    tooltip={item.label}
+                    onClick={() => onSelect(item.target)}
+                  >
+                    <Icon />
+                    <span>{item.label}</span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              );
+            })}
+          </SidebarMenu>
+        </SidebarGroup>
+      </SidebarContent>
+      <SidebarRail />
+    </ShadSidebar>
   );
 }

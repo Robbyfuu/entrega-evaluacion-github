@@ -1,15 +1,32 @@
 "use client";
 
 import { useState } from "react";
+import { toast } from "sonner";
+import { Plus, RefreshCw, Trash2 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import type { CourseRow } from "@/lib/types";
 import { useCourses } from "@/hooks/useCourses";
-import { BADGE } from "@/lib/colors";
-import { Badge } from "@/components/ui/Badge";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 
 export function CoursesSection() {
   const { rows, loading, error, refresh } = useCourses();
-  const [feedback, setFeedback] = useState<{ text: string; ok: boolean } | null>(null);
   const [code, setCode] = useState("");
   const [name, setName] = useState("");
 
@@ -17,7 +34,7 @@ export function CoursesSection() {
     const c = code.trim();
     const n = name.trim();
     if (!c || !n) {
-      setFeedback({ text: "Completa código y nombre.", ok: false });
+      toast.error("Completa código y nombre.");
       return;
     }
     const { data, error: err } = await supabase
@@ -26,30 +43,27 @@ export function CoursesSection() {
       .select();
     if (err) {
       const duplicate = err.code === "23505" || /duplicate|unique/i.test(err.message);
-      setFeedback({
-        text: duplicate ? `El código "${c}" ya existe.` : "Error: " + err.message,
-        ok: false,
-      });
+      toast.error(duplicate ? `El código "${c}" ya existe.` : "Error: " + err.message);
       return;
     }
     if (!data || data.length === 0) {
-      setFeedback({ text: "No se pudo agregar (¿sesión expirada?).", ok: false });
+      toast.error("No se pudo agregar (¿sesión expirada?).");
       return;
     }
     setCode("");
     setName("");
-    setFeedback({ text: `Curso "${c}" agregado.`, ok: true });
+    toast.success(`Curso "${c}" agregado.`);
     void refresh();
   }
 
   async function toggleCourse(id: CourseRow["id"], active: boolean) {
     const { data, error: err } = await supabase.from("courses").update({ active }).eq("id", id).select();
     if (err) {
-      setFeedback({ text: "Error: " + err.message, ok: false });
+      toast.error("Error: " + err.message);
       return;
     }
     if (!data || data.length === 0) {
-      setFeedback({ text: "No se pudo actualizar (¿sesión expirada?).", ok: false });
+      toast.error("No se pudo actualizar (¿sesión expirada?).");
       return;
     }
     void refresh();
@@ -59,110 +73,137 @@ export function CoursesSection() {
     if (!window.confirm(`¿Eliminar el curso "${code}"? Se borrarán sus secciones y evaluaciones en cascada.`)) return;
     const { data, error: err } = await supabase.from("courses").delete().eq("id", id).select();
     if (err) {
-      setFeedback({ text: "Error: " + err.message, ok: false });
+      toast.error("Error: " + err.message);
       return;
     }
     if (!data || data.length === 0) {
-      setFeedback({ text: "No se pudo eliminar (¿sesión expirada?).", ok: false });
+      toast.error("No se pudo eliminar (¿sesión expirada?).");
       return;
     }
     void refresh();
   }
 
   return (
-    <div className="card" id="sec-courses">
-      <h2>
-        Cursos
-        <span className="pill">{rows.length}</span>
-      </h2>
-      <p className="muted-note">
-        Crea y administra los cursos. Cada curso agrupa secciones y evaluaciones.
-      </p>
-      <div className="row-flex">
-        <div className="field" style={{ flex: "0 0 140px" }}>
-          <label htmlFor="courseCode">Código</label>
-          <input
-            type="text"
-            id="courseCode"
-            placeholder="FPY1101"
-            value={code}
-            onChange={(e) => setCode(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter") void addCourse(); }}
-          />
+    <Card id="sec-courses" className="scroll-mt-20">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-lg">
+          Cursos
+          <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-muted px-1.5 text-xs font-medium text-muted-foreground">
+            {rows.length}
+          </span>
+        </CardTitle>
+        <CardDescription>
+          Crea y administra los cursos. Cada curso agrupa secciones y evaluaciones.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="grid w-[140px] gap-1.5">
+            <Label htmlFor="courseCode">Código</Label>
+            <Input
+              type="text"
+              id="courseCode"
+              placeholder="FPY1101"
+              value={code}
+              onChange={(e) => setCode(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") void addCourse(); }}
+            />
+          </div>
+          <div className="grid flex-1 gap-1.5">
+            <Label htmlFor="courseName">Nombre</Label>
+            <Input
+              type="text"
+              id="courseName"
+              placeholder="Física I"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") void addCourse(); }}
+            />
+          </div>
+          <Button onClick={addCourse}>
+            <Plus />
+            Agregar curso
+          </Button>
         </div>
-        <div className="field">
-          <label htmlFor="courseName">Nombre</label>
-          <input
-            type="text"
-            id="courseName"
-            placeholder="Física I"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter") void addCourse(); }}
-          />
-        </div>
-        <button className="btn-primary" onClick={addCourse}>
-          Agregar curso
-        </button>
-      </div>
-      {feedback ? <div className={feedback.ok ? "ok" : "err"}>{feedback.text}</div> : null}
 
-      {loading && rows.length === 0 ? (
-        <p style={{ marginTop: 16, color: "var(--text-faint)" }}>Cargando...</p>
-      ) : error ? (
-        <p className="err" style={{ marginTop: 16 }}>Error: {error}</p>
-      ) : (
-        <table style={{ marginTop: 16 }}>
-          <thead>
-            <tr>
-              <th style={{ width: "20%" }}>Código</th>
-              <th style={{ width: "40%" }}>Nombre</th>
-              <th style={{ width: "15%" }}>Estado</th>
-              <th style={{ width: "25%" }}>Acciones</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.length === 0 ? (
-              <tr>
-                <td colSpan={4} style={{ textAlign: "center", color: "var(--text-faint)" }}>
-                  Sin cursos configurados.
-                </td>
-              </tr>
-            ) : (
-              rows.map((c) => (
-                <tr key={c.id}>
-                  <td className="mono">{c.code}</td>
-                  <td>{c.name}</td>
-                  <td>
-                    <Badge solidColor={c.active ? BADGE.success : BADGE.neutral}>
-                      {c.active ? "ACTIVO" : "inactivo"}
-                    </Badge>
-                  </td>
-                  <td>
-                    <button
-                      className={c.active ? "btn-secondary" : "btn-success"}
-                      style={{ padding: "4px 12px", fontSize: 12, height: "auto" }}
-                      onClick={() => toggleCourse(c.id, !c.active)}
-                    >
-                      {c.active ? "Desactivar" : "Activar"}
-                    </button>
-                    <button
-                      className="btn-danger"
-                      style={{ padding: "4px 10px", fontSize: 14, height: "auto", marginLeft: 6 }}
-                      onClick={() => deleteCourse(c.id, c.code)}
-                    >
-                      ×
-                    </button>
-                  </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      )}
-      <button className="btn-secondary" style={{ marginTop: 8 }} onClick={refresh}>
-        Refrescar
-      </button>
-    </div>
+        <div className="rounded-lg border">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-[20%]">Código</TableHead>
+                <TableHead className="w-[40%]">Nombre</TableHead>
+                <TableHead className="w-[15%]">Estado</TableHead>
+                <TableHead className="w-[25%] text-right">Acciones</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {loading && rows.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={4} className="text-center text-muted-foreground">
+                    Cargando...
+                  </TableCell>
+                </TableRow>
+              ) : error ? (
+                <TableRow>
+                  <TableCell colSpan={4} className="text-center text-destructive">
+                    Error: {error}
+                  </TableCell>
+                </TableRow>
+              ) : rows.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={4} className="text-center text-muted-foreground">
+                    Sin cursos configurados.
+                  </TableCell>
+                </TableRow>
+              ) : (
+                rows.map((c) => (
+                  <TableRow key={c.id}>
+                    <TableCell className="font-mono">{c.code}</TableCell>
+                    <TableCell>{c.name}</TableCell>
+                    <TableCell>
+                      <span
+                        className={
+                          c.active
+                            ? "inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-2 py-0.5 text-xs font-medium text-emerald-600 dark:text-emerald-400"
+                            : "inline-flex items-center gap-1.5 rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground"
+                        }
+                      >
+                        <span className={c.active ? "size-1.5 rounded-full bg-emerald-500" : "size-1.5 rounded-full bg-muted-foreground/50"} />
+                        {c.active ? "Activo" : "Inactivo"}
+                      </span>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex justify-end gap-2">
+                        <Button
+                          variant={c.active ? "outline" : "default"}
+                          size="sm"
+                          onClick={() => toggleCourse(c.id, !c.active)}
+                        >
+                          {c.active ? "Desactivar" : "Activar"}
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          className="text-destructive hover:text-destructive"
+                          onClick={() => deleteCourse(c.id, c.code)}
+                          aria-label="Eliminar curso"
+                        >
+                          <Trash2 />
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </div>
+
+        <Button variant="outline" size="sm" onClick={refresh}>
+          <RefreshCw />
+          Refrescar
+        </Button>
+      </CardContent>
+    </Card>
   );
 }

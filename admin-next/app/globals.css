@@ -1,19 +1,180 @@
 @import "tailwindcss";
+@import "tw-animate-css";
 
-/* ===== Design System: Consola Ops =====
-   Ported verbatim from the original single-file admin panel.
-   Light theme is the default on :root; dark theme overrides via
-   [data-theme="dark"] toggled from the topbar. */
+/* shadcn/ui dark mode is driven by BOTH the `.dark` class (shadcn standard)
+   and the legacy `[data-theme="dark"]` attribute. useTheme toggles both so the
+   already-migrated shell (shadcn tokens) and the not-yet-migrated sections
+   (legacy tokens below) switch together. */
+@custom-variant dark (&:is(.dark *, [data-theme="dark"] *));
+
+/* ============================================================
+   shadcn/ui design tokens — professional slate + sober DUOC blue.
+   Light is the default; dark overrides under .dark / [data-theme="dark"].
+   ============================================================ */
+:root {
+  --radius: 0.625rem;
+
+  --background: oklch(0.985 0.002 247.86);
+  --foreground: oklch(0.21 0.034 264.36);
+
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.21 0.034 264.36);
+
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.21 0.034 264.36);
+
+  /* Sober institutional blue */
+  --primary: oklch(0.52 0.17 258.6);
+  --primary-foreground: oklch(0.985 0.002 247.86);
+
+  --secondary: oklch(0.967 0.003 264.54);
+  --secondary-foreground: oklch(0.27 0.029 256.85);
+
+  --muted: oklch(0.967 0.003 264.54);
+  --muted-foreground: oklch(0.55 0.022 257.42);
+
+  --accent: oklch(0.967 0.003 264.54);
+  --accent-foreground: oklch(0.27 0.029 256.85);
+
+  --destructive: oklch(0.577 0.245 27.33);
+  --destructive-foreground: oklch(0.985 0.002 247.86);
+
+  --border: oklch(0.928 0.006 264.53);
+  --input: oklch(0.928 0.006 264.53);
+  --ring: oklch(0.52 0.17 258.6);
+
+  --chart-1: oklch(0.52 0.17 258.6);
+  --chart-2: oklch(0.6 0.118 184.7);
+  --chart-3: oklch(0.398 0.07 227.39);
+  --chart-4: oklch(0.828 0.189 84.43);
+  --chart-5: oklch(0.769 0.188 70.08);
+
+  /* Sidebar tokens (shadcn Sidebar component) */
+  --sidebar: oklch(0.985 0.002 247.86);
+  --sidebar-foreground: oklch(0.21 0.034 264.36);
+  --sidebar-primary: oklch(0.52 0.17 258.6);
+  --sidebar-primary-foreground: oklch(0.985 0.002 247.86);
+  --sidebar-accent: oklch(0.967 0.003 264.54);
+  --sidebar-accent-foreground: oklch(0.27 0.029 256.85);
+  --sidebar-border: oklch(0.928 0.006 264.53);
+  --sidebar-ring: oklch(0.52 0.17 258.6);
+}
+
+.dark,
+[data-theme="dark"] {
+  --background: oklch(0.18 0.02 264.36);
+  --foreground: oklch(0.95 0.005 247.86);
+
+  --card: oklch(0.22 0.025 264.36);
+  --card-foreground: oklch(0.95 0.005 247.86);
+
+  --popover: oklch(0.22 0.025 264.36);
+  --popover-foreground: oklch(0.95 0.005 247.86);
+
+  --primary: oklch(0.62 0.17 258.6);
+  --primary-foreground: oklch(0.985 0.002 247.86);
+
+  --secondary: oklch(0.28 0.025 264.36);
+  --secondary-foreground: oklch(0.95 0.005 247.86);
+
+  --muted: oklch(0.28 0.025 264.36);
+  --muted-foreground: oklch(0.7 0.02 257.42);
+
+  --accent: oklch(0.3 0.028 264.36);
+  --accent-foreground: oklch(0.95 0.005 247.86);
+
+  --destructive: oklch(0.704 0.191 22.22);
+  --destructive-foreground: oklch(0.985 0.002 247.86);
+
+  --border: oklch(1 0 0 / 12%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.62 0.17 258.6);
+
+  --chart-1: oklch(0.62 0.17 258.6);
+  --chart-2: oklch(0.696 0.17 162.48);
+  --chart-3: oklch(0.769 0.188 70.08);
+  --chart-4: oklch(0.627 0.265 303.9);
+  --chart-5: oklch(0.645 0.246 16.44);
+
+  --sidebar: oklch(0.22 0.025 264.36);
+  --sidebar-foreground: oklch(0.95 0.005 247.86);
+  --sidebar-primary: oklch(0.62 0.17 258.6);
+  --sidebar-primary-foreground: oklch(0.985 0.002 247.86);
+  --sidebar-accent: oklch(0.3 0.028 264.36);
+  --sidebar-accent-foreground: oklch(0.95 0.005 247.86);
+  --sidebar-border: oklch(1 0 0 / 12%);
+  --sidebar-ring: oklch(0.62 0.17 258.6);
+}
+
+@theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  --font-sans: var(--font-ui);
+  --font-mono: var(--font-mono);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+/* ============================================================
+   LEGACY design tokens ("Consola Ops") — kept so the panel sections
+   that have NOT yet been migrated to shadcn primitives keep rendering
+   correctly. These are derived to match the new palette. The shell
+   (Topbar, Sidebar, Panel, KpiRow, LoginView, ProcessModal) no longer
+   depends on these; sections still do until the next migration phase.
+   ============================================================ */
 :root {
   --bg: #f7f8fa;
   --surface: #ffffff;
-  --surface-2: #f0f2f5;
-  --border: #e2e5ea;
+  --surface-2: #f1f3f6;
+  --border-legacy: #e2e5ea;
   --border-strong: #cbd0d8;
   --text: #1a1d23;
   --text-muted: #6b7280;
   --text-faint: #9ca3af;
-  --primary: #2563eb;
+  --primary-legacy: #2f5fd6;
   --primary-fg: #ffffff;
   --danger: #dc2626;
   --danger-bg: #fef2f2;
@@ -30,25 +191,26 @@
   --sp-4: 16px;
   --sp-5: 24px;
   --sp-6: 32px;
-  --radius-sm: 6px;
-  --radius-md: 8px;
-  --radius-lg: 12px;
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04);
-  --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.06);
+  --radius-sm-legacy: 6px;
+  --radius-md-legacy: 8px;
+  --radius-lg-legacy: 12px;
+  --shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.04);
+  --shadow-md: 0 4px 16px rgba(16, 24, 40, 0.08);
   --sidebar-w: 240px;
   --topbar-h: 56px;
 }
 
+.dark,
 [data-theme="dark"] {
-  --bg: #0d0e14;
-  --surface: #1a1b26;
-  --surface-2: #22232f;
-  --border: #2a2c3a;
+  --bg: #0e1018;
+  --surface: #181a24;
+  --surface-2: #20232f;
+  --border-legacy: #2a2c3a;
   --border-strong: #3a3d4d;
-  --text: #e0e0e6;
+  --text: #e6e7ec;
   --text-muted: #9ca3af;
   --text-faint: #6b7280;
-  --primary: #5e6ad2;
+  --primary-legacy: #5e7ce2;
   --primary-fg: #ffffff;
   --danger: #f87171;
   --danger-bg: #2a1416;
@@ -58,47 +220,21 @@
   --warning-bg: #2a1f0a;
   --info: #a78bfa;
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
-  --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.4);
-}
-
-/* Expose the design tokens to Tailwind utilities (bg-surface, text-muted, etc.). */
-@theme inline {
-  --color-bg: var(--bg);
-  --color-surface: var(--surface);
-  --color-surface-2: var(--surface-2);
-  --color-border: var(--border);
-  --color-border-strong: var(--border-strong);
-  --color-text: var(--text);
-  --color-text-muted: var(--text-muted);
-  --color-text-faint: var(--text-faint);
-  --color-primary: var(--primary);
-  --color-primary-fg: var(--primary-fg);
-  --color-danger: var(--danger);
-  --color-danger-bg: var(--danger-bg);
-  --color-success: var(--success);
-  --color-success-bg: var(--success-bg);
-  --color-warning: var(--warning);
-  --color-warning-bg: var(--warning-bg);
-  --color-info: var(--info);
-  --font-sans: var(--font-ui);
-  --font-mono: var(--font-mono);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.45);
 }
 
 * {
   box-sizing: border-box;
-  margin: 0;
-  padding: 0;
 }
 
 body {
   font-family: var(--font-ui);
-  background: var(--bg);
-  color: var(--text);
   line-height: 1.5;
   font-size: 14px;
   transition: background 0.2s, color 0.2s;
 }
 
+/* ---- Legacy section primitives (used by not-yet-migrated sections) ---- */
 h1 {
   font-size: 20px;
   font-weight: 600;
@@ -119,143 +255,21 @@ h2 {
   font-size: 13px;
 }
 
-/* ===== Login ===== */
-.login-view {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 100vh;
-  padding: var(--sp-4);
-}
-
-.login-card {
-  max-width: 400px;
-  width: 100%;
-}
-
-/* ===== Layout shell ===== */
-.topbar {
-  position: sticky;
-  top: 0;
-  z-index: 40;
-  height: var(--topbar-h);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 var(--sp-5);
-  background: var(--surface);
-  border-bottom: 1px solid var(--border);
-}
-
-.topbar-brand {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-3);
-  font-weight: 600;
-}
-
-.topbar-brand .logo {
-  width: 28px;
-  height: 28px;
-  border-radius: var(--radius-sm);
-  background: var(--primary);
-  color: #fff;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: 700;
-  font-size: 14px;
-}
-
-.topbar-right {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-3);
-}
-
-.shell {
-  display: flex;
-  min-height: calc(100vh - var(--topbar-h));
-}
-
-.sidebar {
-  width: var(--sidebar-w);
-  flex-shrink: 0;
-  background: var(--surface);
-  border-right: 1px solid var(--border);
-  padding: var(--sp-4) var(--sp-3);
-  position: sticky;
-  top: var(--topbar-h);
-  height: calc(100vh - var(--topbar-h));
-  overflow-y: auto;
-}
-
-.nav-item {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-3);
-  padding: var(--sp-2) var(--sp-3);
-  border-radius: var(--radius-md);
-  color: var(--text-muted);
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  text-decoration: none;
-  margin-bottom: 2px;
-  border: none;
-  background: none;
-  width: 100%;
-  text-align: left;
-}
-
-.nav-item:hover {
-  background: var(--surface-2);
-  color: var(--text);
-}
-
-.nav-item.active {
-  background: var(--surface-2);
-  color: var(--primary);
-  font-weight: 600;
-}
-
-.nav-item .dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  flex-shrink: 0;
-}
-
-.content {
-  flex: 1;
-  padding: var(--sp-5);
-  max-width: 1400px;
-}
-
-/* ===== Cards ===== */
 .card {
   background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
+  border: 1px solid var(--border-legacy);
+  border-radius: var(--radius-lg-legacy);
   padding: var(--sp-5);
   margin-bottom: var(--sp-4);
   box-shadow: var(--shadow-sm);
   scroll-margin-top: calc(var(--topbar-h) + var(--sp-4));
 }
 
-/* ===== KPI cards ===== */
-.kpi-row {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: var(--sp-3);
-  margin-bottom: var(--sp-4);
-}
-
 .kpi {
   background: var(--surface);
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-legacy);
   border-left: 3px solid var(--text-faint);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-md-legacy);
   padding: var(--sp-4);
   box-shadow: var(--shadow-sm);
 }
@@ -277,20 +291,23 @@ h2 {
 .kpi.is-danger {
   border-left-color: var(--danger);
 }
-
 .kpi.is-success {
   border-left-color: var(--success);
 }
-
 .kpi.is-warning {
   border-left-color: var(--warning);
 }
-
 .kpi.is-primary {
-  border-left-color: var(--primary);
+  border-left-color: var(--primary-legacy);
 }
 
-/* ===== Forms ===== */
+.kpi-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-4);
+}
+
 .field {
   margin-bottom: var(--sp-4);
 }
@@ -306,11 +323,14 @@ label {
 input[type="email"],
 input[type="password"],
 input[type="text"],
-select {
+input[type="number"],
+input[type="search"],
+select,
+textarea {
   width: 100%;
   padding: 9px 12px;
   border: 1px solid var(--border-strong);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-md-legacy);
   font-size: 14px;
   font-family: inherit;
   background: var(--surface);
@@ -318,17 +338,22 @@ select {
 }
 
 input:focus,
-select:focus {
+select:focus,
+textarea:focus {
   outline: none;
-  border-color: var(--primary);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 20%, transparent);
+  border-color: var(--primary-legacy);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary-legacy) 20%, transparent);
 }
 
-/* ===== Buttons ===== */
-button {
+.btn-primary,
+.btn-danger,
+.btn-success,
+.btn-warning,
+.btn-secondary,
+.btn-icon {
   padding: 8px 16px;
   border: none;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-md-legacy);
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
@@ -337,51 +362,48 @@ button {
   height: 36px;
 }
 
-button:hover {
+.btn-primary:hover,
+.btn-danger:hover,
+.btn-success:hover,
+.btn-warning:hover {
   filter: brightness(0.95);
 }
 
-button:active {
-  filter: brightness(0.9);
-}
-
-button:disabled {
+.btn-primary:disabled,
+.btn-danger:disabled,
+.btn-success:disabled,
+.btn-warning:disabled,
+.btn-secondary:disabled,
+.btn-icon:disabled {
   opacity: 0.45;
   cursor: not-allowed;
   filter: none;
 }
 
 .btn-primary {
-  background: var(--primary);
+  background: var(--primary-legacy);
   color: var(--primary-fg);
 }
-
 .btn-danger {
   background: var(--danger);
   color: #fff;
 }
-
 .btn-success {
   background: var(--success);
   color: #fff;
 }
-
 .btn-warning {
   background: var(--warning);
   color: #fff;
 }
-
 .btn-secondary {
   background: transparent;
   color: var(--text);
   border: 1px solid var(--border-strong);
 }
-
 .btn-secondary:hover {
   background: var(--surface-2);
-  filter: none;
 }
-
 .btn-icon {
   background: transparent;
   border: 1px solid var(--border-strong);
@@ -404,11 +426,10 @@ button:disabled {
   min-width: 160px;
 }
 
-/* ===== Danger zone ===== */
 .danger-zone {
   background: var(--danger-bg);
   border: 1px solid color-mix(in srgb, var(--danger) 30%, transparent);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-md-legacy);
   padding: var(--sp-4);
   margin-top: var(--sp-4);
 }
@@ -422,7 +443,6 @@ button:disabled {
   margin-bottom: var(--sp-3);
 }
 
-/* ===== Status grid ===== */
 .status-grid {
   display: grid;
   grid-template-columns: auto 1fr;
@@ -450,7 +470,6 @@ button:disabled {
   color: var(--success);
 }
 
-/* ===== Tables ===== */
 table {
   width: 100%;
   border-collapse: collapse;
@@ -460,7 +479,7 @@ table {
 th {
   text-align: left;
   padding: var(--sp-2) var(--sp-3);
-  border-bottom: 2px solid var(--border);
+  border-bottom: 2px solid var(--border-legacy);
   font-weight: 600;
   color: var(--text-muted);
   font-size: 12px;
@@ -471,7 +490,7 @@ th {
 
 td {
   padding: var(--sp-2) var(--sp-3);
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--border-legacy);
   height: 36px;
 }
 
@@ -484,11 +503,10 @@ tbody tr:hover {
   font-variant-numeric: tabular-nums;
 }
 
-/* ===== Badges ===== */
 .badge {
   display: inline-block;
   padding: 2px 8px;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-sm-legacy);
   font-size: 11px;
   font-weight: 600;
 }
@@ -498,33 +516,26 @@ tbody tr:hover {
   background: var(--danger-bg);
   color: var(--danger);
 }
-
 .badge-success {
   background: var(--success-bg);
   color: var(--success);
 }
-
 .badge-warn {
   background: var(--warning-bg);
   color: var(--warning);
 }
-
 .badge-info {
   background: color-mix(in srgb, var(--info) 12%, transparent);
   color: var(--info);
 }
-
 .badge-neutral {
   background: var(--surface-2);
   color: var(--text-muted);
 }
-
-/* Solid coloured badges (used for sections, usernames, actions) */
 .badge-solid {
   color: #fff;
 }
 
-/* ===== Misc ===== */
 .err {
   color: var(--danger);
   font-size: 13px;
@@ -562,8 +573,8 @@ tbody tr:hover {
 }
 
 .roster-validation-card {
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
+  border: 1px solid var(--border-legacy);
+  border-radius: var(--radius-md-legacy);
   padding: var(--sp-3);
   background: var(--surface);
 }
@@ -592,62 +603,18 @@ tbody tr:hover {
   color: var(--danger);
 }
 
-.footer {
-  text-align: center;
-  color: var(--text-faint);
-  font-size: 12px;
-  margin: var(--sp-6) 0 var(--sp-4);
-}
-
-code {
-  font-family: var(--font-mono);
-  background: var(--surface-2);
-  padding: 2px 6px;
-  border-radius: var(--radius-sm);
-  font-size: 12px;
-}
-
-.theme-toggle {
-  background: transparent;
-  border: 1px solid var(--border-strong);
-  color: var(--text);
-  width: 36px;
-  padding: 0;
-  font-size: 15px;
-}
-
-a {
-  color: var(--primary);
-}
-
 .muted-note {
   color: var(--text-muted);
   font-size: 12px;
   margin-bottom: var(--sp-3);
 }
 
-/* ===== Modal ===== */
-.modal-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.5);
-  z-index: 1000;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 20px;
-}
-
-.modal-box {
-  background: var(--surface);
-  color: var(--text);
-  border-radius: var(--radius-lg);
-  padding: var(--sp-5);
-  max-width: 720px;
-  width: 100%;
-  max-height: 80vh;
-  overflow-y: auto;
-  box-shadow: var(--shadow-md);
+code {
+  font-family: var(--font-mono);
+  background: var(--surface-2);
+  padding: 2px 6px;
+  border-radius: var(--radius-sm-legacy);
+  font-size: 12px;
 }
 
 /* New-event flash cue for live blocked cheat/browser rows */
@@ -670,17 +637,10 @@ a {
 
 @media (prefers-reduced-motion: reduce) {
   *,
-  body,
-  button {
+  body {
     transition: none !important;
   }
   .row-flash {
     animation: none;
-  }
-}
-
-@media (max-width: 1024px) {
-  .sidebar {
-    display: none;
   }
 }

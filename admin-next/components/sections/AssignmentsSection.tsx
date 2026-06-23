@@ -1,20 +1,52 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
+import { ExternalLink, Plus, Trash2 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import type { AssignmentRow, AssignmentAcceptanceRow, AssignmentSubmissionRow, EvaluationRow } from "@/lib/types";
 import { useSectionLookup } from "@/hooks/useSectionLookup";
 import { useEvaluations } from "@/hooks/useEvaluations";
 import { useEnrollmentCounts } from "@/hooks/useEnrollmentCounts";
-import { BADGE } from "@/lib/colors";
-import { Badge } from "@/components/ui/Badge";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+
+// Sentinel values for the Select UI: Radix Select cannot use "" as an item
+// value, so the empty-string state ("all sections" / "no evaluation") is mapped
+// to these constants at the presentation layer only. The underlying state keeps
+// "" exactly as before.
+const ALL_SECTIONS = "__all__";
+const NO_EVALUATION = "__none__";
 
 // Tareas de GitHub Classroom: assignments CRUD + acceptance cross-reference.
 export function AssignmentsSection() {
   const [rows, setRows] = useState<AssignmentRow[]>([]);
   const [acceptances, setAcceptances] = useState<AssignmentAcceptanceRow[]>([]);
   const [submissions, setSubmissions] = useState<AssignmentSubmissionRow[]>([]);
-  const [feedback, setFeedback] = useState<{ text: string; ok: boolean } | null>(null);
 
   const [title, setTitle] = useState("");
   const [section, setSection] = useState("");
@@ -143,7 +175,7 @@ export function AssignmentsSection() {
 
   async function addAssignment() {
     if (!title.trim() || (!url.trim() && !manualSubmission)) {
-      setFeedback({ text: "Completa título y al menos URL o entrega manual.", ok: false });
+      toast.error("Completa título y al menos URL o entrega manual.");
       return;
     }
     const insert: Record<string, unknown> = {
@@ -159,14 +191,14 @@ export function AssignmentsSection() {
     }
     const { error: err } = await supabase.from("assignments").insert(insert);
     if (err) {
-      setFeedback({ text: "Error: " + err.message, ok: false });
+      toast.error("Error: " + err.message);
     } else {
       setTitle("");
       setUrl("");
       setOrg("");
       setEvaluationId("");
       setManualSubmission(false);
-      setFeedback({ text: "Tarea agregada.", ok: true });
+      toast.success("Tarea agregada.");
       void load();
     }
   }
@@ -191,192 +223,222 @@ export function AssignmentsSection() {
   }, [section, sections, evaluations, evaluationsBySection]);
 
   return (
-    <div className="card" id="sec-tareas">
-      <h2>
-        Tareas de GitHub Classroom
-        <span style={{ fontSize: 12, color: "var(--text-faint)", marginLeft: 8 }}>
-          (visibles para los alumnos en su script)
-        </span>
-      </h2>
-      <p className="muted-note">
-        Pega los links de assignment de{" "}
-        <a href="https://classroom.github.com/" target="_blank" rel="noopener noreferrer">
-          classroom.github.com
-        </a>
-        . Opcional: vincula la tarea a una evaluación para heredar sección y curso.
-      </p>
-      <div className="row-flex">
-        <div className="field" style={{ flex: "0 0 160px" }}>
-          <label htmlFor="asgTitle">Título</label>
-          <input
-            type="text"
-            id="asgTitle"
-            placeholder="Evaluación 1"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-          />
-        </div>
-        <div className="field" style={{ flex: "0 0 110px" }}>
-          <label htmlFor="asgSection">Sección</label>
-          <select
-            id="asgSection"
-            value={section}
-            onChange={(e) => setSection(e.target.value)}
+    <Card id="sec-tareas" className="scroll-mt-20">
+      <CardHeader>
+        <CardTitle className="flex flex-wrap items-baseline gap-2 text-lg">
+          Tareas de GitHub Classroom
+          <span className="text-xs font-normal text-muted-foreground">
+            (visibles para los alumnos en su script)
+          </span>
+        </CardTitle>
+        <CardDescription>
+          Pega los links de assignment de{" "}
+          <a
+            href="https://classroom.github.com/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-primary hover:underline"
           >
-            <option value="">Todas las secciones</option>
-            {sectionCodes.map((sec) => (
-              <option key={sec} value={sec}>
-                {sec}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="field" style={{ flex: "0 0 160px" }}>
-          <label htmlFor="asgEvaluation">Evaluación (opcional)</label>
-          <select
-            id="asgEvaluation"
-            value={evaluationId}
-            onChange={(e) => setEvaluationId(e.target.value)}
-          >
-            <option value="">— Ninguna —</option>
-            {availableEvaluations.map((ev) => {
-              const sec = sectionById.get(ev.section_id);
-              const course = sec ? courseById.get(sec.course_id) : undefined;
-              const label = [course?.code, sec?.code, ev.title]
-                .filter(Boolean)
-                .join(" / ");
-              return (
-                <option key={ev.id} value={ev.id}>
-                  {label}
-                </option>
-              );
-            })}
-          </select>
-        </div>
-        <div className="field" style={{ flex: "0 0 200px" }}>
-          <label htmlFor="asgOrg">Org GitHub (Classroom)</label>
-          <input
-            type="text"
-            id="asgOrg"
-            placeholder="Fundamentos-de-la-Programacion"
-            value={org}
-            onChange={(e) => setOrg(e.target.value)}
-          />
-        </div>
-        <div className="field">
-          <label htmlFor="asgUrl">URL del Classroom assignment</label>
-          <input
-            type="text"
-            id="asgUrl"
-            placeholder="https://classroom.github.com/a/XXXX"
-            value={url}
-            onChange={(e) => setUrl(e.target.value)}
-          />
-        </div>
-        <div className="field" style={{ flex: "0 0 auto", alignSelf: "flex-end" }}>
-          <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
-            <input
-              type="checkbox"
-              checked={manualSubmission}
-              onChange={(e) => setManualSubmission(e.target.checked)}
+            classroom.github.com
+          </a>
+          . Opcional: vincula la tarea a una evaluación para heredar sección y curso.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="grid w-[180px] gap-1.5">
+            <Label htmlFor="asgTitle">Título</Label>
+            <Input
+              type="text"
+              id="asgTitle"
+              placeholder="Evaluación 1"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
             />
-            Entrega manual
-          </label>
-        </div>
-        <button className="btn-primary" onClick={addAssignment}>
-          Agregar tarea
-        </button>
-      </div>
-      {feedback ? <div className={feedback.ok ? "ok" : "err"}>{feedback.text}</div> : null}
-      <table style={{ marginTop: 16 }}>
-        <thead>
-          <tr>
-            <th style={{ width: "18%" }}>Título</th>
-            <th style={{ width: "12%" }}>Sección</th>
-            <th style={{ width: "22%" }}>URL</th>
-            <th style={{ width: "8%" }}>Acept.</th>
-            <th style={{ width: "8%" }}>Entr.</th>
-            <th style={{ width: "12%" }}>Estado</th>
-            <th style={{ width: "15%" }}>Acciones</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.length === 0 ? (
-            <tr>
-              <td colSpan={7} style={{ textAlign: "center", color: "var(--text-faint)" }}>
-                Sin tareas configuradas. Agrega una pegando el link de Classroom.
-              </td>
-            </tr>
-          ) : (
-            rows.map((a) => {
-              const label = sectionLabel(a);
-              const secId = sectionIdForAssignment(a);
-              const accepted = acceptanceCount.get(String(a.id)) ?? 0;
-              const submitted = submissionCount.get(String(a.id)) ?? 0;
-              return (
-                <tr key={a.id}>
-                  <td>
-                    {a.title}
-                    {a.allows_manual_submission ? (
-                      <span style={{ fontSize: 10, color: "var(--text-faint)", marginLeft: 4 }}>
-                        manual
-                      </span>
-                    ) : null}
-                  </td>
-                  <td>
-                    <Badge solidColor={a.section || a.evaluation_id ? BADGE.user : BADGE.sectionAlt}>
+          </div>
+          <div className="grid w-[150px] gap-1.5">
+            <Label htmlFor="asgSection">Sección</Label>
+            <Select
+              value={section === "" ? ALL_SECTIONS : section}
+              onValueChange={(v) => setSection(v === ALL_SECTIONS ? "" : v)}
+            >
+              <SelectTrigger id="asgSection" className="w-full">
+                <SelectValue placeholder="Todas las secciones" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ALL_SECTIONS}>Todas las secciones</SelectItem>
+                {sectionCodes.map((sec) => (
+                  <SelectItem key={sec} value={sec}>
+                    {sec}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="grid w-[200px] gap-1.5">
+            <Label htmlFor="asgEvaluation">Evaluación (opcional)</Label>
+            <Select
+              value={evaluationId === "" ? NO_EVALUATION : evaluationId}
+              onValueChange={(v) => setEvaluationId(v === NO_EVALUATION ? "" : v)}
+            >
+              <SelectTrigger id="asgEvaluation" className="w-full">
+                <SelectValue placeholder="— Ninguna —" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={NO_EVALUATION}>— Ninguna —</SelectItem>
+                {availableEvaluations.map((ev) => {
+                  const sec = sectionById.get(ev.section_id);
+                  const course = sec ? courseById.get(sec.course_id) : undefined;
+                  const label = [course?.code, sec?.code, ev.title]
+                    .filter(Boolean)
+                    .join(" / ");
+                  return (
+                    <SelectItem key={ev.id} value={String(ev.id)}>
                       {label}
-                    </Badge>
-                  </td>
-                  <td>
-                    {a.classroom_url ? (
-                      <a
-                        href={a.classroom_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="mono"
-                        style={{ fontSize: 12 }}
-                      >
-                        {a.classroom_url}
-                      </a>
-                    ) : (
-                      <span style={{ color: "var(--text-faint)", fontSize: 12 }}>—</span>
-                    )}
-                  </td>
-                  <td className="mono">{tally(accepted, secId)}</td>
-                  <td className="mono">{tally(submitted, secId)}</td>
-                  <td>
-                    <Badge solidColor={a.active ? BADGE.success : BADGE.neutral}>
-                      {a.active ? "ACTIVA" : "inactiva"}
-                    </Badge>
-                  </td>
-                  <td>
-                    <button
-                      className={a.active ? "btn-secondary" : "btn-success"}
-                      style={{ padding: "4px 12px", fontSize: 12, height: "auto" }}
-                      onClick={() => toggleAssignment(a.id, !a.active)}
-                    >
-                      {a.active ? "Desactivar" : "Activar"}
-                    </button>
-                    <button
-                      className="btn-danger"
-                      style={{
-                        padding: "4px 10px",
-                        fontSize: 14,
-                        height: "auto",
-                        marginLeft: 6,
-                      }}
-                      onClick={() => deleteAssignment(a.id)}
-                    >
-                      ×
-                    </button>
-                  </td>
-                </tr>
-              );
-            })
-          )}
-        </tbody>
-      </table>
-    </div>
+                    </SelectItem>
+                  );
+                })}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="grid w-[220px] gap-1.5">
+            <Label htmlFor="asgOrg">Org GitHub (Classroom)</Label>
+            <Input
+              type="text"
+              id="asgOrg"
+              placeholder="Fundamentos-de-la-Programacion"
+              value={org}
+              onChange={(e) => setOrg(e.target.value)}
+            />
+          </div>
+          <div className="grid flex-1 gap-1.5">
+            <Label htmlFor="asgUrl">URL del Classroom assignment</Label>
+            <Input
+              type="text"
+              id="asgUrl"
+              placeholder="https://classroom.github.com/a/XXXX"
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
+            />
+          </div>
+          <div className="flex h-9 items-center gap-2">
+            <Switch
+              id="asgManual"
+              checked={manualSubmission}
+              onCheckedChange={setManualSubmission}
+            />
+            <Label htmlFor="asgManual" className="cursor-pointer">Entrega manual</Label>
+          </div>
+          <Button onClick={addAssignment}>
+            <Plus />
+            Agregar tarea
+          </Button>
+        </div>
+
+        <div className="rounded-lg border">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-[18%]">Título</TableHead>
+                <TableHead className="w-[12%]">Sección</TableHead>
+                <TableHead className="w-[22%]">URL</TableHead>
+                <TableHead className="w-[8%]">Acept.</TableHead>
+                <TableHead className="w-[8%]">Entr.</TableHead>
+                <TableHead className="w-[12%]">Estado</TableHead>
+                <TableHead className="w-[15%] text-right">Acciones</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {rows.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={7} className="text-center text-muted-foreground">
+                    Sin tareas configuradas. Agrega una pegando el link de Classroom.
+                  </TableCell>
+                </TableRow>
+              ) : (
+                rows.map((a) => {
+                  const label = sectionLabel(a);
+                  const secId = sectionIdForAssignment(a);
+                  const accepted = acceptanceCount.get(String(a.id)) ?? 0;
+                  const submitted = submissionCount.get(String(a.id)) ?? 0;
+                  return (
+                    <TableRow key={a.id}>
+                      <TableCell className="font-medium">
+                        {a.title}
+                        {a.allows_manual_submission ? (
+                          <span className="ml-1.5 inline-flex items-center rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                            manual
+                          </span>
+                        ) : null}
+                      </TableCell>
+                      <TableCell>
+                        <span
+                          className={
+                            a.section || a.evaluation_id
+                              ? "inline-flex items-center rounded-md bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary"
+                              : "inline-flex items-center rounded-md bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground"
+                          }
+                        >
+                          {label}
+                        </span>
+                      </TableCell>
+                      <TableCell>
+                        {a.classroom_url ? (
+                          <a
+                            href={a.classroom_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex max-w-[240px] items-center gap-1 truncate font-mono text-xs text-primary hover:underline"
+                          >
+                            <ExternalLink className="size-3 shrink-0" />
+                            <span className="truncate">{a.classroom_url}</span>
+                          </a>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        )}
+                      </TableCell>
+                      <TableCell className="font-mono text-sm">{tally(accepted, secId)}</TableCell>
+                      <TableCell className="font-mono text-sm">{tally(submitted, secId)}</TableCell>
+                      <TableCell>
+                        <span
+                          className={
+                            a.active
+                              ? "inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-2 py-0.5 text-xs font-medium text-emerald-600 dark:text-emerald-400"
+                              : "inline-flex items-center gap-1.5 rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground"
+                          }
+                        >
+                          <span className={a.active ? "size-1.5 rounded-full bg-emerald-500" : "size-1.5 rounded-full bg-muted-foreground/50"} />
+                          {a.active ? "Activa" : "Inactiva"}
+                        </span>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex justify-end gap-2">
+                          <Button
+                            variant={a.active ? "outline" : "default"}
+                            size="sm"
+                            onClick={() => toggleAssignment(a.id, !a.active)}
+                          >
+                            {a.active ? "Desactivar" : "Activar"}
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            className="text-destructive hover:text-destructive"
+                            onClick={() => deleteAssignment(a.id)}
+                            aria-label="Eliminar tarea"
+                          >
+                            <Trash2 />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })
+              )}
+            </TableBody>
+          </Table>
+        </div>
+      </CardContent>
+    </Card>
   );
 }

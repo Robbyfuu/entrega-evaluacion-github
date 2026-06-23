@@ -1,19 +1,43 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { toast } from "sonner";
+import { ExternalLink, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import type { EvaluationRow, SectionRow } from "@/lib/types";
 import { useEvaluations } from "@/hooks/useEvaluations";
 import { useSections } from "@/hooks/useSections";
 import { useCourses } from "@/hooks/useCourses";
-import { BADGE } from "@/lib/colors";
-import { Badge } from "@/components/ui/Badge";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 
 export function EvaluationsSection() {
   const { rows, loading, error, refresh } = useEvaluations();
   const { rows: sections } = useSections();
   const { rows: courses } = useCourses();
-  const [feedback, setFeedback] = useState<{ text: string; ok: boolean } | null>(null);
   const [sectionId, setSectionId] = useState<string>("");
   const [title, setTitle] = useState("");
   const [url, setUrl] = useState("");
@@ -35,7 +59,7 @@ export function EvaluationsSection() {
     const sid = Number(sectionId);
     const t = title.trim();
     if (!sid || !t) {
-      setFeedback({ text: "Selecciona sección y completa el título.", ok: false });
+      toast.error("Selecciona sección y completa el título.");
       return;
     }
     const { data, error: err } = await supabase
@@ -49,28 +73,28 @@ export function EvaluationsSection() {
       })
       .select();
     if (err) {
-      setFeedback({ text: "Error: " + err.message, ok: false });
+      toast.error("Error: " + err.message);
       return;
     }
     if (!data || data.length === 0) {
-      setFeedback({ text: "No se pudo agregar (¿sesión expirada?).", ok: false });
+      toast.error("No se pudo agregar (¿sesión expirada?).");
       return;
     }
     setTitle("");
     setUrl("");
     setOrg("");
-    setFeedback({ text: `Evaluación "${t}" agregada (inactiva).`, ok: true });
+    toast.success(`Evaluación "${t}" agregada (inactiva).`);
     void refresh();
   }
 
   async function toggleEvaluation(id: EvaluationRow["id"], active: boolean) {
     const { data, error: err } = await supabase.from("evaluations").update({ active }).eq("id", id).select();
     if (err) {
-      setFeedback({ text: "Error: " + err.message, ok: false });
+      toast.error("Error: " + err.message);
       return;
     }
     if (!data || data.length === 0) {
-      setFeedback({ text: "No se pudo actualizar (¿sesión expirada?).", ok: false });
+      toast.error("No se pudo actualizar (¿sesión expirada?).");
       return;
     }
     void refresh();
@@ -80,158 +104,185 @@ export function EvaluationsSection() {
     if (!window.confirm(`¿Eliminar la evaluación "${title}"?`)) return;
     const { data, error: err } = await supabase.from("evaluations").delete().eq("id", id).select();
     if (err) {
-      setFeedback({ text: "Error: " + err.message, ok: false });
+      toast.error("Error: " + err.message);
       return;
     }
     if (!data || data.length === 0) {
-      setFeedback({ text: "No se pudo eliminar (¿sesión expirada?).", ok: false });
+      toast.error("No se pudo eliminar (¿sesión expirada?).");
       return;
     }
     void refresh();
   }
 
   return (
-    <div className="card" id="sec-evaluations">
-      <h2>
-        Evaluaciones
-        <span className="pill">{rows.length}</span>
-      </h2>
-      <p className="muted-note">
-        Crea evaluaciones por sección. Activa la evaluación para que los alumnos la vean al arrancar.
-      </p>
-      <div className="row-flex">
-        <div className="field" style={{ flex: "0 0 180px" }}>
-          <label htmlFor="evalSection">Sección</label>
-          <select
-            id="evalSection"
-            value={sectionId}
-            onChange={(e) => setSectionId(e.target.value)}
-          >
-            <option value="">Seleccionar sección...</option>
-            {sections.map((s) => (
-              <option key={s.id} value={s.id}>
-                {courseMap.get(s.course_id) ?? "?"} / {s.code}
-              </option>
-            ))}
-          </select>
+    <Card id="sec-evaluations" className="scroll-mt-20">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-lg">
+          Evaluaciones
+          <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-muted px-1.5 text-xs font-medium text-muted-foreground">
+            {rows.length}
+          </span>
+        </CardTitle>
+        <CardDescription>
+          Crea evaluaciones por sección. Activa la evaluación para que los alumnos la vean al arrancar.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="grid w-[200px] gap-1.5">
+            <Label htmlFor="evalSection">Sección</Label>
+            <Select value={sectionId} onValueChange={setSectionId}>
+              <SelectTrigger id="evalSection" className="w-full">
+                <SelectValue placeholder="Seleccionar sección..." />
+              </SelectTrigger>
+              <SelectContent>
+                {sections.map((s) => (
+                  <SelectItem key={s.id} value={String(s.id)}>
+                    {courseMap.get(s.course_id) ?? "?"} / {s.code}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="grid w-[180px] gap-1.5">
+            <Label htmlFor="evalTitle">Título</Label>
+            <Input
+              type="text"
+              id="evalTitle"
+              placeholder="Evaluación 1"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+            />
+          </div>
+          <div className="grid w-[220px] gap-1.5">
+            <Label htmlFor="evalOrg">Org GitHub (opcional)</Label>
+            <Input
+              type="text"
+              id="evalOrg"
+              placeholder="Fundamentos-de-la-Programacion"
+              value={org}
+              onChange={(e) => setOrg(e.target.value)}
+            />
+          </div>
+          <div className="grid flex-1 gap-1.5">
+            <Label htmlFor="evalUrl">URL Classroom (opcional)</Label>
+            <Input
+              type="text"
+              id="evalUrl"
+              placeholder="https://classroom.github.com/a/XXXX"
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") void addEvaluation(); }}
+            />
+          </div>
+          <Button onClick={addEvaluation}>
+            <Plus />
+            Agregar evaluación
+          </Button>
         </div>
-        <div className="field" style={{ flex: "0 0 160px" }}>
-          <label htmlFor="evalTitle">Título</label>
-          <input
-            type="text"
-            id="evalTitle"
-            placeholder="Evaluación 1"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-          />
-        </div>
-        <div className="field" style={{ flex: "0 0 200px" }}>
-          <label htmlFor="evalOrg">Org GitHub (opcional)</label>
-          <input
-            type="text"
-            id="evalOrg"
-            placeholder="Fundamentos-de-la-Programacion"
-            value={org}
-            onChange={(e) => setOrg(e.target.value)}
-          />
-        </div>
-        <div className="field">
-          <label htmlFor="evalUrl">URL Classroom (opcional)</label>
-          <input
-            type="text"
-            id="evalUrl"
-            placeholder="https://classroom.github.com/a/XXXX"
-            value={url}
-            onChange={(e) => setUrl(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter") void addEvaluation(); }}
-          />
-        </div>
-        <button className="btn-primary" onClick={addEvaluation}>
-          Agregar evaluación
-        </button>
-      </div>
-      {feedback ? <div className={feedback.ok ? "ok" : "err"}>{feedback.text}</div> : null}
 
-      {loading && rows.length === 0 ? (
-        <p style={{ marginTop: 16, color: "var(--text-faint)" }}>Cargando...</p>
-      ) : error ? (
-        <p className="err" style={{ marginTop: 16 }}>Error: {error}</p>
-      ) : (
-        <table style={{ marginTop: 16 }}>
-          <thead>
-            <tr>
-              <th style={{ width: "25%" }}>Título</th>
-              <th style={{ width: "20%" }}>Sección</th>
-              <th style={{ width: "25%" }}>URL</th>
-              <th style={{ width: "12%" }}>Estado</th>
-              <th style={{ width: "18%" }}>Acciones</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.length === 0 ? (
-              <tr>
-                <td colSpan={5} style={{ textAlign: "center", color: "var(--text-faint)" }}>
-                  Sin evaluaciones configuradas.
-                </td>
-              </tr>
-            ) : (
-              rows.map((e) => {
-                const sec = sectionMap.get(e.section_id);
-                const courseCode = sec ? courseMap.get(sec.course_id) ?? "?" : "?";
-                return (
-                  <tr key={e.id}>
-                    <td>{e.title}</td>
-                    <td>
-                      <Badge solidColor={BADGE.user}>
-                        {courseCode} / {sec?.code ?? "?"}
-                      </Badge>
-                    </td>
-                    <td>
-                      {e.classroom_url ? (
-                        <a
-                          href={e.classroom_url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="mono"
-                          style={{ fontSize: 12 }}
+        <div className="rounded-lg border">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-[25%]">Título</TableHead>
+                <TableHead className="w-[20%]">Sección</TableHead>
+                <TableHead className="w-[25%]">URL</TableHead>
+                <TableHead className="w-[12%]">Estado</TableHead>
+                <TableHead className="w-[18%] text-right">Acciones</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {loading && rows.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={5} className="text-center text-muted-foreground">
+                    Cargando...
+                  </TableCell>
+                </TableRow>
+              ) : error ? (
+                <TableRow>
+                  <TableCell colSpan={5} className="text-center text-destructive">
+                    Error: {error}
+                  </TableCell>
+                </TableRow>
+              ) : rows.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={5} className="text-center text-muted-foreground">
+                    Sin evaluaciones configuradas.
+                  </TableCell>
+                </TableRow>
+              ) : (
+                rows.map((e) => {
+                  const sec = sectionMap.get(e.section_id);
+                  const courseCode = sec ? courseMap.get(sec.course_id) ?? "?" : "?";
+                  return (
+                    <TableRow key={e.id}>
+                      <TableCell className="font-medium">{e.title}</TableCell>
+                      <TableCell>
+                        <span className="inline-flex items-center rounded-md bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
+                          {courseCode} / {sec?.code ?? "?"}
+                        </span>
+                      </TableCell>
+                      <TableCell>
+                        {e.classroom_url ? (
+                          <a
+                            href={e.classroom_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex max-w-[260px] items-center gap-1 truncate font-mono text-xs text-primary hover:underline"
+                          >
+                            <ExternalLink className="size-3 shrink-0" />
+                            <span className="truncate">{e.classroom_url}</span>
+                          </a>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <span
+                          className={
+                            e.active
+                              ? "inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-2 py-0.5 text-xs font-medium text-emerald-600 dark:text-emerald-400"
+                              : "inline-flex items-center gap-1.5 rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground"
+                          }
                         >
-                          {e.classroom_url}
-                        </a>
-                      ) : (
-                        <span style={{ color: "var(--text-faint)" }}>—</span>
-                      )}
-                    </td>
-                    <td>
-                      <Badge solidColor={e.active ? BADGE.success : BADGE.neutral}>
-                        {e.active ? "ACTIVA" : "inactiva"}
-                      </Badge>
-                    </td>
-                    <td>
-                      <button
-                        className={e.active ? "btn-secondary" : "btn-success"}
-                        style={{ padding: "4px 12px", fontSize: 12, height: "auto" }}
-                        onClick={() => toggleEvaluation(e.id, !e.active)}
-                      >
-                        {e.active ? "Desactivar" : "Activar"}
-                      </button>
-                      <button
-                        className="btn-danger"
-                        style={{ padding: "4px 10px", fontSize: 14, height: "auto", marginLeft: 6 }}
-                        onClick={() => deleteEvaluation(e.id, e.title)}
-                      >
-                        ×
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })
-            )}
-          </tbody>
-        </table>
-      )}
-      <button className="btn-secondary" style={{ marginTop: 8 }} onClick={refresh}>
-        Refrescar
-      </button>
-    </div>
+                          <span className={e.active ? "size-1.5 rounded-full bg-emerald-500" : "size-1.5 rounded-full bg-muted-foreground/50"} />
+                          {e.active ? "Activa" : "Inactiva"}
+                        </span>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex justify-end gap-2">
+                          <Button
+                            variant={e.active ? "outline" : "default"}
+                            size="sm"
+                            onClick={() => toggleEvaluation(e.id, !e.active)}
+                          >
+                            {e.active ? "Desactivar" : "Activar"}
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            className="text-destructive hover:text-destructive"
+                            onClick={() => deleteEvaluation(e.id, e.title)}
+                            aria-label="Eliminar evaluación"
+                          >
+                            <Trash2 />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })
+              )}
+            </TableBody>
+          </Table>
+        </div>
+
+        <Button variant="outline" size="sm" onClick={refresh}>
+          <RefreshCw />
+          Refrescar
+        </Button>
+      </CardContent>
+    </Card>
   );
 }

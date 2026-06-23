@@ -34,8 +34,8 @@ export function App() {
 
   if (!ready) {
     return (
-      <div className="login-view">
-        <p className="subtitle">Cargando...</p>
+      <div className="flex min-h-screen items-center justify-center bg-muted/30">
+        <p className="text-sm text-muted-foreground">Cargando...</p>
       </div>
     );
   }
