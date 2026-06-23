@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { CheckCircle2, ListChecks, RefreshCw, Trash2, XCircle } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import type { SuspiciousProcess } from "@/lib/types";
 import { useRealtimeTable } from "@/hooks/useRealtimeTable";
@@ -9,8 +10,38 @@ import { normalizeProcessName } from "@/lib/suspicious";
 import { fmt } from "@/lib/format";
 import { BADGE } from "@/lib/colors";
 import { Badge } from "@/components/ui/Badge";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Skeleton } from "@/components/ui/skeleton";
+import { cn } from "@/lib/utils";
 
 const GLOBAL_LABEL = "Global (todas las secciones)";
+
+// Sentinel for the radix Select item mapped to the empty section ("" = global).
+const GLOBAL_VALUE = "__global__";
 
 // Procesos sospechosos: editor CRUD sobre la tabla `suspicious_processes`.
 // El cliente C# y el panel comparten esta tabla en tiempo real, así el profesor
@@ -119,117 +150,167 @@ export function SuspiciousProcessesSection() {
   const total = rows.length;
 
   return (
-    <div className="card" id="sec-suspicious">
-      <h2>
-        Procesos sospechosos
-        <span style={{ fontSize: 12, color: "var(--text-faint)", marginLeft: 8 }}>
-          (resaltan en PCs conectados y alertas)
-        </span>
-        <span className="pill">{total}</span>
-      </h2>
-      <p className="muted-note">
-        Lista de programas que se marcan como sospechosos durante el examen. Usa{" "}
-        <strong>Global</strong> para todas las secciones, o limita un proceso a una
-        sección. Los equipos la aplican en tiempo real.
-      </p>
-      <div className="row-flex">
-        <div className="field">
-          <label htmlFor="suspName">Nombre del proceso</label>
-          <input
-            type="text"
-            id="suspName"
-            placeholder="Nombre del proceso (ej: chrome, code, discord)"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") void addProcess();
-            }}
-          />
+    <Card id="sec-suspicious" className="mb-4 scroll-mt-20">
+      <CardHeader>
+        <CardTitle className="flex flex-wrap items-center gap-2">
+          Procesos sospechosos
+          <span className="text-xs font-normal text-muted-foreground">
+            (resaltan en PCs conectados y alertas)
+          </span>
+          <Badge variant="neutral">{total}</Badge>
+        </CardTitle>
+        <CardDescription>
+          Lista de programas que se marcan como sospechosos durante el examen. Usa{" "}
+          <strong className="font-semibold text-foreground">Global</strong> para
+          todas las secciones, o limita un proceso a una sección. Los equipos la
+          aplican en tiempo real.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-5">
+        {/* Alta de proceso */}
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+          <div className="flex flex-1 flex-col gap-1.5">
+            <Label htmlFor="suspName">Nombre del proceso</Label>
+            <Input
+              type="text"
+              id="suspName"
+              placeholder="Nombre del proceso (ej: chrome, code, discord)"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") void addProcess();
+              }}
+            />
+          </div>
+          <div className="flex w-full flex-col gap-1.5 sm:w-56">
+            <Label htmlFor="suspSection">Sección</Label>
+            <Select
+              value={section === "" ? GLOBAL_VALUE : section}
+              onValueChange={(value) =>
+                setSection(value === GLOBAL_VALUE ? "" : value)
+              }
+            >
+              <SelectTrigger id="suspSection" className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={GLOBAL_VALUE}>{GLOBAL_LABEL}</SelectItem>
+                {sectionCodes.map((sec) => (
+                  <SelectItem key={sec} value={sec}>
+                    {sec}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <Button onClick={addProcess}>Agregar proceso</Button>
         </div>
-        <div className="field" style={{ flex: "0 0 220px" }}>
-          <label htmlFor="suspSection">Sección</label>
-          <select
-            id="suspSection"
-            value={section}
-            onChange={(e) => setSection(e.target.value)}
-          >
-            <option value="">{GLOBAL_LABEL}</option>
-            {sectionCodes.map((sec) => (
-              <option key={sec} value={sec}>
-                {sec}
-              </option>
-            ))}
-          </select>
-        </div>
-        <button className="btn-primary" onClick={addProcess}>
-          Agregar proceso
-        </button>
-      </div>
-      {feedback ? <div className={feedback.ok ? "ok" : "err"}>{feedback.text}</div> : null}
 
-      {loading && rows.length === 0 ? (
-        <p style={{ marginTop: 16, color: "var(--text-faint)" }}>Cargando...</p>
-      ) : error ? (
-        <p className="err" style={{ marginTop: 16 }}>
-          Error: {error}
-        </p>
-      ) : (
-        <div style={{ marginTop: 16 }}>
-          {groups.map((group) => (
-            <div key={group.key} style={{ marginBottom: 20 }}>
-              <h3 style={{ fontSize: 14, margin: "0 0 8px" }}>
-                <Badge
-                  solidColor={group.key === "__global__" ? BADGE.sectionAlt : BADGE.user}
-                >
-                  {group.label}
-                </Badge>
-                <span
-                  style={{ fontSize: 12, color: "var(--text-faint)", marginLeft: 8 }}
-                >
-                  {group.items.length}
-                </span>
-              </h3>
-              {group.items.length === 0 ? (
-                <p style={{ color: "var(--text-faint)", fontSize: 13, margin: 0 }}>
-                  Sin procesos en este grupo.
-                </p>
-              ) : (
-                <table>
-                  <thead>
-                    <tr>
-                      <th style={{ width: "50%" }}>Nombre del proceso</th>
-                      <th style={{ width: "35%" }}>Agregado</th>
-                      <th style={{ width: "15%" }}>Acciones</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {group.items.map((p) => (
-                      <tr key={p.id}>
-                        <td className="mono">{p.process_name}</td>
-                        <td style={{ fontSize: 12, color: "var(--text-faint)" }}>
-                          {fmt(p.created_at)}
-                        </td>
-                        <td>
-                          <button
-                            className="btn-danger"
-                            style={{ padding: "4px 12px", fontSize: 12, height: "auto" }}
-                            onClick={() => deleteProcess(p.id)}
-                          >
-                            Eliminar
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
+        {feedback ? (
+          <div
+            className={cn(
+              "flex items-start gap-2 rounded-md border px-3 py-2 text-sm",
+              feedback.ok
+                ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                : "border-destructive/30 bg-destructive/10 text-destructive"
+            )}
+          >
+            {feedback.ok ? (
+              <CheckCircle2 className="mt-0.5 size-4 shrink-0" />
+            ) : (
+              <XCircle className="mt-0.5 size-4 shrink-0" />
+            )}
+            <span>{feedback.text}</span>
+          </div>
+        ) : null}
+
+        {loading && rows.length === 0 ? (
+          <div className="rounded-lg border">
+            <div className="flex flex-col gap-2 p-3">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <div key={`sk-${i}`} className="flex items-center justify-between gap-3">
+                  <Skeleton className="h-4 w-40" />
+                  <Skeleton className="h-4 w-28" />
+                  <Skeleton className="size-8 rounded-md" />
+                </div>
+              ))}
             </div>
-          ))}
+          </div>
+        ) : error ? (
+          <p className="text-sm text-destructive">Error: {error}</p>
+        ) : (
+          <div className="flex flex-col gap-6">
+            {groups.map((group) => (
+              <div key={group.key} className="flex flex-col gap-2">
+                <div className="flex items-center gap-2">
+                  <Badge
+                    solidColor={
+                      group.key === "__global__" ? BADGE.sectionAlt : BADGE.user
+                    }
+                  >
+                    {group.label}
+                  </Badge>
+                  <span className="text-xs text-muted-foreground tabular-nums">
+                    {group.items.length}
+                  </span>
+                </div>
+                {group.items.length === 0 ? (
+                  <div className="flex items-center gap-2 rounded-lg border border-dashed px-3 py-4 text-sm text-muted-foreground">
+                    <ListChecks className="size-4 text-muted-foreground/50" />
+                    Sin procesos en este grupo.
+                  </div>
+                ) : (
+                  <div className="rounded-lg border">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="w-1/2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                            Nombre del proceso
+                          </TableHead>
+                          <TableHead className="w-[35%] text-xs font-medium uppercase tracking-wide text-muted-foreground">Agregado</TableHead>
+                          <TableHead className="w-[15%] text-right text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                            Acciones
+                          </TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {group.items.map((p) => (
+                          <TableRow key={p.id}>
+                            <TableCell className="font-mono">
+                              {p.process_name}
+                            </TableCell>
+                            <TableCell className="text-xs text-muted-foreground tabular-nums">
+                              {fmt(p.created_at)}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <Button
+                                variant="ghost"
+                                size="icon-sm"
+                                className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                                onClick={() => deleteProcess(p.id)}
+                                aria-label="Eliminar proceso"
+                              >
+                                <Trash2 className="size-4" />
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div>
+          <Button variant="outline" size="sm" onClick={refresh}>
+            <RefreshCw className="size-4" />
+            Refrescar
+          </Button>
         </div>
-      )}
-      <button className="btn-secondary" style={{ marginTop: 8 }} onClick={refresh}>
-        Refrescar
-      </button>
-    </div>
+      </CardContent>
+    </Card>
   );
 }

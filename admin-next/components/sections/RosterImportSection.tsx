@@ -1,11 +1,42 @@
 "use client";
 
 import { useCallback, useMemo, useRef, useState } from "react";
+import { Check, CheckCircle2, Users, X, XCircle } from "lucide-react";
 import type { EnrollmentRow } from "@/lib/types";
 import { useEnrollments, type ImportStudent, type ImportSummary } from "@/hooks/useEnrollments";
 import { useSectionLookup } from "@/hooks/useSectionLookup";
 import { BADGE } from "@/lib/colors";
 import { Badge } from "@/components/ui/Badge";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Skeleton } from "@/components/ui/skeleton";
+import { cn } from "@/lib/utils";
+
+// Sentinel for the radix Select item mapped to the empty filter ("" = todas).
+const ALL_VALUE = "__all__";
 
 // Shape of the bb-dl roster-{section}.json document (see bb-dl src/roster.ts).
 interface RosterFile {
@@ -212,218 +243,287 @@ export function RosterImportSection() {
   );
 
   return (
-    <div className="card" id="sec-roster">
-      <h2>
-        Roster (Blackboard)
-        <span className="pill">{enrollments.length}</span>
-      </h2>
-      <p className="muted-note">
-        Importa el archivo <span className="mono">roster-&#123;sección&#125;.json</span> que genera{" "}
-        <span className="mono">bb-dl --roster</span>. La sección del archivo debe existir en{" "}
-        <strong>Secciones</strong> (si no, el import se aborta sin escribir nada). El github se
-        asigna a mano más abajo.
-      </p>
-
-      <div className="row-flex">
-        <div className="field">
-          <label htmlFor="rosterFile">Archivo roster JSON</label>
-          <input
-            ref={fileInputRef}
-            type="file"
-            id="rosterFile"
-            accept="application/json,.json"
-            disabled={importing}
-            onChange={(e) => {
-              const f = e.target.files?.[0];
-              if (f) void onFilePicked(f);
-            }}
-          />
+    <Card id="sec-roster" className="mb-4 scroll-mt-20">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          Roster (Blackboard)
+          <Badge variant="neutral">{enrollments.length}</Badge>
+        </CardTitle>
+        <CardDescription>
+          Importa el archivo{" "}
+          <span className="font-mono">roster-&#123;sección&#125;.json</span> que
+          genera <span className="font-mono">bb-dl --roster</span>. La sección del
+          archivo debe existir en{" "}
+          <strong className="font-semibold text-foreground">Secciones</strong> (si
+          no, el import se aborta sin escribir nada). El github se asigna a mano
+          más abajo.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-5">
+        {/* Subida de archivo */}
+        <div className="flex flex-col gap-1.5 sm:max-w-md">
+          <Label htmlFor="rosterFile">Archivo roster JSON</Label>
+          <div className="flex items-center gap-3">
+            <Input
+              ref={fileInputRef}
+              type="file"
+              id="rosterFile"
+              accept="application/json,.json"
+              disabled={importing}
+              className="cursor-pointer file:mr-3 file:cursor-pointer file:rounded file:bg-secondary file:px-3 file:py-1 file:text-secondary-foreground"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) void onFilePicked(f);
+              }}
+            />
+            {importing ? (
+              <span className="shrink-0 text-sm text-muted-foreground">
+                Importando…
+              </span>
+            ) : null}
+          </div>
         </div>
-        {importing ? (
-          <span style={{ alignSelf: "flex-end", color: "var(--text-faint)" }}>Importando…</span>
-        ) : null}
-      </div>
 
-      {feedback ? <div className={feedback.ok ? "ok" : "err"}>{feedback.text}</div> : null}
-
-      {summary ? (
-        <div className="ok" style={{ marginTop: 8 }}>
-          Resumen: {summary.inserted} insertados · {summary.updated} actualizados ·{" "}
-          {summary.githubResolved} con github · {summary.githubNull} sin github (total{" "}
-          {summary.total}).
-        </div>
-      ) : null}
-
-      {error ? (
-        <p className="err" style={{ marginTop: 16 }}>
-          Error al leer enrollments: {error}
-        </p>
-      ) : null}
-
-      {/* -------- Roster por sección + asignación manual de github -------- */}
-      <div className="row-flex" style={{ marginTop: 16 }}>
-        <div className="field" style={{ flex: "0 0 220px" }}>
-          <label htmlFor="rosterViewSection">Ver sección</label>
-          <select
-            id="rosterViewSection"
-            value={viewSectionId}
-            onChange={(e) => setViewSectionId(e.target.value)}
-          >
-            <option value="">Todas las secciones</option>
-            {sections.map((s) => (
-              <option key={s.id} value={s.id}>
-                {courseById.get(s.course_id)?.code ?? "?"} / {s.code}
-              </option>
-            ))}
-          </select>
-        </div>
-      </div>
-
-      {loading && enrollments.length === 0 ? (
-        <p style={{ marginTop: 16, color: "var(--text-faint)" }}>Cargando…</p>
-      ) : (
-        <table style={{ marginTop: 8 }}>
-          <thead>
-            <tr>
-              <th style={{ width: "12%" }}>Sección</th>
-              <th style={{ width: "26%" }}>Nombre</th>
-              <th style={{ width: "22%" }}>Email</th>
-              <th style={{ width: "12%" }}>Estado</th>
-              <th style={{ width: "28%" }}>Github</th>
-            </tr>
-          </thead>
-          <tbody>
-            {visibleEnrollments.length === 0 ? (
-              <tr>
-                <td colSpan={5} style={{ textAlign: "center", color: "var(--text-faint)" }}>
-                  Sin alumnos en el roster. Importa un archivo roster JSON.
-                </td>
-              </tr>
-            ) : (
-              visibleEnrollments.map((e) => (
-                <tr key={e.id}>
-                  <td>
-                    <Badge solidColor={BADGE.sectionAlt}>{sectionLabel(e.section_id)}</Badge>
-                  </td>
-                  <td>{e.full_name}</td>
-                  <td className="mono" style={{ fontSize: 12 }}>
-                    {e.email ?? <span style={{ color: "var(--text-faint)" }}>—</span>}
-                  </td>
-                  <td>
-                    <Badge solidColor={BADGE.success}>{e.status}</Badge>
-                  </td>
-                  <td>
-                    {editingId === e.id ? (
-                      <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                        <input
-                          type="text"
-                          value={draftGithub}
-                          placeholder="usuario-github"
-                          autoFocus
-                          onChange={(ev) => setDraftGithub(ev.target.value)}
-                          onKeyDown={(ev) => {
-                            if (ev.key === "Enter") void commitGithub(e);
-                            if (ev.key === "Escape") {
-                              setEditingId(null);
-                              setDraftGithub("");
-                            }
-                          }}
-                          style={{ flex: 1 }}
-                        />
-                        <button
-                          className="btn-success"
-                          style={{ padding: "4px 10px", fontSize: 12, height: "auto" }}
-                          onClick={() => void commitGithub(e)}
-                        >
-                          ✓
-                        </button>
-                        <button
-                          className="btn-secondary"
-                          style={{ padding: "4px 10px", fontSize: 12, height: "auto" }}
-                          onClick={() => {
-                            setEditingId(null);
-                            setDraftGithub("");
-                          }}
-                        >
-                          ×
-                        </button>
-                      </div>
-                    ) : (
-                      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                        {e.github_username ? (
-                          <span className="mono">{e.github_username}</span>
-                        ) : (
-                          <Badge solidColor={BADGE.neutral}>sin github</Badge>
-                        )}
-                        <button
-                          className="btn-secondary"
-                          style={{ padding: "4px 10px", fontSize: 12, height: "auto" }}
-                          onClick={() => {
-                            setEditingId(e.id);
-                            setDraftGithub(e.github_username ?? "");
-                          }}
-                        >
-                          {e.github_username ? "Editar" : "Asignar"}
-                        </button>
-                      </div>
-                    )}
-                  </td>
-                </tr>
-              ))
+        {feedback ? (
+          <div
+            className={cn(
+              "flex items-start gap-2 rounded-md border px-3 py-2 text-sm",
+              feedback.ok
+                ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                : "border-destructive/30 bg-destructive/10 text-destructive"
             )}
-          </tbody>
-        </table>
-      )}
+          >
+            {feedback.ok ? (
+              <CheckCircle2 className="mt-0.5 size-4 shrink-0" />
+            ) : (
+              <XCircle className="mt-0.5 size-4 shrink-0" />
+            )}
+            <span>{feedback.text}</span>
+          </div>
+        ) : null}
 
-      {/* -------- Validación / conflictos (vista v_enrollment_status) -------- */}
-      <h3 style={{ marginTop: 24 }}>Validación cruzada</h3>
-      <div className="roster-validation-grid">
-        <ValidationCard
-          title="Falta asignar github"
-          count={missingGithub.length}
-          color={BADGE.neutral}
-          empty="Todas las inscripciones tienen github."
-          rows={missingGithub.map((r) => ({
-            key: `mg-${r.enrollment_id}`,
-            label: r.full_name ?? "—",
-            sub: sectionLabel(r.section_id),
-          }))}
-        />
-        <ValidationCard
-          title={`No entregaron (${nonSubmitters.length} de ${githubResolvedRoster.length})`}
-          count={nonSubmitters.length}
-          color={BADGE.danger}
-          empty="Todos los alumnos con github entregaron."
-          rows={nonSubmitters.map((r) => ({
-            key: `ns-${r.enrollment_id}`,
-            label: r.full_name ?? r.github_username ?? "—",
-            sub: `${sectionLabel(r.section_id)}${r.accepted ? " · aceptó" : ""}`,
-          }))}
-        />
-        <ValidationCard
-          title="Github huérfano"
-          count={orphans.length}
-          color={BADGE.danger}
-          empty="Sin actividad huérfana."
-          rows={orphans.map((r, i) => ({
-            key: `or-${r.github_username}-${r.section_id}-${i}`,
-            label: r.github_username ?? "—",
-            sub: `${sectionLabel(r.section_id)} · sin inscripción`,
-          }))}
-        />
-        <ValidationCard
-          title="Sección sin resolver"
-          count={unresolvedSection.length}
-          color={BADGE.neutral}
-          empty="Toda la actividad resolvió su sección."
-          rows={unresolvedSection.map((r, i) => ({
-            key: `us-${r.github_username}-${i}`,
-            label: r.github_username ?? "—",
-            sub: "sección no resuelta",
-          }))}
-        />
-      </div>
-    </div>
+        {summary ? (
+          <div className="rounded-md border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-600 dark:text-emerald-400">
+            Resumen: {summary.inserted} insertados · {summary.updated} actualizados ·{" "}
+            {summary.githubResolved} con github · {summary.githubNull} sin github
+            (total {summary.total}).
+          </div>
+        ) : null}
+
+        {error ? (
+          <p className="text-sm text-destructive">
+            Error al leer enrollments: {error}
+          </p>
+        ) : null}
+
+        {/* -------- Roster por sección + asignación manual de github -------- */}
+        <div className="flex w-full flex-col gap-1.5 sm:w-56">
+          <Label htmlFor="rosterViewSection">Ver sección</Label>
+          <Select
+            value={viewSectionId === "" ? ALL_VALUE : viewSectionId}
+            onValueChange={(value) =>
+              setViewSectionId(value === ALL_VALUE ? "" : value)
+            }
+          >
+            <SelectTrigger id="rosterViewSection" className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ALL_VALUE}>Todas las secciones</SelectItem>
+              {sections.map((s) => (
+                <SelectItem key={s.id} value={String(s.id)}>
+                  {courseById.get(s.course_id)?.code ?? "?"} / {s.code}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        {loading && enrollments.length === 0 ? (
+          <div className="rounded-lg border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-[12%] text-xs font-medium uppercase tracking-wide text-muted-foreground">Sección</TableHead>
+                  <TableHead className="w-[26%] text-xs font-medium uppercase tracking-wide text-muted-foreground">Nombre</TableHead>
+                  <TableHead className="w-[22%] text-xs font-medium uppercase tracking-wide text-muted-foreground">Email</TableHead>
+                  <TableHead className="w-[12%] text-xs font-medium uppercase tracking-wide text-muted-foreground">Estado</TableHead>
+                  <TableHead className="w-[28%] text-xs font-medium uppercase tracking-wide text-muted-foreground">Github</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {Array.from({ length: 4 }).map((_, i) => (
+                  <TableRow key={`sk-${i}`}>
+                    <TableCell><Skeleton className="h-5 w-16 rounded-full" /></TableCell>
+                    <TableCell><Skeleton className="h-4 w-40" /></TableCell>
+                    <TableCell><Skeleton className="h-4 w-44" /></TableCell>
+                    <TableCell><Skeleton className="h-5 w-16 rounded-full" /></TableCell>
+                    <TableCell><Skeleton className="h-8 w-32" /></TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        ) : (
+          <div className="rounded-lg border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-[12%] text-xs font-medium uppercase tracking-wide text-muted-foreground">Sección</TableHead>
+                  <TableHead className="w-[26%] text-xs font-medium uppercase tracking-wide text-muted-foreground">Nombre</TableHead>
+                  <TableHead className="w-[22%] text-xs font-medium uppercase tracking-wide text-muted-foreground">Email</TableHead>
+                  <TableHead className="w-[12%] text-xs font-medium uppercase tracking-wide text-muted-foreground">Estado</TableHead>
+                  <TableHead className="w-[28%] text-xs font-medium uppercase tracking-wide text-muted-foreground">Github</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {visibleEnrollments.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={5} className="py-10">
+                      <div className="flex flex-col items-center gap-2 text-center text-muted-foreground">
+                        <Users className="size-8 text-muted-foreground/40" />
+                        <p className="text-sm">Sin alumnos en el roster.</p>
+                        <p className="text-xs text-muted-foreground/70">Importa un archivo roster JSON para poblar esta sección.</p>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  visibleEnrollments.map((e) => (
+                    <TableRow key={e.id}>
+                      <TableCell>
+                        <Badge solidColor={BADGE.sectionAlt}>
+                          {sectionLabel(e.section_id)}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>{e.full_name}</TableCell>
+                      <TableCell className="font-mono text-xs tabular-nums">
+                        {e.email ?? (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <Badge solidColor={BADGE.success}>{e.status}</Badge>
+                      </TableCell>
+                      <TableCell>
+                        {editingId === e.id ? (
+                          <div className="flex items-center gap-1.5">
+                            <Input
+                              type="text"
+                              value={draftGithub}
+                              placeholder="usuario-github"
+                              autoFocus
+                              className="h-8"
+                              onChange={(ev) => setDraftGithub(ev.target.value)}
+                              onKeyDown={(ev) => {
+                                if (ev.key === "Enter") void commitGithub(e);
+                                if (ev.key === "Escape") {
+                                  setEditingId(null);
+                                  setDraftGithub("");
+                                }
+                              }}
+                            />
+                            <Button
+                              size="icon-sm"
+                              className="bg-emerald-600 text-white hover:bg-emerald-600/90"
+                              onClick={() => void commitGithub(e)}
+                              aria-label="Guardar github"
+                            >
+                              <Check className="size-4" />
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="icon-sm"
+                              onClick={() => {
+                                setEditingId(null);
+                                setDraftGithub("");
+                              }}
+                              aria-label="Cancelar"
+                            >
+                              <X className="size-4" />
+                            </Button>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-2">
+                            {e.github_username ? (
+                              <span className="font-mono">
+                                {e.github_username}
+                              </span>
+                            ) : (
+                              <Badge solidColor={BADGE.neutral}>sin github</Badge>
+                            )}
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                setEditingId(e.id);
+                                setDraftGithub(e.github_username ?? "");
+                              }}
+                            >
+                              {e.github_username ? "Editar" : "Asignar"}
+                            </Button>
+                          </div>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </div>
+        )}
+
+        {/* -------- Validación / conflictos (vista v_enrollment_status) -------- */}
+        <div className="flex flex-col gap-3">
+          <h3 className="text-base font-semibold">Validación cruzada</h3>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <ValidationCard
+              title="Falta asignar github"
+              count={missingGithub.length}
+              color={BADGE.neutral}
+              empty="Todas las inscripciones tienen github."
+              rows={missingGithub.map((r) => ({
+                key: `mg-${r.enrollment_id}`,
+                label: r.full_name ?? "—",
+                sub: sectionLabel(r.section_id),
+              }))}
+            />
+            <ValidationCard
+              title={`No entregaron (${nonSubmitters.length} de ${githubResolvedRoster.length})`}
+              count={nonSubmitters.length}
+              color={BADGE.danger}
+              empty="Todos los alumnos con github entregaron."
+              rows={nonSubmitters.map((r) => ({
+                key: `ns-${r.enrollment_id}`,
+                label: r.full_name ?? r.github_username ?? "—",
+                sub: `${sectionLabel(r.section_id)}${r.accepted ? " · aceptó" : ""}`,
+              }))}
+            />
+            <ValidationCard
+              title="Github huérfano"
+              count={orphans.length}
+              color={BADGE.danger}
+              empty="Sin actividad huérfana."
+              rows={orphans.map((r, i) => ({
+                key: `or-${r.github_username}-${r.section_id}-${i}`,
+                label: r.github_username ?? "—",
+                sub: `${sectionLabel(r.section_id)} · sin inscripción`,
+              }))}
+            />
+            <ValidationCard
+              title="Sección sin resolver"
+              count={unresolvedSection.length}
+              color={BADGE.neutral}
+              empty="Toda la actividad resolvió su sección."
+              rows={unresolvedSection.map((r, i) => ({
+                key: `us-${r.github_username}-${i}`,
+                label: r.github_username ?? "—",
+                sub: "sección no resuelta",
+              }))}
+            />
+          </div>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -443,19 +543,19 @@ interface ValidationCardProps {
 
 function ValidationCard({ title, count, color, empty, rows }: ValidationCardProps) {
   return (
-    <div className="roster-validation-card">
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-        <strong>{title}</strong>
+    <div className="flex flex-col gap-2 rounded-lg border bg-muted/30 p-3">
+      <div className="flex items-center gap-2">
+        <strong className="text-sm">{title}</strong>
         <Badge solidColor={color}>{count}</Badge>
       </div>
       {rows.length === 0 ? (
-        <p style={{ color: "var(--text-faint)", fontSize: 12, margin: 0 }}>{empty}</p>
+        <p className="text-xs text-muted-foreground">{empty}</p>
       ) : (
-        <ul style={{ margin: 0, paddingLeft: 16, fontSize: 13 }}>
+        <ul className="m-0 flex flex-col gap-1 pl-4 text-sm">
           {rows.map((r) => (
-            <li key={r.key}>
+            <li key={r.key} className="list-disc">
               {r.label}{" "}
-              <span style={{ color: "var(--text-faint)", fontSize: 11 }}>· {r.sub}</span>
+              <span className="text-xs text-muted-foreground">· {r.sub}</span>
             </li>
           ))}
         </ul>

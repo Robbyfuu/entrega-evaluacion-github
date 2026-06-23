@@ -2,8 +2,16 @@
 
 import { useCallback, useEffect, useState } from "react";
 
-// Light/dark theme toggle persisted in localStorage and applied via
-// [data-theme="dark"] on <html>, matching the original panel.
+// Applies the chosen theme to <html>, driving BOTH the shadcn `.dark` class
+// (used by the migrated shell + shadcn primitives) and the legacy
+// `[data-theme]` attribute (used by not-yet-migrated panel sections). Both
+// stay in sync so the whole panel switches together. Persisted in localStorage.
+function applyTheme(dark: boolean) {
+  const root = document.documentElement;
+  root.classList.toggle("dark", dark);
+  root.setAttribute("data-theme", dark ? "dark" : "light");
+}
+
 export function useTheme() {
   const [isDark, setIsDark] = useState(false);
 
@@ -11,13 +19,13 @@ export function useTheme() {
     const saved = typeof window !== "undefined" ? localStorage.getItem("theme") : null;
     const dark = saved === "dark";
     setIsDark(dark);
-    document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
+    applyTheme(dark);
   }, []);
 
   const toggle = useCallback(() => {
     setIsDark((prev) => {
       const next = !prev;
-      document.documentElement.setAttribute("data-theme", next ? "dark" : "light");
+      applyTheme(next);
       try {
         localStorage.setItem("theme", next ? "dark" : "light");
       } catch {

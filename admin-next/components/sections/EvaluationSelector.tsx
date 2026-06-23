@@ -4,12 +4,23 @@ import { useMemo } from "react";
 import type { EvaluationRow, SectionRow } from "@/lib/types";
 import { useEvaluations } from "@/hooks/useEvaluations";
 import { useSectionLookup } from "@/hooks/useSectionLookup";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 interface EvaluationSelectorProps {
   // null = "Control global (todas las secciones)" — legacy blast-radius path.
   selectedEvaluationId: number | null;
   onSelect: (evaluationId: number | null) => void;
 }
+
+// Sentinel value for the radix Select item that maps back to null (global).
+const GLOBAL_VALUE = "__global__";
 
 // Course/section/evaluation picker for the control panel. Selecting a concrete
 // evaluation switches the control card to the per-evaluation override path and
@@ -34,22 +45,32 @@ export function EvaluationSelector({
   }, [sectionById, courseById]);
 
   return (
-    <div className="field" style={{ flex: "1 1 320px", maxWidth: 480 }}>
-      <label htmlFor="controlEvalSelect">Evaluación a controlar</label>
-      <select
-        id="controlEvalSelect"
-        value={selectedEvaluationId == null ? "" : String(selectedEvaluationId)}
-        onChange={(e) =>
-          onSelect(e.target.value === "" ? null : Number(e.target.value))
+    <div className="flex w-full max-w-[480px] flex-col gap-1.5">
+      <Label htmlFor="controlEvalSelect">Evaluación a controlar</Label>
+      <Select
+        value={
+          selectedEvaluationId == null
+            ? GLOBAL_VALUE
+            : String(selectedEvaluationId)
+        }
+        onValueChange={(value) =>
+          onSelect(value === GLOBAL_VALUE ? null : Number(value))
         }
       >
-        <option value="">Control global (afecta a TODAS las secciones)</option>
-        {evaluations.map((ev) => (
-          <option key={ev.id} value={ev.id}>
-            {labelFor(ev)}
-          </option>
-        ))}
-      </select>
+        <SelectTrigger id="controlEvalSelect" className="w-full">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value={GLOBAL_VALUE}>
+            Control global (afecta a TODAS las secciones)
+          </SelectItem>
+          {evaluations.map((ev) => (
+            <SelectItem key={ev.id} value={String(ev.id)}>
+              {labelFor(ev)}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
     </div>
   );
 }

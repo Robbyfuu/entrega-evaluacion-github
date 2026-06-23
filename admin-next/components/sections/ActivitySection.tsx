@@ -1,12 +1,40 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { Activity, ExternalLink, Inbox, RefreshCw } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import type { StudentActivityRow } from "@/lib/types";
 import { useSectionLookup } from "@/hooks/useSectionLookup";
 import { fmt } from "@/lib/format";
 import { ACTION_LABEL, ACTION_COLOR, BADGE } from "@/lib/colors";
 import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Skeleton } from "@/components/ui/skeleton";
+
+// Sentinel value for the "all" option in shadcn Select (it cannot hold "").
+const ALL = "__all__";
 
 // Actividad de alumnos (últimos 100), filtered by action and section.
 // Uses manual fetch on filter change / Refrescar (realtime optional here).
@@ -69,110 +97,146 @@ export function ActivitySection() {
     sectionCodeById(r.section_id) ?? r.section ?? null;
 
   return (
-    <div className="card" id="sec-activity">
-      <h2>
-        Actividad de alumnos
-        <span style={{ fontSize: 12, color: "var(--text-faint)", marginLeft: 8 }}>
-          (últimos 100)
-        </span>
-      </h2>
-      <div className="row-flex" style={{ marginBottom: 12 }}>
-        <div className="field" style={{ flex: "0 0 180px" }}>
-          <label htmlFor="actionFilter">Filtrar por acción</label>
-          <select
-            id="actionFilter"
-            value={actionFilter}
-            onChange={(e) => setActionFilter(e.target.value)}
-          >
-            <option value="">Todas</option>
-            <option value="login">Login</option>
-            <option value="create_repo">Crear repo</option>
-            <option value="clone">Clonar repo</option>
-            <option value="upload">Subir archivos</option>
-          </select>
+    <Card id="sec-activity" className="scroll-mt-20">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <Activity className="size-5 text-primary" />
+          Actividad de alumnos
+          <span className="text-xs font-normal text-muted-foreground">
+            (últimos 100)
+          </span>
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="grid gap-1.5">
+            <Label htmlFor="actionFilter">Filtrar por acción</Label>
+            <Select
+              value={actionFilter === "" ? ALL : actionFilter}
+              onValueChange={(v) => setActionFilter(v === ALL ? "" : v)}
+            >
+              <SelectTrigger id="actionFilter" className="w-[180px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ALL}>Todas</SelectItem>
+                <SelectItem value="login">Login</SelectItem>
+                <SelectItem value="create_repo">Crear repo</SelectItem>
+                <SelectItem value="clone">Clonar repo</SelectItem>
+                <SelectItem value="upload">Subir archivos</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="grid gap-1.5">
+            <Label htmlFor="sectionFilter">Filtrar por sección</Label>
+            <Select
+              value={sectionFilter === "" ? ALL : sectionFilter}
+              onValueChange={(v) => setSectionFilter(v === ALL ? "" : v)}
+            >
+              <SelectTrigger id="sectionFilter" className="w-[160px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ALL}>Todas</SelectItem>
+                {sectionCodes.map((sec) => (
+                  <SelectItem key={sec} value={sec}>
+                    {sec}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <Button variant="outline" size="sm" onClick={load}>
+            <RefreshCw className="size-4" />
+            Refrescar
+          </Button>
         </div>
-        <div className="field" style={{ flex: "0 0 160px" }}>
-          <label htmlFor="sectionFilter">Filtrar por sección</label>
-          <select
-            id="sectionFilter"
-            value={sectionFilter}
-            onChange={(e) => setSectionFilter(e.target.value)}
-          >
-            <option value="">Todas</option>
-            {sectionCodes.map((sec) => (
-              <option key={sec} value={sec}>
-                {sec}
-              </option>
-            ))}
-          </select>
-        </div>
-        <button className="btn-secondary" onClick={load}>
-          Refrescar
-        </button>
-      </div>
-      <table>
-        <thead>
-          <tr>
-            <th>Fecha</th>
-            <th>Sección</th>
-            <th>Usuario GitHub</th>
-            <th>Email</th>
-            <th>PC</th>
-            <th>Acción</th>
-            <th>Repo</th>
-          </tr>
-        </thead>
-        <tbody>
-          {loading && rows.length === 0 ? (
-            <tr>
-              <td colSpan={7} style={{ textAlign: "center", color: "var(--text-faint)" }}>
-                Cargando...
-              </td>
-            </tr>
-          ) : error ? (
-            <tr>
-              <td colSpan={7} className="err">
-                Error: {error}
-              </td>
-            </tr>
-          ) : rows.length === 0 ? (
-            <tr>
-              <td colSpan={7} style={{ textAlign: "center", color: "var(--text-faint)" }}>
-                Sin actividad registrada.
-              </td>
-            </tr>
-          ) : (
-            rows.map((e, i) => {
-              const sec = sectionLabel(e);
-              return (
-                <tr key={e.id ?? i}>
-                  <td>{fmt(e.created_at)}</td>
-                  <td>
-                    {sec ? <Badge solidColor={BADGE.user}>{sec}</Badge> : "-"}
-                  </td>
-                  <td>@{e.github_username || "?"}</td>
-                  <td>{e.github_email || "-"}</td>
-                  <td>{e.pc_name || "-"}</td>
-                  <td>
-                    <Badge solidColor={ACTION_COLOR[e.action] || "#999"}>
-                      {ACTION_LABEL[e.action] || e.action}
-                    </Badge>
-                  </td>
-                  <td>
-                    {e.repo_url ? (
-                      <a href={e.repo_url} target="_blank" rel="noopener noreferrer">
-                        {e.repo_name || e.repo_url}
-                      </a>
-                    ) : (
-                      e.repo_name || "-"
-                    )}
-                  </td>
-                </tr>
-              );
-            })
-          )}
-        </tbody>
-      </table>
-    </div>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Fecha</TableHead>
+              <TableHead className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Sección</TableHead>
+              <TableHead className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Usuario GitHub</TableHead>
+              <TableHead className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Email</TableHead>
+              <TableHead className="text-xs font-medium uppercase tracking-wide text-muted-foreground">PC</TableHead>
+              <TableHead className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Acción</TableHead>
+              <TableHead className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Repo</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {loading && rows.length === 0 ? (
+              Array.from({ length: 4 }).map((_, i) => (
+                <TableRow key={`sk-${i}`}>
+                  <TableCell><Skeleton className="h-4 w-32" /></TableCell>
+                  <TableCell><Skeleton className="h-5 w-14 rounded-full" /></TableCell>
+                  <TableCell><Skeleton className="h-4 w-24" /></TableCell>
+                  <TableCell><Skeleton className="h-4 w-40" /></TableCell>
+                  <TableCell><Skeleton className="h-4 w-20" /></TableCell>
+                  <TableCell><Skeleton className="h-5 w-16 rounded-full" /></TableCell>
+                  <TableCell><Skeleton className="h-4 w-32" /></TableCell>
+                </TableRow>
+              ))
+            ) : error ? (
+              <TableRow>
+                <TableCell colSpan={7} className="py-8 text-center text-destructive">
+                  Error: {error}
+                </TableCell>
+              </TableRow>
+            ) : rows.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={7} className="py-10">
+                  <div className="flex flex-col items-center gap-2 text-center text-muted-foreground">
+                    <Inbox className="size-8 text-muted-foreground/40" />
+                    <p className="text-sm">Sin actividad registrada.</p>
+                    <p className="text-xs text-muted-foreground/70">No hay eventos para los filtros seleccionados.</p>
+                  </div>
+                </TableCell>
+              </TableRow>
+            ) : (
+              rows.map((e, i) => {
+                const sec = sectionLabel(e);
+                return (
+                  <TableRow key={e.id ?? i}>
+                    <TableCell className="text-muted-foreground tabular-nums">
+                      {fmt(e.created_at)}
+                    </TableCell>
+                    <TableCell>
+                      {sec ? <Badge solidColor={BADGE.user}>{sec}</Badge> : "-"}
+                    </TableCell>
+                    <TableCell className="font-medium">
+                      @{e.github_username || "?"}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {e.github_email || "-"}
+                    </TableCell>
+                    <TableCell>{e.pc_name || "-"}</TableCell>
+                    <TableCell>
+                      <Badge solidColor={ACTION_COLOR[e.action] || "#999"}>
+                        {ACTION_LABEL[e.action] || e.action}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      {e.repo_url ? (
+                        <a
+                          href={e.repo_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 text-primary hover:underline"
+                        >
+                          {e.repo_name || e.repo_url}
+                          <ExternalLink className="size-3" />
+                        </a>
+                      ) : (
+                        e.repo_name || "-"
+                      )}
+                    </TableCell>
+                  </TableRow>
+                );
+              })
+            )}
+          </TableBody>
+        </Table>
+      </CardContent>
+    </Card>
   );
 }

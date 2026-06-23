@@ -6,10 +6,11 @@ import type { OnlineClientRow } from "@/lib/types";
 import { useTheme } from "@/hooks/useTheme";
 import { useControl } from "@/hooks/useControl";
 import { useEvaluationControl } from "@/hooks/useEvaluationControl";
+import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { Topbar } from "@/components/Topbar";
 import { Sidebar } from "@/components/Sidebar";
 import { ProcessModal } from "@/components/ProcessModal";
-import { KpiRow } from "@/components/sections/KpiRow";
+import { OverviewSection } from "@/components/sections/OverviewSection";
 import { ControlSection } from "@/components/sections/ControlSection";
 import { CoursesSection } from "@/components/sections/CoursesSection";
 import { SectionsSection } from "@/components/sections/SectionsSection";
@@ -48,48 +49,58 @@ export function Panel({ user }: PanelProps) {
   const [modalClient, setModalClient] = useState<OnlineClientRow | null>(null);
   const [activeNav, setActiveNav] = useState("sec-kpi");
 
+  // El sidebar cambia de VISTA (dashboard: una seccion a la vez), no hace scroll.
   const handleNav = useCallback((target: string) => {
     setActiveNav(target);
-    const el = document.getElementById(target);
-    el?.scrollIntoView({ behavior: "smooth", block: "start" });
   }, []);
 
-  return (
-    <>
-      <Topbar userEmail={user.email ?? ""} isDark={isDark} onToggleTheme={toggle} />
-      <div className="shell">
-        <Sidebar active={activeNav} onSelect={handleNav} />
-        <main className="content">
-          <KpiRow control={control} onlineCount={onlineCount} alertCount={alertCount} />
-          <ControlSection
-            control={control}
-            error={controlError}
-            onRefresh={refreshControl}
-            selectedEvaluationId={selectedEvaluationId}
-            onSelectEvaluation={setSelectedEvaluationId}
-            evalControl={evalControl}
-            evalControlError={evalControlError}
-            setEvaluationControl={setEvaluationControl}
-          />
-          <CoursesSection />
-          <SectionsSection />
-          <EvaluationsSection />
-          <RosterImportSection />
-          <OnlineClientsSection
-            onOpenProcesses={setModalClient}
-            onOnlineCountChange={setOnlineCount}
-          />
-          <ProcessAlertsSection onCountChange={setAlertCount} />
-          <BrowsingSection />
-          <SuspiciousProcessesSection />
-          <AssignmentsSection />
-          <ActivitySection />
-          <CheatEventsSection />
+  // Todas las secciones quedan MONTADAS para que el realtime y los contadores
+  // de los KPIs sigan vivos; solo se muestra la activa (las demas: display:none).
+  const view = (target: string) =>
+    activeNav === target ? "block" : "hidden";
 
-          <div className="footer">Realtime · Backend: Supabase · Consola Ops</div>
+  return (
+    <SidebarProvider>
+      <Sidebar active={activeNav} onSelect={handleNav} />
+      <SidebarInset>
+        <Topbar userEmail={user.email ?? ""} isDark={isDark} onToggleTheme={toggle} />
+        <main className="w-full flex-1 px-4 py-6 sm:px-6 lg:px-8">
+          <div className={view("sec-kpi")}>
+            <OverviewSection control={control} onlineCount={onlineCount} alertCount={alertCount} />
+          </div>
+          <div className={view("sec-control")}>
+            <ControlSection
+              control={control}
+              error={controlError}
+              onRefresh={refreshControl}
+              selectedEvaluationId={selectedEvaluationId}
+              onSelectEvaluation={setSelectedEvaluationId}
+              evalControl={evalControl}
+              evalControlError={evalControlError}
+              setEvaluationControl={setEvaluationControl}
+            />
+          </div>
+          <div className={view("sec-courses")}><CoursesSection /></div>
+          <div className={view("sec-sections")}><SectionsSection /></div>
+          <div className={view("sec-evaluations")}><EvaluationsSection /></div>
+          <div className={view("sec-roster")}><RosterImportSection /></div>
+          <div className={view("sec-pcs")}>
+            <OnlineClientsSection
+              onOpenProcesses={setModalClient}
+              onOnlineCountChange={setOnlineCount}
+            />
+          </div>
+          <div className={view("sec-alerts")}>
+            <ProcessAlertsSection onCountChange={setAlertCount} />
+          </div>
+          <div className={view("sec-browsing")}><BrowsingSection /></div>
+          <div className={view("sec-suspicious")}><SuspiciousProcessesSection /></div>
+          <div className={view("sec-tareas")}><AssignmentsSection /></div>
+          <div className={view("sec-activity")}><ActivitySection /></div>
+          <div className={view("sec-cheat")}><CheatEventsSection /></div>
         </main>
-      </div>
+      </SidebarInset>
       <ProcessModal client={modalClient} onClose={() => setModalClient(null)} />
-    </>
+    </SidebarProvider>
   );
 }
