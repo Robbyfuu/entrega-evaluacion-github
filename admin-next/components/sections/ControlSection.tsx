@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import type { ControlRow, EvaluationControlRow } from "@/lib/types";
 import { fmt } from "@/lib/format";
@@ -68,6 +68,15 @@ export function ControlSection({
   const [msgInput, setMsgInput] = useState("");
 
   const perEvalActive = selectedEvaluationId != null;
+
+  // Reset transient UI when the control scope changes so a banner/half-typed
+  // message from the previous scope cannot mislead about which scope was just
+  // acted on (e.g. a per-eval "Override actualizado" lingering after switching
+  // to global). Clearing on scope change keeps feedback scoped to its action.
+  useEffect(() => {
+    setFeedback(null);
+    setMsgInput("");
+  }, [selectedEvaluationId]);
 
   async function setGlobalControl(patch: Patch) {
     const {
@@ -194,12 +203,20 @@ export function ControlSection({
           </div>
           <div className="status-label">Lockdown remoto:</div>
           <div className="status-value">
-            <span className={effLockdown ? "status-on" : "status-off"}>
-              {effLockdown ? "ACTIVO" : "inactivo"}
-            </span>
+            {statusError ? (
+              "Error: " + statusError
+            ) : control || updatedSource ? (
+              <span className={effLockdown ? "status-on" : "status-off"}>
+                {effLockdown ? "ACTIVO" : "inactivo"}
+              </span>
+            ) : (
+              "..."
+            )}
           </div>
           <div className="status-label">Mensaje activo:</div>
-          <div className="status-value">{effMessage || "(ninguno)"}</div>
+          <div className="status-value">
+            {control || updatedSource ? effMessage || "(ninguno)" : "..."}
+          </div>
           <div className="status-label">Última actualización:</div>
           <div className="status-value">
             {updatedSource
