@@ -142,3 +142,34 @@ export interface StudentActivityRow {
   repo_name: string | null;
   repo_url: string | null;
 }
+
+// Mirrors the enrollments table (roster imported from Blackboard).
+// PII table: only the authenticated panel reads it. github_username is
+// nullable until the teacher assigns it manually.
+export interface EnrollmentRow {
+  id: number;
+  section_id: number;
+  full_name: string;
+  email: string | null;
+  github_username: string | null;
+  blackboard_student_id: string;
+  status: string;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+// Mirrors the v_enrollment_status view (read-only cross-validation of the
+// roster against acceptances/submissions). `source` separates roster rows
+// from orphan activity and the "section sin resolver" bucket.
+export interface EnrollmentStatusRow {
+  source: "roster" | "orphan" | "unresolved_section";
+  enrollment_id: number | null;
+  section_id: number | null;
+  full_name: string | null;
+  email: string | null;
+  github_username: string | null;
+  status: string | null;
+  github_resolved: boolean;
+  accepted: boolean;
+  submitted: boolean;
+}
