@@ -42,7 +42,9 @@ jobs:
         run: dotnet publish -c Release -r win-x64 --self-contained true -o ../../publish
 
       - name: Install Velopack CLI
-        run: dotnet tool install -g vpk
+        run: |
+          dotnet tool install -g vpk
+          echo "$HOME/.dotnet/tools" >> "$GITHUB_PATH"
 
       - name: Download previous releases (for delta updates)
         shell: bash
