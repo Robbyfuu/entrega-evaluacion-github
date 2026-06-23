@@ -1116,8 +1116,12 @@ public partial class MainWindow : Window
 
         var internetState = InternetBlockService.IsBlocked() ? "blocked" : "free";
         var lockdownState = (_remoteLockdownActive || _targetedLockdownActive) ? "active" : "none";
+        // Atribuye la presencia a la evaluacion actual del alumno. El ON CONFLICT
+        // de online_clients NO cambia en este slice (sigue pc_name+github_username);
+        // el aislamiento de re-rendiciones por evaluacion es PR5.
         await _sb.SendHeartbeatAsync(Environment.MachineName, _user.Login, _user.Email,
-            StudentSection.Get(), procs, internetState, lockdownState);
+            StudentSection.Get(), procs, internetState, lockdownState,
+            StudentSection.GetEvaluationId());
     }
 
     // ===================== Helpers =====================

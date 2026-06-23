@@ -331,10 +331,15 @@ public class SupabaseClient
     // ===== Heartbeat (RPC SECURITY DEFINER) =====
     // section_id se sincroniza via trigger trg_sync_section_online desde
     // section TEXT; la RPC heartbeat no acepta p_section_id (forward-compat).
+    // p_evaluation_id (nullable, default NULL en la RPC desde PR2) atribuye la
+    // presencia a la evaluacion actual del alumno. NO se cambia el ON CONFLICT
+    // de online_clients (sigue siendo pc_name+github_username): el swap a
+    // COALESCE(evaluation_id,0) es PR5 (gate 4-antes-de-5), no este slice.
     public async Task SendHeartbeatAsync(
         string pcName, string githubUsername, string? githubEmail,
         string? section, List<ProcessInfo> processes,
-        string internetState = "free", string lockdownState = "none")
+        string internetState = "free", string lockdownState = "none",
+        long? evaluationId = null)
     {
         try
         {
@@ -346,7 +351,8 @@ public class SupabaseClient
                 p_section = section,
                 p_processes = processes,
                 p_internet_state = internetState,
-                p_lockdown_state = lockdownState
+                p_lockdown_state = lockdownState,
+                p_evaluation_id = evaluationId
             }, JsonOpts);
             var content = new StringContent(payload, Encoding.UTF8, "application/json");
             await _http.PostAsync(Rest("rpc/heartbeat"), content);
