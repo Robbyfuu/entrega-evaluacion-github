@@ -139,6 +139,43 @@ public class AssignmentStatus
             (System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#D97706"));
 }
 
+// Confirmacion de matricula del alumno actual contra el roster (enrollments).
+// Se obtiene SOLO via la RPC get_my_enrollment (SECURITY DEFINER, no-PII): el
+// cliente anon NO puede leer enrollments directo (RLS authenticated-only).
+// La RPC devuelve unicamente campos de confirmacion (section_id, status, found),
+// nunca full_name/email/blackboard_student_id.
+//
+// Confirmed distingue los tres estados que el cliente necesita:
+//   - Confirmed=true,  Found=true  => matricula confirmada (match en roster).
+//   - Confirmed=true,  Found=false => la RPC respondio que NO hay matricula.
+//   - Confirmed=false             => no se pudo confirmar (red/parseo fallo);
+//                                     NO es lo mismo que "no matriculado".
+// El cliente NUNCA debe tratar Confirmed=false como un "no matriculado"
+// definitivo: en ese caso se cae al comportamiento por defecto (sin endurecer
+// EXPECTED y sin suprimir entregas pendientes).
+public sealed class MyEnrollment
+{
+    public bool Found { get; init; }
+    public long? SectionId { get; init; }
+    public string? Status { get; init; }
+
+    // true solo cuando la RPC respondio (con o sin match). false = no se pudo
+    // confirmar (fallo de red/parseo): centinela "could not confirm".
+    public bool Confirmed { get; init; }
+
+    // Centinela: la RPC no respondio (fallo de red/parseo). No es "no matriculado".
+    public static MyEnrollment CouldNotConfirm => new() { Confirmed = false, Found = false };
+}
+
+// Fila cruda devuelta por la RPC get_my_enrollment (PostgREST la entrega como
+// arreglo de filas con estas columnas). Se mapea a MyEnrollment en el cliente.
+public sealed class MyEnrollmentRow
+{
+    [JsonPropertyName("section_id")] public long? SectionId { get; set; }
+    [JsonPropertyName("status")] public string? Status { get; set; }
+    [JsonPropertyName("found")] public bool Found { get; set; }
+}
+
 public class TargetedLockdown
 {
     [JsonPropertyName("id")] public long Id { get; set; }

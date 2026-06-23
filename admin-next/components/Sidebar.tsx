@@ -13,6 +13,7 @@ const NAV_ITEMS: NavItem[] = [
   { target: "sec-courses", label: "Cursos", dot: "var(--info)" },
   { target: "sec-sections", label: "Secciones", dot: "var(--info)" },
   { target: "sec-evaluations", label: "Evaluaciones", dot: "var(--primary)" },
+  { target: "sec-roster", label: "Roster", dot: "var(--info)" },
   { target: "sec-pcs", label: "PCs conectados", dot: "var(--success)" },
   { target: "sec-alerts", label: "Alertas", dot: "var(--warning)" },
   { target: "sec-browsing", label: "Navegación", dot: "var(--info)" },

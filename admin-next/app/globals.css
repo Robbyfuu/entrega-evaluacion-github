@@ -554,6 +554,25 @@ tbody tr:hover {
   margin-bottom: 0;
 }
 
+.roster-validation-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--sp-3);
+  margin-top: var(--sp-3);
+}
+
+.roster-validation-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--sp-3);
+  background: var(--surface);
+}
+
+.roster-validation-card ul {
+  max-height: 220px;
+  overflow-y: auto;
+}
+
 .pill {
   display: inline-block;
   padding: 3px 10px;

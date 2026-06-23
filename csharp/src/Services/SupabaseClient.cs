@@ -362,6 +362,69 @@ public class SupabaseClient
         catch { }
     }
 
+    // ===== Roster: confirmacion de matricula (RPC SECURITY DEFINER) =====
+
+    /// <summary>
+    /// Confirma la matricula del alumno actual contra el roster (enrollments)
+    /// via la RPC get_my_enrollment. Es el UNICO acceso del cliente anon a esa
+    /// tabla: enrollments tiene RLS authenticated-only y la RPC (SECURITY
+    /// DEFINER) devuelve SOLO campos de confirmacion no-PII (section_id, status,
+    /// found). Nunca expone full_name/email/blackboard_student_id.
+    ///
+    /// Distingue tres resultados:
+    ///   - Confirmed=true, Found=true  => match en el roster (matricula confirmada).
+    ///   - Confirmed=true, Found=false => la RPC respondio sin match (no matriculado).
+    ///   - Confirmed=false             => no se pudo confirmar (red/parseo fallo).
+    ///
+    /// CRITICO: en error de red/parseo devuelve el centinela CouldNotConfirm
+    /// (Confirmed=false), NUNCA un found=false que se haga pasar por un "no
+    /// matriculado" definitivo. El caller cae al comportamiento por defecto en
+    /// ese caso (no endurece EXPECTED, no suprime entregas pendientes).
+    /// Devuelve null solo cuando faltan datos para llamar (sin username/seccion).
+    /// </summary>
+    public async Task<MyEnrollment?> GetMyEnrollmentAsync(string githubUsername, long sectionId)
+    {
+        if (string.IsNullOrWhiteSpace(githubUsername)) return null;
+        try
+        {
+            var payload = JsonSerializer.Serialize(new
+            {
+                p_github_username = githubUsername,
+                p_section_id = sectionId
+            }, JsonOpts);
+            var content = new StringContent(payload, Encoding.UTF8, "application/json");
+            var resp = await _http.PostAsync(Rest("rpc/get_my_enrollment"), content);
+
+            // Un status no-exitoso NO es un "no matriculado": no podemos
+            // confirmar. Centinela could-not-confirm.
+            if (!resp.IsSuccessStatusCode)
+                return MyEnrollment.CouldNotConfirm;
+
+            var json = await resp.Content.ReadAsStringAsync();
+            var rows = JsonSerializer.Deserialize<List<MyEnrollmentRow>>(json, JsonOpts);
+
+            // La RPC siempre devuelve al menos una fila (match o fila de
+            // confirmacion negativa con found=false). Si el parseo no produjo
+            // filas, no podemos confirmar (no asumimos "no matriculado").
+            if (rows is not { Count: > 0 })
+                return MyEnrollment.CouldNotConfirm;
+
+            var row = rows[0];
+            return new MyEnrollment
+            {
+                Confirmed = true,
+                Found = row.Found,
+                SectionId = row.SectionId,
+                Status = row.Status
+            };
+        }
+        catch
+        {
+            // Red/parseo fallo: NO es "no matriculado". Could-not-confirm.
+            return MyEnrollment.CouldNotConfirm;
+        }
+    }
+
     // ===== Heartbeat (RPC SECURITY DEFINER) =====
     // section_id se sincroniza via trigger trg_sync_section_online desde
     // section TEXT; la RPC heartbeat no acepta p_section_id (forward-compat).
