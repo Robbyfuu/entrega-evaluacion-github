@@ -283,6 +283,38 @@ public class SupabaseClient
         catch { return null; }
     }
 
+    /// <summary>
+    /// Allowlist efectiva (global UNION seccion) de la tabla allowed_urls,
+    /// para el navegador embebido. Espejo de GetBlocklistAsync. Devuelve null
+    /// en fallo de red O tabla vacia: ambos casos significan "usar el fallback
+    /// hardcodeado de Config" (AllowedBrowseDomains + AllowedExactUrls). Un
+    /// fetch fallido jamas amplia NI restringe a cero lo permitido.
+    /// </summary>
+    public async Task<List<AllowedUrl>?> GetAllowlistAsync(string? section, long? sectionId = null)
+    {
+        try
+        {
+            string filter;
+            if (sectionId is { } sid)
+                filter = $"or=(section.is.null,section_id.eq.{sid})";
+            else if (string.IsNullOrWhiteSpace(section))
+                filter = "section=is.null";
+            else
+            {
+                var quoted = Uri.EscapeDataString($"\"{section}\"");
+                filter = $"or=(section.is.null,section.eq.{quoted})";
+            }
+
+            var json = await _http.GetStringAsync(
+                Rest($"allowed_urls?{filter}&select=pattern,kind"));
+            var rows = JsonSerializer.Deserialize<List<AllowedUrl>>(json, JsonOpts);
+            // null (error de shape) o tabla vacia => usar fallback de Config.
+            if (rows == null || rows.Count == 0) return null;
+            return rows;
+        }
+        catch { return null; }
+    }
+
     // ===== Aceptaciones de tareas =====
 
     /// <summary>

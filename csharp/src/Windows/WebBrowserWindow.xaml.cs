@@ -35,6 +35,11 @@ public partial class WebBrowserWindow : Window
     // Una vez disparada la trampa, no seguimos procesando navegaciones.
     private bool _forbiddenTriggered;
 
+    // Allowlist dinamica (tabla allowed_urls, editable desde el panel). Se
+    // fetchea una vez en InitAsync ANTES de la primera navegacion. null/vacio
+    // => Config.IsUrlAllowed cae al hardcode (fallback seguro).
+    private IReadOnlyList<AllowedUrl>? _allowlist;
+
     public WebBrowserWindow(string url, string title, BrowseContext ctx, Action<string> onForbiddenNavigation)
     {
         InitializeComponent();
@@ -104,6 +109,12 @@ public partial class WebBrowserWindow : Window
             BackButton.IsEnabled = Browser.CanGoBack;
         };
 
+        // Fetch de la allowlist dinamica ANTES de la primera navegacion (la
+        // URL inicial siempre se permite por _initialHost, pero los redirects
+        // SSO posteriores ya encuentran la lista lista). Si falla => null =>
+        // Config.IsUrlAllowed cae al hardcode.
+        _allowlist = await _sb.GetAllowlistAsync(_ctx.Section);
+
         Browser.Source = new Uri(_url);
     }
 
@@ -132,7 +143,7 @@ public partial class WebBrowserWindow : Window
             return;
         }
 
-        if (Config.IsUrlAllowed(uri))
+        if (Config.IsUrlAllowed(uri, _allowlist))
         {
             // Permitida (host en whitelist o URL exacta permitida): registrar.
             _ = _sb.ReportBrowsingAsync(

@@ -147,6 +147,18 @@ export interface SuspiciousProcess {
   created_at: string;
 }
 
+// Fila de la tabla `allowed_urls` (allowlist del navegador embebido).
+// kind='domain' (match por sufijo de host) | 'exact_url' (match por prefijo).
+// section=null => regla global.
+export interface AllowedUrlRow {
+  id: number;
+  pattern: string;
+  kind: "domain" | "exact_url";
+  section: string | null;
+  section_id: number | null;
+  created_at: string;
+}
+
 export interface StudentActivityRow {
   id?: number | string;
   created_at: string;

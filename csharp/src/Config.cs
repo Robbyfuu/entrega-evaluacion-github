@@ -1,3 +1,5 @@
+using EntregaEvaluacion.Models;
+
 namespace EntregaEvaluacion;
 
 /// <summary>
@@ -103,6 +105,7 @@ public static class Config
         // Google login + Gmail (aceptar invitacion). Acotado: NO google.com
         // entero (que permitiria Search/Translate/Docs y seria un escape).
         "accounts.google.com",
+        "accounts.google.cl",
         "mail.google.com",
         "googleusercontent.com"
     };
@@ -115,14 +118,23 @@ public static class Config
     public static bool IsDomainAllowed(string host)
     {
         if (string.IsNullOrWhiteSpace(host)) return false;
-        host = host.Trim().TrimEnd('.').ToLowerInvariant();
         foreach (var domain in AllowedBrowseDomains)
-        {
-            var d = domain.ToLowerInvariant();
-            if (host == d || host.EndsWith("." + d, StringComparison.Ordinal))
-                return true;
-        }
+            if (HostMatchesDomain(host, domain)) return true;
         return false;
+    }
+
+    /// <summary>
+    /// True si el host coincide con el dominio o es subdominio de el (termina
+    /// en "." + dominio). Case-insensitive. Es la unidad de match usada tanto
+    /// por la whitelist hardcodeada como por la allowlist dinamica de DB.
+    /// </summary>
+    private static bool HostMatchesDomain(string host, string domain)
+    {
+        if (string.IsNullOrWhiteSpace(host) || string.IsNullOrWhiteSpace(domain)) return false;
+        host = host.Trim().TrimEnd('.').ToLowerInvariant();
+        var d = domain.Trim().TrimEnd('.').ToLowerInvariant();
+        if (d.Length == 0) return false;
+        return host == d || host.EndsWith("." + d, StringComparison.Ordinal);
     }
 
     // ===== URLs exactas permitidas (por prefijo de ruta) =====
@@ -156,6 +168,44 @@ public static class Config
         {
             if (normalized.StartsWith(allowed.ToLowerInvariant(), StringComparison.Ordinal))
                 return true;
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// Variante con allowlist DINAMICA (cacheada desde la tabla allowed_urls,
+    /// editable por el profe en el panel). Reglas kind='domain' se evaluan por
+    /// sufijo de host; kind='exact_url' por prefijo de scheme://host/path.
+    ///
+    /// SEGURIDAD: si dynamic es null o vacio (fetch fallido o tabla vacia) cae
+    /// al hardcode IsUrlAllowed(url) -> AllowedBrowseDomains + AllowedExactUrls.
+    /// El fallback es la lista MAS restrictiva conocida: un fetch fallido NUNCA
+    /// amplia lo permitido ni lo restringe a cero (no deja sin SSO al alumno).
+    /// </summary>
+    public static bool IsUrlAllowed(string url, IReadOnlyList<AllowedUrl>? dynamic)
+    {
+        if (string.IsNullOrWhiteSpace(url)) return false;
+        if (dynamic == null || dynamic.Count == 0)
+            return IsUrlAllowed(url); // fallback hardcodeado (red caida / tabla vacia)
+
+        Uri uri;
+        try { uri = new Uri(url); } catch { return false; }
+
+        var host = uri.Host;
+        var normalized = (uri.Scheme + "://" + uri.Host + uri.AbsolutePath).ToLowerInvariant();
+
+        foreach (var rule in dynamic)
+        {
+            if (string.IsNullOrWhiteSpace(rule.Pattern)) continue;
+            if (rule.Kind == "exact_url")
+            {
+                if (normalized.StartsWith(rule.Pattern.Trim().ToLowerInvariant(), StringComparison.Ordinal))
+                    return true;
+            }
+            else // 'domain' (default)
+            {
+                if (HostMatchesDomain(host, rule.Pattern)) return true;
+            }
         }
         return false;
     }

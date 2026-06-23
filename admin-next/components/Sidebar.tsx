@@ -12,6 +12,7 @@ import {
   Monitor,
   ScrollText,
   ShieldAlert,
+  ShieldCheck,
   ShieldX,
   Users,
 } from "lucide-react";
@@ -45,6 +46,7 @@ const NAV_ITEMS: NavItem[] = [
   { target: "sec-alerts", label: "Alertas", icon: AlertTriangle },
   { target: "sec-browsing", label: "Navegación", icon: Globe },
   { target: "sec-suspicious", label: "Procesos", icon: ShieldX },
+  { target: "sec-allowed", label: "URLs permitidas", icon: ShieldCheck },
   { target: "sec-tareas", label: "Tareas Classroom", icon: ScrollText },
   { target: "sec-activity", label: "Actividad", icon: Activity },
   { target: "sec-cheat", label: "Trampas", icon: ShieldX },
