@@ -121,7 +121,11 @@ export function useRealtimeTable<T extends Record<string, unknown>>(
     return () => {
       void supabase.removeChannel(channel);
     };
-  }, [table, realtime, instanceId]);
+    // instanceId es estable por montaje (useId), no se incluye en deps: agregarlo
+    // cambiaria el tamano del array entre el modulo viejo y el nuevo en Fast
+    // Refresh ("dependency array changed size"). El topic sigue siendo unico.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [table, realtime]);
 
   return { rows, loading, error, refresh };
 }
