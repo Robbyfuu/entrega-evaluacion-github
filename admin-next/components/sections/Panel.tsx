@@ -49,47 +49,55 @@ export function Panel({ user }: PanelProps) {
   const [modalClient, setModalClient] = useState<OnlineClientRow | null>(null);
   const [activeNav, setActiveNav] = useState("sec-kpi");
 
+  // El sidebar cambia de VISTA (dashboard: una seccion a la vez), no hace scroll.
   const handleNav = useCallback((target: string) => {
     setActiveNav(target);
-    const el = document.getElementById(target);
-    el?.scrollIntoView({ behavior: "smooth", block: "start" });
   }, []);
+
+  // Todas las secciones quedan MONTADAS para que el realtime y los contadores
+  // de los KPIs sigan vivos; solo se muestra la activa (las demas: display:none).
+  const view = (target: string) =>
+    activeNav === target ? "block" : "hidden";
 
   return (
     <SidebarProvider>
       <Sidebar active={activeNav} onSelect={handleNav} />
       <SidebarInset>
         <Topbar userEmail={user.email ?? ""} isDark={isDark} onToggleTheme={toggle} />
-        <main className="mx-auto w-full max-w-[1400px] flex-1 px-4 py-6 sm:px-6">
-          <KpiRow control={control} onlineCount={onlineCount} alertCount={alertCount} />
-          <ControlSection
-            control={control}
-            error={controlError}
-            onRefresh={refreshControl}
-            selectedEvaluationId={selectedEvaluationId}
-            onSelectEvaluation={setSelectedEvaluationId}
-            evalControl={evalControl}
-            evalControlError={evalControlError}
-            setEvaluationControl={setEvaluationControl}
-          />
-          <CoursesSection />
-          <SectionsSection />
-          <EvaluationsSection />
-          <RosterImportSection />
-          <OnlineClientsSection
-            onOpenProcesses={setModalClient}
-            onOnlineCountChange={setOnlineCount}
-          />
-          <ProcessAlertsSection onCountChange={setAlertCount} />
-          <BrowsingSection />
-          <SuspiciousProcessesSection />
-          <AssignmentsSection />
-          <ActivitySection />
-          <CheatEventsSection />
-
-          <div className="py-8 text-center text-xs text-muted-foreground">
-            Realtime · Backend: Supabase · Consola Ops
+        <main className="w-full flex-1 px-4 py-6 sm:px-6 lg:px-8">
+          <div className={view("sec-kpi")}>
+            <KpiRow control={control} onlineCount={onlineCount} alertCount={alertCount} />
           </div>
+          <div className={view("sec-control")}>
+            <ControlSection
+              control={control}
+              error={controlError}
+              onRefresh={refreshControl}
+              selectedEvaluationId={selectedEvaluationId}
+              onSelectEvaluation={setSelectedEvaluationId}
+              evalControl={evalControl}
+              evalControlError={evalControlError}
+              setEvaluationControl={setEvaluationControl}
+            />
+          </div>
+          <div className={view("sec-courses")}><CoursesSection /></div>
+          <div className={view("sec-sections")}><SectionsSection /></div>
+          <div className={view("sec-evaluations")}><EvaluationsSection /></div>
+          <div className={view("sec-roster")}><RosterImportSection /></div>
+          <div className={view("sec-pcs")}>
+            <OnlineClientsSection
+              onOpenProcesses={setModalClient}
+              onOnlineCountChange={setOnlineCount}
+            />
+          </div>
+          <div className={view("sec-alerts")}>
+            <ProcessAlertsSection onCountChange={setAlertCount} />
+          </div>
+          <div className={view("sec-browsing")}><BrowsingSection /></div>
+          <div className={view("sec-suspicious")}><SuspiciousProcessesSection /></div>
+          <div className={view("sec-tareas")}><AssignmentsSection /></div>
+          <div className={view("sec-activity")}><ActivitySection /></div>
+          <div className={view("sec-cheat")}><CheatEventsSection /></div>
         </main>
       </SidebarInset>
       <ProcessModal client={modalClient} onClose={() => setModalClient(null)} />
