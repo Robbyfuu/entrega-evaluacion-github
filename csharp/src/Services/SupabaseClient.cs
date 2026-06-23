@@ -28,6 +28,12 @@ public class SupabaseClient
     // de red transitorio NUNCA puede liberar a un alumno en medio del examen.
     private bool? _lastKnownLock;
 
+    // Mismo fail-safe CERRADO para el lockdown DIRIGIDO (targeted_lockdowns).
+    // null = nunca se resolvio. Distingue "query OK, sin fila activa" (=> false,
+    // siembra cache) de "fetch fallido" (=> retener cache). Un blip de red en un
+    // lock dirigido NUNCA libera al alumno.
+    private bool? _lastKnownTargeted;
+
     public SupabaseClient()
     {
         // CRITICO: UseProxy=false. Sin esto, cuando bloqueamos internet (proxy
@@ -85,35 +91,61 @@ public class SupabaseClient
     /// REGLA DE RESOLUCION (la misma en todos los call sites):
     ///   EFFECTIVE = per-eval override (si hay fila) ELSE global id=1.
     ///   Cada campo individual: override.campo ?? global.campo.
+    /// Orden de resolucion concreto:
+    ///   1. override row existe                 -> usar override (?? global por campo)
+    ///   2. override query OK pero vacia        -> usar global
+    ///   3. override query FALLA                -> intentar global; si global OK -> global
+    ///                                             (asi el control GLOBAL sigue vivo aunque
+    ///                                              evaluation_control no este desplegada/falle)
+    ///   4. override FALLA y global FALLA        -> null (degradar CERRADO)
     ///
-    /// FAIL-SAFE (degradar CERRADO): si NO se puede resolver el control con
-    /// certeza, devolvemos null para que el caller retenga su ultimo estado
-    /// conocido en vez de soltar al alumno. Un null aqui NUNCA debe
-    /// interpretarse como "desbloquear". Casos que devuelven null:
-    ///   - sin evaluacion elegida y el global no respondio;
-    ///   - el fetch del override fallo (no pude confirmar si hay override);
-    ///   - hay override pero el global no respondio y el override deja
-    ///     force_lockdown en NULL (heredaria un global que no conozco).
+    /// FUENTE UNICA DEL CACHE: cada vez que esto RESUELVE un ControlState
+    /// no-null (override o global), siembra _lastKnownLock con el
+    /// force_lockdown resuelto. Asi TANTO la ruta de APERTURA
+    /// (CheckAdminConfigAsync) COMO la de LIBERACION (IsForceLockdownAsync)
+    /// calientan/leen el MISMO cache, y un lock recien aplicado por la apertura
+    /// queda cacheado antes del primer poll de liberacion.
+    ///
+    /// FAIL-SAFE (degradar CERRADO): solo devuelve null cuando NO puede resolver
+    /// el control con certeza (ambos fetch fallan). Un null aqui NUNCA debe
+    /// interpretarse como "desbloquear": el caller retiene su ultimo conocido.
     ///
     /// evaluationId == null (alumno sin evaluacion elegida): no hay override
     /// posible, se usa el global directamente (null si el global fallo).
     /// </summary>
     public async Task<ControlState?> GetEffectiveControlAsync(long? evaluationId)
     {
-        var global = await GetControlAsync();
-
         if (evaluationId is not { } evalId)
-            return global; // sin evaluacion elegida => global tal cual (o null si fallo).
+        {
+            // Sin evaluacion elegida => control global tal cual (o null si fallo).
+            var g0 = await GetControlAsync();
+            if (g0 != null) _lastKnownLock = g0.ForceLockdown;
+            return g0;
+        }
 
         var (ok, ovr) = await GetEvaluationControlAsync(evalId);
 
-        // No pude leer el override: no se si hay lock por evaluacion. Degradar
-        // CERRADO: devolver null para que el caller retenga el ultimo conocido.
-        if (!ok) return null;
+        if (!ok)
+        {
+            // FIX 3: el fetch del override fallo. NO degradamos CERRADO de una:
+            // primero intentamos el control global, asi el alumno NO pierde el
+            // bloqueo/internet_block global cuando evaluation_control no esta
+            // desplegada o tuvo un blip. Solo si el global TAMBIEN falla
+            // devolvemos null (degradar CERRADO; el caller retiene su cache).
+            var gFallback = await GetControlAsync();
+            if (gFallback != null) _lastKnownLock = gFallback.ForceLockdown;
+            return gFallback;
+        }
+
+        var global = await GetControlAsync();
 
         // Sin override: el control efectivo es el global (null si el global fallo
         // => el caller degrada CERRADO reteniendo el ultimo conocido).
-        if (ovr == null) return global;
+        if (ovr == null)
+        {
+            if (global != null) _lastKnownLock = global.ForceLockdown;
+            return global;
+        }
 
         // Con override: si el override NO fija force_lockdown (lo deja NULL) y el
         // global no respondio, no puedo resolver el lock efectivo => null
@@ -122,7 +154,7 @@ public class SupabaseClient
         if (ovr.ForceLockdown == null && global == null) return null;
 
         // Resolucion campo a campo: override.campo ?? global.campo.
-        return new ControlState
+        var effective = new ControlState
         {
             InternetBlock = ovr.InternetBlock ?? global?.InternetBlock ?? false,
             ForceLockdown = ovr.ForceLockdown ?? global?.ForceLockdown ?? false,
@@ -130,6 +162,8 @@ public class SupabaseClient
             UpdatedAt = ovr.UpdatedAt ?? global?.UpdatedAt,
             UpdatedBy = ovr.UpdatedBy ?? global?.UpdatedBy
         };
+        _lastKnownLock = effective.ForceLockdown;
+        return effective;
     }
 
     // ===== Multi-evaluacion: cursos, secciones, evaluaciones =====
@@ -361,6 +395,17 @@ public class SupabaseClient
     }
 
     // ===== Targeted lockdown =====
+    /// <summary>
+    /// Indica si hay un lockdown DIRIGIDO activo para este PC+usuario, con
+    /// fail-safe CERRADO igual que el force_lockdown:
+    ///   - query OK con fila activa  => true  (siembra _lastKnownTargeted)
+    ///   - query OK sin fila activa  => false (siembra _lastKnownTargeted=false:
+    ///                                          una liberacion genuina si libera)
+    ///   - FETCH FALLIDO (blip)      => retiene _lastKnownTargeted ?? false
+    /// Asi un parpadeo de red en un lock DIRIGIDO (aunque no haya force_lockdown
+    /// global/por-eval activo) NUNCA libera al alumno: el catch retiene el ultimo
+    /// estado conocido en vez de devolver false a ciegas.
+    /// </summary>
     public async Task<bool> IsTargetedLockedAsync(string pcName, string githubUsername)
     {
         try
@@ -370,9 +415,18 @@ public class SupabaseClient
             var json = await _http.GetStringAsync(
                 Rest($"targeted_lockdowns?pc_name=eq.{pc}&github_username=eq.{user}&active=eq.true&select=id,reason"));
             var arr = JsonSerializer.Deserialize<TargetedLockdown[]>(json, JsonOpts);
-            return arr is { Length: > 0 };
+            var locked = arr is { Length: > 0 };
+            // Query exitosa: este es el estado REAL (haya o no fila). Sembramos el
+            // cache; una liberacion genuina (sin fila activa) si debe liberar.
+            _lastKnownTargeted = locked;
+            return locked;
         }
-        catch { return false; }
+        catch
+        {
+            // Fetch fallido: degradar CERRADO reteniendo el ultimo conocido. Solo
+            // el primer arranque sin estado previo cae a false.
+            return _lastKnownTargeted ?? false;
+        }
     }
 
     public async Task<string?> GetTargetedReasonAsync(string pcName, string githubUsername)
@@ -393,25 +447,20 @@ public class SupabaseClient
     /// Predicado de force_lockdown EFECTIVO para la evaluacion actual del
     /// cliente: resuelve override por evaluacion ?? global id=1. Es a la vez el
     /// predicado de APERTURA (CheckAdminConfigAsync) y de LIBERACION
-    /// (checkStillLocked de CheatWindow). Si la resolucion falla (red/null),
-    /// degrada CERRADO reteniendo el ultimo estado conocido (_lastKnownLock):
-    /// un parpadeo de red NUNCA libera a un alumno bloqueado en medio del examen.
+    /// (checkStillLocked de CheatWindow), leyendo EXACTAMENTE la misma
+    /// resolucion. GetEffectiveControlAsync es la fuente unica del cache
+    /// _lastKnownLock: lo siembra en cada resolucion no-null (incluida la
+    /// apertura). Por eso aca solo leemos: si la resolucion devuelve null
+    /// (ambos fetch fallan) degradamos CERRADO reteniendo _lastKnownLock, asi un
+    /// parpadeo de red NUNCA libera a un alumno bloqueado en medio del examen.
     /// Solo el primer arranque sin estado previo cae al default global (false).
     /// </summary>
     public async Task<bool> IsForceLockdownAsync()
     {
         var ctl = await GetEffectiveControlAsync(StudentSection.GetEvaluationId());
-        if (ctl != null)
-        {
-            // Resolucion exitosa: actualizamos el cache y devolvemos el valor.
-            _lastKnownLock = ctl.ForceLockdown;
-            return ctl.ForceLockdown;
-        }
-
-        // Fail-safe CERRADO: no se pudo resolver (global fallo y no hubo override
-        // utilizable). Retenemos el ultimo lock conocido. Si nunca conocimos uno
-        // (primer arranque, cache vacio), recien ahi caemos al default global false.
-        return _lastKnownLock ?? false;
+        // ctl no-null: el resolver ya sembro _lastKnownLock con ctl.ForceLockdown.
+        // ctl null (ambos fetch fallaron): fail-safe CERRADO reteniendo el cache.
+        return ctl?.ForceLockdown ?? _lastKnownLock ?? false;
     }
 
     // ===== Reportes (INSERT directo, RLS anon insert) =====

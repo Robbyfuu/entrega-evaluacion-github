@@ -1050,9 +1050,12 @@ public partial class MainWindow : Window
         // Control EFECTIVO de la evaluacion actual: override por evaluacion ??
         // global id=1 (no el global pelado). Si no se puede resolver (red/null)
         // degradamos CERRADO: no tocamos el estado actual (return) en vez de
-        // soltar un bloqueo activo. La APERTURA y la LIBERACION del lockdown
-        // leen exactamente la misma resolucion (IsForceLockdownAsync), asi un
-        // lock por evaluacion abre y luego libera contra el MISMO valor.
+        // soltar un bloqueo activo. La APERTURA (aca) y la LIBERACION
+        // (IsForceLockdownAsync en checkStillLocked) leen EXACTAMENTE la misma
+        // resolucion y comparten el cache _lastKnownLock: esta llamada de
+        // apertura ya SIEMBRA el cache (lo hace GetEffectiveControlAsync), asi el
+        // primer poll de liberacion -aunque su fetch falle- retiene el lock
+        // recien aplicado en vez de soltarlo.
         var cfg = await _sb.GetEffectiveControlAsync(StudentSection.GetEvaluationId());
         if (cfg == null) return;
 
