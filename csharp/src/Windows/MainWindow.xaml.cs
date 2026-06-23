@@ -24,6 +24,7 @@ public partial class MainWindow : Window
     // Estado
     private GitHubUser? _user;
     private bool _internetBlocked;
+    private bool _copilotBlocked;
     private bool _remoteLockdownActive;
     private bool _targetedLockdownActive;
     private string _lastAdminMessage = "";
@@ -1415,6 +1416,23 @@ public partial class MainWindow : Window
         if (cfg.InternetBlock && !_internetBlocked) { Log("[ADMIN] Bloqueo de internet activado."); InternetBlockService.Block(); _internetBlocked = true; }
         else if (!cfg.InternetBlock && _internetBlocked) { Log("[ADMIN] Bloqueo de internet desactivado."); InternetBlockService.Unblock(); _internetBlocked = false; }
 
+        // Copilot: amarrado al mismo toggle que internet. Sabotea el settings.json
+        // de VS Code y monta un watcher que detecta si el alumno reactiva Copilot.
+        if (cfg.InternetBlock && !_copilotBlocked)
+        {
+            CopilotBlockService.OnCheatDetected += OnCopilotCheatDetected;
+            CopilotBlockService.Block();
+            _copilotBlocked = true;
+            Log("[ADMIN] Bloqueo de Copilot activado.");
+        }
+        else if (!cfg.InternetBlock && _copilotBlocked)
+        {
+            CopilotBlockService.OnCheatDetected -= OnCopilotCheatDetected;
+            CopilotBlockService.Unblock();
+            _copilotBlocked = false;
+            Log("[ADMIN] Bloqueo de Copilot desactivado.");
+        }
+
         if (cfg.ForceLockdown && !_remoteLockdownActive)
         {
             _remoteLockdownActive = true;
@@ -1430,6 +1448,42 @@ public partial class MainWindow : Window
             MessageBox.Show(cfg.Message, "Mensaje del profesor", MessageBoxButton.OK, MessageBoxImage.Information);
         }
         if (string.IsNullOrEmpty(cfg.Message)) _lastAdminMessage = "";
+    }
+
+    /// <summary>
+    /// Handler que se dispara cuando el FileSystemWatcher de CopilotBlockService
+    /// detecta que el alumno edito el settings.json para reactivar Copilot.
+    /// Reporta el cheat al panel (visible para el profesor) y aplica lockdown
+    /// inmediato en la maquina del alumno. Se invoca desde un thread del watcher;
+    /// Log/Status/ShowToast ya dispatchean al UI thread internamente.
+    /// </summary>
+    private async void OnCopilotCheatDetected()
+    {
+        Log("[CHEAT] Intento de reactivacion de Copilot detectado.");
+
+        // Reportar al panel via el mismo canal de alertas de procesos sospechosos.
+        try
+        {
+            var user = _user?.Login ?? "(unknown)";
+            await _sb.ReportProcessAlertAsync(
+                user,
+                Environment.MachineName,
+                StudentSection.Get(),
+                "copilot-reactivation",
+                "Intento de reactivar Copilot editando settings.json");
+        }
+        catch (Exception ex) { Log($"[CHEAT] Reporte de Copilot fallo: {ex.Message}"); }
+
+        // Lockdown inmediato en la maquina del alumno (marker + auto-start + TaskMgr off).
+        try
+        {
+            LockdownService.Trigger("(copilot)", 0, new[] { "Reactivacion de Copilot en settings.json" });
+            Log("[CHEAT] Lockdown aplicado por reactivacion de Copilot.");
+        }
+        catch (Exception ex) { Log($"[CHEAT] Lockdown por Copilot fallo: {ex.Message}"); }
+
+        // Avisar al alumno
+        ShowToast("Se detecto intento de reactivar Copilot. Prueba bloqueada.", ToastKind.Error);
     }
 
     private async Task CheckTargetedLockdownAsync()
