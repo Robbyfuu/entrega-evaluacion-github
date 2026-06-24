@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { ArrowLeft, RefreshCw } from "lucide-react";
+import { ArrowLeft, DownloadCloud, RefreshCw } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import type {
   EnrollmentStatusRow,
@@ -148,6 +148,27 @@ export function SectionWorkspace() {
     void refreshCounts();
   }
 
+  // Pide a TODOS los PCs conectados que busquen actualizacion (control.
+  // update_requested_at = NOW()). Los que tengan version nueva se reinician.
+  async function requestUpdateForAll() {
+    if (
+      !window.confirm(
+        "Pedir a TODOS los PCs conectados que actualicen el programa?\n" +
+          "Los que tengan version nueva se reiniciaran para aplicarla."
+      )
+    )
+      return;
+    const { error } = await supabase
+      .from("control")
+      .update({ update_requested_at: new Date().toISOString() })
+      .eq("id", 1);
+    window.alert(
+      error
+        ? "Error: " + error.message
+        : "✓ Solicitud enviada. Los PCs abiertos actualizan en <20s."
+    );
+  }
+
   // ----- Acciones (mismas que OnlineClientsSection) -----
   async function targetLockdown(pc: string | null, github: string | null) {
     if (!github) {
@@ -230,6 +251,9 @@ export function SectionWorkspace() {
                   ))}
                 </SelectContent>
               </Select>
+              <Button variant="outline" size="sm" onClick={requestUpdateForAll}>
+                <DownloadCloud className="size-4" /> Actualizar programa
+              </Button>
               <Button variant="outline" size="sm" onClick={refreshAll}>
                 <RefreshCw className="size-4" /> Refrescar
               </Button>
