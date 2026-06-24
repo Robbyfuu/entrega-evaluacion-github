@@ -663,8 +663,7 @@ public partial class MainWindow : Window
 
         if (count == 0)
         {
-            var asg = await _sb.GetActiveAssignmentsAsync(StudentSection.GetEvaluationId());
-            asg = FilterBySection(asg);
+            var asg = await GetSectionAssignmentsAsync();
             if (asg.Count > 0)
                 Log($"Tienes {asg.Count} tarea(s) Classroom. Usa el banner para aceptarlas.");
             else
@@ -680,7 +679,7 @@ public partial class MainWindow : Window
 
         // Tareas activas de la seccion para mapear invitacion -> assignment por
         // prefijo de slug y registrar la aceptacion en BD.
-        var asg = FilterBySection(await _sb.GetActiveAssignmentsAsync(StudentSection.GetEvaluationId()));
+        var asg = await GetSectionAssignmentsAsync();
         var me = _user?.Login;
         var evalOrg = CurrentEvaluationOrg();
 
@@ -896,6 +895,27 @@ public partial class MainWindow : Window
             var s = (a.Section ?? "").Trim().ToUpperInvariant();
             return string.IsNullOrEmpty(s) || (!string.IsNullOrEmpty(sec) && s == sec);
         }).ToList();
+    }
+
+    /// <summary>
+    /// Tareas activas que el alumno DEBE ver. ROBUSTO al evaluation_id: trae
+    /// todas las activas, filtra por SECCION, y si la evaluacion seleccionada
+    /// tiene tareas las prioriza; si NO (link huerfano porque se recreo la
+    /// evaluacion), cae a las de la seccion. Antes el filtro exigia
+    /// evaluation_id exacto en el servidor: al recrear una evaluacion, la tarea
+    /// quedaba huerfana y "desaparecia" (o quedaba pegada la vieja). Ahora la
+    /// evaluacion es una preferencia, no un gate.
+    /// </summary>
+    private async Task<List<Assignment>> GetSectionAssignmentsAsync()
+    {
+        var all = FilterBySection(await _sb.GetActiveAssignmentsAsync(null));
+        var evalId = StudentSection.GetEvaluationId();
+        if (evalId is { } id)
+        {
+            var matched = all.Where(a => a.EvaluationId == id).ToList();
+            if (matched.Count > 0) return matched;
+        }
+        return all;
     }
 
     /// <summary>
@@ -1147,7 +1167,7 @@ public partial class MainWindow : Window
         // consulta via RosterMatchConfirmed). Es aditivo y nunca bloquea.
         await RefreshEnrollmentAsync();
 
-        var asg = FilterBySection(await _sb.GetActiveAssignmentsAsync(StudentSection.GetEvaluationId()));
+        var asg = await GetSectionAssignmentsAsync();
 
         // Las invitaciones son verdad VIVA y se consultan SIEMPRE (no detras del
         // gate de "0 repos"): un alumno que ya posee >=1 repo igual puede tener
@@ -1255,7 +1275,7 @@ public partial class MainWindow : Window
 
     private async Task ShowAssignmentsDialog()
     {
-        var asg = FilterBySection(await _sb.GetActiveAssignmentsAsync(StudentSection.GetEvaluationId()));
+        var asg = await GetSectionAssignmentsAsync();
         if (asg.Count == 0) { MessageBox.Show("No hay tareas activas.", "Sin tareas", MessageBoxButton.OK, MessageBoxImage.Information); return; }
 
         // Consultar invitaciones para mostrar el estado "Invitacion pendiente"
@@ -1278,7 +1298,7 @@ public partial class MainWindow : Window
     {
         var me = _user?.Login;
         if (string.IsNullOrEmpty(me)) return;
-        var asg = FilterBySection(await _sb.GetActiveAssignmentsAsync(StudentSection.GetEvaluationId()));
+        var asg = await GetSectionAssignmentsAsync();
         foreach (var a in asg)
         {
             if (string.Equals(ExpectedClassroomRepo(a.Title, me), repoName, StringComparison.OrdinalIgnoreCase))
@@ -1303,7 +1323,7 @@ public partial class MainWindow : Window
         if (string.IsNullOrEmpty(me)) return;
         try
         {
-            var asg = FilterBySection(await _sb.GetActiveAssignmentsAsync(StudentSection.GetEvaluationId()));
+            var asg = await GetSectionAssignmentsAsync();
             if (asg.Count == 0) return;
             foreach (var a in asg)
             {
