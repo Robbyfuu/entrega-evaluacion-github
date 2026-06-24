@@ -76,6 +76,53 @@ public partial class MainWindow : Window
         Loaded += async (_, _) => await InitAsync();
     }
 
+    // El programa NO se cierra durante la evaluacion: el alumno no puede salir
+    // del control (y el daemon lo relanzaria igual). Solo se cierra con la clave
+    // del profesor. _allowExit pasa a true cuando la clave es correcta.
+    private bool _allowExit;
+    private DateTime _lastCloseReport = DateTime.MinValue;
+
+    protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
+    {
+        base.OnClosing(e);
+        // Permitir el cierre si: ya se autorizo con clave, otro handler lo cancelo,
+        // o se esta aplicando un update (Velopack reinicia la app).
+        if (_allowExit || e.Cancel || UpdateService.IsApplying) return;
+
+        // Bloquear el cierre + avisar + registrar el intento.
+        e.Cancel = true;
+        ShowToast("No puedes cerrar el programa durante la evaluacion. Intento registrado.", ToastKind.Error);
+        _ = ReportCloseAttemptAsync();
+
+        // Escape del profesor: clave correcta => cerrar de verdad (y sacar el
+        // daemon para que no lo relance).
+        var dlg = new PasswordPromptWindow { Owner = this };
+        if (dlg.ShowDialog() == true)
+        {
+            _allowExit = true;
+            try { DaemonService.Unregister(); } catch { }
+            Application.Current.Shutdown();
+        }
+    }
+
+    /// <summary>
+    /// Reporta el intento de cierre al panel (queda en Actividad). Throttle de
+    /// 30s para no spamear si el alumno aprieta la X varias veces.
+    /// </summary>
+    private async Task ReportCloseAttemptAsync()
+    {
+        if (_user == null) return;
+        if ((DateTime.UtcNow - _lastCloseReport).TotalSeconds < 30) return;
+        _lastCloseReport = DateTime.UtcNow;
+        try
+        {
+            await _sb.ReportStudentActivityAsync(
+                "close_attempt", _user.Login, _user.Email, Environment.MachineName,
+                StudentSection.Get(), "", null, StudentSection.GetSectionId());
+        }
+        catch { }
+    }
+
     // ===================== Init =====================
     private async Task InitAsync()
     {

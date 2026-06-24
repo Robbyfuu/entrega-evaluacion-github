@@ -14,6 +14,7 @@ export const ACTION_LABEL: Record<string, string> = {
   create_repo: "Crear repo",
   clone: "Clonar",
   upload: "Subir",
+  close_attempt: "Intento de cierre",
 };
 
 export const ACTION_COLOR: Record<string, string> = {
@@ -21,4 +22,5 @@ export const ACTION_COLOR: Record<string, string> = {
   create_repo: "#4caf50",
   clone: "#ff9800",
   upload: "#9c27b0",
+  close_attempt: "#c62828",
 };

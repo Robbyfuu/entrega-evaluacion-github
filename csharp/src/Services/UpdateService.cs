@@ -14,6 +14,10 @@ public static class UpdateService
 
     private static UpdateManager? _mgr;
 
+    // True mientras se aplica un update (Velopack reinicia la app). MainWindow.
+    // OnClosing lo consulta para NO bloquear el cierre durante la actualizacion.
+    public static bool IsApplying { get; private set; }
+
     /// <summary>
     /// Llamar lo antes posible en Main(). Maneja los hooks de instalacion de
     /// Velopack (primer install, update, uninstall) y SALE si corresponde.
@@ -65,6 +69,7 @@ public static class UpdateService
             // Pausar demonio para que no relance una instancia vieja durante el swap
             try { DaemonService.Unregister(); } catch { }
 
+            IsApplying = true; // permite que OnClosing no bloquee el reinicio del update
             _mgr.ApplyUpdatesAndRestart(info);
             return true;
         }
