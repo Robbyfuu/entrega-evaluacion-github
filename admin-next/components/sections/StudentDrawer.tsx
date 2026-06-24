@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { AlertTriangle, Globe, Lock, ShieldAlert, Unlock } from "lucide-react";
+import { AlertTriangle, ExternalLink, Globe, Lock, ShieldAlert, Unlock } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import type {
   BrowserHistoryRow,
@@ -57,6 +57,7 @@ export function StudentDrawer({
   const [alerts, setAlerts] = useState<ProcessAlertRow[]>([]);
   const [browsing, setBrowsing] = useState<BrowserHistoryRow[]>([]);
   const [cheats, setCheats] = useState<CheatEventRow[]>([]);
+  const [submission, setSubmission] = useState<{ repo_url: string; submitted_at: string | null } | null>(null);
 
   const github = student?.github ?? null;
   const pc = student?.client?.pc_name ?? null;
@@ -68,11 +69,12 @@ export function StudentDrawer({
       setAlerts([]);
       setBrowsing([]);
       setCheats([]);
+      setSubmission(null);
       return;
     }
     let cancelled = false;
     (async () => {
-      const [a, b, c] = await Promise.all([
+      const [a, b, c, s] = await Promise.all([
         supabase
           .from("process_alerts")
           .select("*")
@@ -91,11 +93,19 @@ export function StudentDrawer({
           .eq("username", github)
           .order("detected_at", { ascending: false })
           .limit(10),
+        supabase
+          .from("assignment_submissions")
+          .select("repo_url,submitted_at")
+          .eq("github_username", github)
+          .order("submitted_at", { ascending: false })
+          .limit(1),
       ]);
       if (cancelled) return;
       setAlerts((a.data as ProcessAlertRow[]) ?? []);
       setBrowsing((b.data as BrowserHistoryRow[]) ?? []);
       setCheats((c.data as CheatEventRow[]) ?? []);
+      const sub = (s.data as { repo_url: string; submitted_at: string | null }[] | null)?.[0] ?? null;
+      setSubmission(sub);
     })();
     return () => {
       cancelled = true;
@@ -129,15 +139,36 @@ export function StudentDrawer({
             <ScrollArea className="h-[calc(100vh-7rem)]">
               <div className="flex flex-col gap-6 p-4">
                 {/* Estado */}
-                <div className="flex flex-wrap gap-2">
-                  <Badge solidColor={student.accepted ? BADGE.success : BADGE.neutral}>
-                    {student.accepted ? "Aceptó ✓" : "No aceptó"}
-                  </Badge>
-                  <Badge solidColor={student.submitted ? BADGE.user : BADGE.neutral}>
-                    {student.submitted ? "Entregó ✓" : "No entregó"}
-                  </Badge>
-                  {!student.githubResolved ? (
-                    <Badge solidColor={BADGE.danger}>github sin asignar</Badge>
+                <div className="flex flex-col gap-2">
+                  <div className="flex flex-wrap gap-2">
+                    <Badge solidColor={student.accepted ? BADGE.success : BADGE.neutral}>
+                      {student.accepted ? "Aceptó ✓" : "No aceptó"}
+                    </Badge>
+                    <Badge solidColor={student.submitted ? BADGE.user : BADGE.neutral}>
+                      {student.submitted ? "Entregó ✓" : "No entregó"}
+                    </Badge>
+                    {!student.githubResolved ? (
+                      <Badge solidColor={BADGE.danger}>github sin asignar</Badge>
+                    ) : null}
+                  </div>
+                  {/* Enlace de la entrega capturado al subir al repo */}
+                  {submission?.repo_url ? (
+                    <a
+                      href={submission.repo_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 text-sm text-primary underline-offset-2 hover:underline"
+                    >
+                      <ExternalLink className="size-3.5" />
+                      <span className="truncate">{submission.repo_url}</span>
+                    </a>
+                  ) : student.github ? (
+                    <span className="text-xs text-muted-foreground">Sin entrega registrada.</span>
+                  ) : null}
+                  {submission?.submitted_at ? (
+                    <span className="text-xs text-muted-foreground">
+                      Entregado: {fmt(submission.submitted_at)}
+                    </span>
                   ) : null}
                 </div>
 

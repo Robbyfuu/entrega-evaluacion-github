@@ -831,6 +831,9 @@ public partial class MainWindow : Window
         Log($"OK Subida completada: {res.Url}");
         try { Clipboard.SetText(res.Url!); } catch { }
         await _sb.ReportStudentActivityAsync("upload", _user!.Login, _user.Email, Environment.MachineName, StudentSection.Get(), repo, res.Url, StudentSection.GetSectionId());
+        // Captura el enlace como ENTREGA formal en el panel (el alumno no tiene
+        // que apretar "Entregar repo" aparte). Best-effort, no bloquea.
+        await RecordSubmissionIfClassroomRepoAsync(name, res.Url!);
 
         // tipo ahora es el titulo de la evaluacion (BD) o el tipo legacy
         // (Config.EvaluationTypes en fallback). Ya no mapeamos via switch: el
@@ -1284,6 +1287,37 @@ public partial class MainWindow : Window
                 break;
             }
         }
+    }
+
+    /// <summary>
+    /// Tras subir al repo, registra la ENTREGA (assignment_submissions) capturando
+    /// el enlace, para que el profe la vea en el panel ("entrego" + URL) sin que el
+    /// alumno tenga que apretar "Entregar repo" aparte. Mapea el repo a la tarea por
+    /// nombre esperado; si no hay match exacto pero hay UNA sola tarea activa para la
+    /// evaluacion, usa esa (los slugs de Classroom no siempre coinciden con
+    /// Sanitize(titulo)). No bloquea la subida: cualquier fallo se ignora.
+    /// </summary>
+    private async Task RecordSubmissionIfClassroomRepoAsync(string repoName, string repoUrl)
+    {
+        var me = _user?.Login;
+        if (string.IsNullOrEmpty(me)) return;
+        try
+        {
+            var asg = FilterBySection(await _sb.GetActiveAssignmentsAsync(StudentSection.GetEvaluationId()));
+            if (asg.Count == 0) return;
+            foreach (var a in asg)
+            {
+                if (string.Equals(ExpectedClassroomRepo(a.Title, me), repoName, StringComparison.OrdinalIgnoreCase))
+                {
+                    await _sb.RecordSubmissionAsync(a.Id, me, repoUrl);
+                    return;
+                }
+            }
+            // Fallback: una sola tarea activa => atribuir la entrega a esa.
+            if (asg.Count == 1)
+                await _sb.RecordSubmissionAsync(asg[0].Id, me, repoUrl);
+        }
+        catch { }
     }
 
     /// <summary>
