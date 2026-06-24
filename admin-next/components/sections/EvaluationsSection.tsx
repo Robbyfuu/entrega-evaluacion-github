@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
-import { ClipboardList, ExternalLink, Plus, RefreshCw, Trash2 } from "lucide-react";
+import { ClipboardList, ExternalLink, Pencil, Plus, RefreshCw, Trash2, X } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import type { EvaluationRow, SectionRow } from "@/lib/types";
 import { useEvaluations } from "@/hooks/useEvaluations";
@@ -35,6 +35,11 @@ import {
   TableRow,
 } from "@/components/ui/table";
 
+// Evaluaciones = el ÚNICO lugar para la evaluación Y su tarea de Classroom.
+// Antes estaban partidas en "Evaluaciones" + "Tareas Classroom" y se
+// desincronizaban (eval sin tarea, tarea apuntando a eval muerta). Ahora la
+// evaluación lleva su link de Classroom y, por detrás, mantenemos sincronizada
+// la fila de `assignments` (que es lo que LEE el cliente del alumno).
 export function EvaluationsSection() {
   const { rows, loading, error, refresh } = useEvaluations();
   const { rows: sections } = useSections();
@@ -43,6 +48,7 @@ export function EvaluationsSection() {
   const [title, setTitle] = useState("");
   const [url, setUrl] = useState("");
   const [org, setOrg] = useState("");
+  const [editingId, setEditingId] = useState<number | null>(null);
 
   const sectionMap = useMemo(() => {
     const m = new Map<number, SectionRow>();
@@ -56,76 +62,140 @@ export function EvaluationsSection() {
     return m;
   }, [courses]);
 
-  async function addEvaluation() {
+  function resetForm() {
+    setEditingId(null);
+    setTitle("");
+    setUrl("");
+    setOrg("");
+    setSectionId("");
+  }
+
+  function startEdit(e: EvaluationRow) {
+    setEditingId(e.id);
+    setSectionId(String(e.section_id));
+    setTitle(e.title);
+    setUrl(e.classroom_url ?? "");
+    setOrg(e.org ?? "");
+  }
+
+  // Mantiene sincronizada la `assignment` (lo que lee el cliente) con la
+  // evaluación. Con link => upsert de la tarea; sin link => si existe, la
+  // desactiva (no hay tarea Classroom que mostrar). El cliente cruza por
+  // evaluation_id / sección.
+  async function syncAssignment(
+    evalId: number,
+    sectionCode: string,
+    t: string,
+    classroomUrl: string,
+    orgValue: string,
+    active: boolean
+  ) {
+    const { data: existing } = await supabase
+      .from("assignments")
+      .select("id")
+      .eq("evaluation_id", evalId)
+      .limit(1);
+    const has = !!existing && existing.length > 0;
+
+    if (classroomUrl) {
+      if (has) {
+        await supabase
+          .from("assignments")
+          .update({ title: t, section: sectionCode, classroom_url: classroomUrl, org: orgValue || "", active })
+          .eq("evaluation_id", evalId);
+      } else {
+        await supabase.from("assignments").insert({
+          title: t,
+          section: sectionCode,
+          classroom_url: classroomUrl,
+          org: orgValue || "",
+          evaluation_id: evalId,
+          active,
+        });
+      }
+    } else if (has) {
+      // Sin link: no puede haber tarea visible -> desactivar la existente.
+      await supabase.from("assignments").update({ active: false }).eq("evaluation_id", evalId);
+    }
+  }
+
+  async function saveEvaluation() {
     const sid = Number(sectionId);
     const t = title.trim();
     if (!sid || !t) {
       toast.error("Selecciona sección y completa el título.");
       return;
     }
+    const sectionCode = sectionMap.get(sid)?.code ?? "";
+    const classroomUrl = url.trim();
+    const orgValue = org.trim();
+
+    if (editingId != null) {
+      // EDITAR evaluación existente (incluye añadir/cambiar el link de Classroom).
+      const { data, error: err } = await supabase
+        .from("evaluations")
+        .update({ section_id: sid, title: t, classroom_url: classroomUrl || null, org: orgValue || null })
+        .eq("id", editingId)
+        .select();
+      if (err) { toast.error("Error: " + err.message); return; }
+      if (!data || data.length === 0) { toast.error("No se pudo guardar (¿sesión expirada?)."); return; }
+      // mantener la tarea sincronizada con el estado actual de la evaluación
+      await syncAssignment(editingId, sectionCode, t, classroomUrl, orgValue, data[0].active ?? false);
+      toast.success(`Evaluación "${t}" actualizada.`);
+      resetForm();
+      void refresh();
+      return;
+    }
+
+    // CREAR (inactiva). Se activa con el botón Activar.
     const { data, error: err } = await supabase
       .from("evaluations")
-      .insert({
-        section_id: sid,
-        title: t,
-        classroom_url: url.trim() || null,
-        org: org.trim() || null,
-        active: false,
-      })
+      .insert({ section_id: sid, title: t, classroom_url: classroomUrl || null, org: orgValue || null, active: false })
       .select();
-    if (err) {
-      toast.error("Error: " + err.message);
-      return;
-    }
-    if (!data || data.length === 0) {
-      toast.error("No se pudo agregar (¿sesión expirada?).");
-      return;
-    }
-    setTitle("");
-    setUrl("");
-    setOrg("");
+    if (err) { toast.error("Error: " + err.message); return; }
+    if (!data || data.length === 0) { toast.error("No se pudo agregar (¿sesión expirada?)."); return; }
+    await syncAssignment(data[0].id, sectionCode, t, classroomUrl, orgValue, false);
     toast.success(`Evaluación "${t}" agregada (inactiva).`);
+    resetForm();
     void refresh();
   }
 
-  async function toggleEvaluation(id: EvaluationRow["id"], active: boolean) {
-    const { data, error: err } = await supabase.from("evaluations").update({ active }).eq("id", id).select();
-    if (err) {
-      toast.error("Error: " + err.message);
-      return;
-    }
-    if (!data || data.length === 0) {
-      toast.error("No se pudo actualizar (¿sesión expirada?).");
-      return;
-    }
+  async function toggleEvaluation(e: EvaluationRow, active: boolean) {
+    const { data, error: err } = await supabase.from("evaluations").update({ active }).eq("id", e.id).select();
+    if (err) { toast.error("Error: " + err.message); return; }
+    if (!data || data.length === 0) { toast.error("No se pudo actualizar (¿sesión expirada?)."); return; }
+    // La tarea del cliente sigue el estado de la evaluación.
+    const sectionCode = sectionMap.get(e.section_id)?.code ?? "";
+    await syncAssignment(e.id, sectionCode, e.title, e.classroom_url ?? "", e.org ?? "", active);
     void refresh();
   }
 
-  async function deleteEvaluation(id: EvaluationRow["id"], title: string) {
-    if (!window.confirm(`¿Eliminar la evaluación "${title}"?`)) return;
-    const { data, error: err } = await supabase.from("evaluations").delete().eq("id", id).select();
-    if (err) {
-      toast.error("Error: " + err.message);
-      return;
-    }
-    if (!data || data.length === 0) {
-      toast.error("No se pudo eliminar (¿sesión expirada?).");
-      return;
-    }
+  async function deleteEvaluation(e: EvaluationRow) {
+    if (!window.confirm(`¿Eliminar la evaluación "${e.title}"?`)) return;
+    // Desactivar primero su tarea (no la borramos: puede tener aceptaciones/
+    // entregas asociadas) y luego eliminar la evaluación.
+    await supabase.from("assignments").update({ active: false }).eq("evaluation_id", e.id);
+    const { data, error: err } = await supabase.from("evaluations").delete().eq("id", e.id).select();
+    if (err) { toast.error("Error: " + err.message); return; }
+    if (!data || data.length === 0) { toast.error("No se pudo eliminar (¿sesión expirada?)."); return; }
+    if (editingId === e.id) resetForm();
     void refresh();
   }
+
+  const editing = editingId != null;
 
   return (
     <Card id="sec-evaluations" className="scroll-mt-20">
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-lg">
-          Evaluaciones
+          Evaluaciones y tareas
           <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-muted px-1.5 text-xs font-medium text-muted-foreground">
             {rows.length}
           </span>
         </CardTitle>
         <CardDescription>
-          Crea evaluaciones por sección. Activa la evaluación para que los alumnos la vean al arrancar.
+          Cada evaluación es una tarea de Classroom. Ponle el <strong className="font-semibold text-foreground">link de Classroom</strong>{" "}
+          (podés editarlo después) y actívala para que los alumnos la vean. El programa del alumno la toma de aquí.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
@@ -166,31 +236,37 @@ export function EvaluationsSection() {
             />
           </div>
           <div className="grid flex-1 gap-1.5">
-            <Label htmlFor="evalUrl">URL Classroom (opcional)</Label>
+            <Label htmlFor="evalUrl">Link de Classroom</Label>
             <Input
               type="text"
               id="evalUrl"
               placeholder="https://classroom.github.com/a/XXXX"
               value={url}
               onChange={(e) => setUrl(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter") void addEvaluation(); }}
+              onKeyDown={(e) => { if (e.key === "Enter") void saveEvaluation(); }}
             />
           </div>
-          <Button onClick={addEvaluation}>
-            <Plus />
-            Agregar evaluación
+          <Button onClick={saveEvaluation}>
+            {editing ? <Pencil /> : <Plus />}
+            {editing ? "Guardar cambios" : "Agregar evaluación"}
           </Button>
+          {editing ? (
+            <Button variant="outline" onClick={resetForm}>
+              <X />
+              Cancelar
+            </Button>
+          ) : null}
         </div>
 
         <div className="rounded-lg border">
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="w-[25%] text-xs font-medium uppercase tracking-wide text-muted-foreground">Título</TableHead>
-                <TableHead className="w-[20%] text-xs font-medium uppercase tracking-wide text-muted-foreground">Sección</TableHead>
-                <TableHead className="w-[25%] text-xs font-medium uppercase tracking-wide text-muted-foreground">URL</TableHead>
+                <TableHead className="w-[22%] text-xs font-medium uppercase tracking-wide text-muted-foreground">Título</TableHead>
+                <TableHead className="w-[18%] text-xs font-medium uppercase tracking-wide text-muted-foreground">Sección</TableHead>
+                <TableHead className="w-[28%] text-xs font-medium uppercase tracking-wide text-muted-foreground">Link Classroom</TableHead>
                 <TableHead className="w-[12%] text-xs font-medium uppercase tracking-wide text-muted-foreground">Estado</TableHead>
-                <TableHead className="w-[18%] text-right text-xs font-medium uppercase tracking-wide text-muted-foreground">Acciones</TableHead>
+                <TableHead className="w-[20%] text-right text-xs font-medium uppercase tracking-wide text-muted-foreground">Acciones</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -216,7 +292,7 @@ export function EvaluationsSection() {
                     <div className="flex flex-col items-center gap-2 text-center text-muted-foreground">
                       <ClipboardList className="size-8 text-muted-foreground/40" />
                       <p className="text-sm">Sin evaluaciones configuradas.</p>
-                      <p className="text-xs text-muted-foreground/70">Crea una evaluación por sección y actívala cuando el alumno deba verla.</p>
+                      <p className="text-xs text-muted-foreground/70">Crea una evaluación por sección, ponle el link de Classroom y actívala.</p>
                     </div>
                   </TableCell>
                 </TableRow>
@@ -225,7 +301,7 @@ export function EvaluationsSection() {
                   const sec = sectionMap.get(e.section_id);
                   const courseCode = sec ? courseMap.get(sec.course_id) ?? "?" : "?";
                   return (
-                    <TableRow key={e.id}>
+                    <TableRow key={e.id} className={editingId === e.id ? "bg-primary/5" : undefined}>
                       <TableCell className="font-medium">{e.title}</TableCell>
                       <TableCell>
                         <span className="inline-flex items-center rounded-md bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
@@ -238,13 +314,13 @@ export function EvaluationsSection() {
                             href={e.classroom_url}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="inline-flex max-w-[260px] items-center gap-1 truncate font-mono text-xs text-primary hover:underline"
+                            className="inline-flex max-w-[280px] items-center gap-1 truncate font-mono text-xs text-primary hover:underline"
                           >
                             <ExternalLink className="size-3 shrink-0" />
                             <span className="truncate">{e.classroom_url}</span>
                           </a>
                         ) : (
-                          <span className="text-muted-foreground">—</span>
+                          <span className="text-xs text-amber-600 dark:text-amber-400">Falta el link — Editar</span>
                         )}
                       </TableCell>
                       <TableCell>
@@ -260,19 +336,28 @@ export function EvaluationsSection() {
                         </span>
                       </TableCell>
                       <TableCell className="text-right">
-                        <div className="flex justify-end gap-2">
+                        <div className="flex justify-end gap-1.5">
                           <Button
                             variant={e.active ? "outline" : "default"}
                             size="sm"
-                            onClick={() => toggleEvaluation(e.id, !e.active)}
+                            onClick={() => toggleEvaluation(e, !e.active)}
                           >
                             {e.active ? "Desactivar" : "Activar"}
                           </Button>
                           <Button
                             variant="ghost"
                             size="icon-sm"
+                            title="Editar (link, título, sección)"
+                            onClick={() => startEdit(e)}
+                            aria-label="Editar evaluación"
+                          >
+                            <Pencil />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
                             className="text-destructive hover:text-destructive"
-                            onClick={() => deleteEvaluation(e.id, e.title)}
+                            onClick={() => deleteEvaluation(e)}
                             aria-label="Eliminar evaluación"
                           >
                             <Trash2 />

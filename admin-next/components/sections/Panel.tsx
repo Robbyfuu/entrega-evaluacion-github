@@ -21,7 +21,6 @@ import { ProcessAlertsSection } from "@/components/sections/ProcessAlertsSection
 import { BrowsingSection } from "@/components/sections/BrowsingSection";
 import { SuspiciousProcessesSection } from "@/components/sections/SuspiciousProcessesSection";
 import { AllowedUrlsSection } from "@/components/sections/AllowedUrlsSection";
-import { AssignmentsSection } from "@/components/sections/AssignmentsSection";
 import { ActivitySection } from "@/components/sections/ActivitySection";
 import { CheatEventsSection } from "@/components/sections/CheatEventsSection";
 import { SectionWorkspace } from "@/components/sections/SectionWorkspace";
@@ -109,7 +108,6 @@ export function Panel({ user }: PanelProps) {
           <div className={view("sec-browsing")}><BrowsingSection /></div>
           <div className={view("sec-suspicious")}><SuspiciousProcessesSection /></div>
           <div className={view("sec-allowed")}><AllowedUrlsSection /></div>
-          <div className={view("sec-tareas")}><AssignmentsSection /></div>
           <div className={view("sec-activity")}><ActivitySection /></div>
           <div className={view("sec-cheat")}><CheatEventsSection /></div>
         </main>

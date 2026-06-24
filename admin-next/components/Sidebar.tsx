@@ -12,7 +12,6 @@ import {
   ListChecks,
   LockKeyhole,
   Monitor,
-  ScrollText,
   ShieldAlert,
   ShieldCheck,
   ShieldX,
@@ -50,14 +49,13 @@ const NAV_PRIMARY: NavItem[] = [
 const NAV_GLOBAL: NavItem[] = [
   { target: "sec-courses", label: "Cursos", icon: BookOpen },
   { target: "sec-sections", label: "Config. secciones", icon: ListChecks },
-  { target: "sec-evaluations", label: "Evaluaciones", icon: ClipboardList },
+  { target: "sec-evaluations", label: "Evaluaciones y tareas", icon: ClipboardList },
   { target: "sec-roster", label: "Roster", icon: Users },
   { target: "sec-pcs", label: "PCs conectados", icon: Monitor },
   { target: "sec-alerts", label: "Alertas", icon: AlertTriangle },
   { target: "sec-browsing", label: "Navegación", icon: Globe },
   { target: "sec-suspicious", label: "Procesos", icon: ShieldX },
   { target: "sec-allowed", label: "URLs permitidas", icon: ShieldCheck },
-  { target: "sec-tareas", label: "Tareas Classroom", icon: ScrollText },
   { target: "sec-activity", label: "Actividad", icon: Activity },
   { target: "sec-cheat", label: "Trampas", icon: ShieldX },
 ];
