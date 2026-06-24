@@ -368,7 +368,7 @@ public partial class MainWindow : Window
         UpdateButton.Content = "Buscando...";
         try
         {
-            var willRestart = await UpdateService.CheckAndApplyAsync(msg => Log(msg));
+            var willRestart = await UpdateService.CheckAndApplyAsync(msg => Log(msg), _gh.Token);
             if (!willRestart)
                 ShowToast($"Ya estas en la ultima version (v{UpdateService.CurrentVersion()}).", ToastKind.Info);
             // Si willRestart == true, la app se reinicia sola; no reactivamos.
@@ -1490,7 +1490,7 @@ public partial class MainWindow : Window
         }
         _lastUpdateRequestProcessed = raw;
         Log("[update] el profesor pidio actualizar. Buscando version nueva...");
-        await UpdateService.CheckAndApplyAsync(msg => Log(msg)); // reinicia si hay update
+        await UpdateService.CheckAndApplyAsync(msg => Log(msg), _gh.Token); // reinicia si hay update
     }
 
     /// <summary>

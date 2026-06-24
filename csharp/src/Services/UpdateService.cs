@@ -29,12 +29,19 @@ public static class UpdateService
     /// Chequea + descarga + aplica update en background. Si hay update, lo deja
     /// listo y reinicia la app. Silencioso si no hay update o no hay internet.
     /// Devuelve true si va a reiniciar (el caller debe dejar de trabajar).
+    ///
+    /// accessToken: token del alumno logueado. CLAVE en sala de examen: sin
+    /// token, Velopack pega a la API de GitHub SIN autenticar (limite 60/hora
+    /// POR IP). Con todos los PCs detras del mismo NAT, esos 60 se agotan y da
+    /// 403 (rate limit) => nadie actualiza. Autenticado, el limite es 5000/hora
+    /// POR USUARIO, asi cada alumno tiene su propio cupo y no se pisan.
     /// </summary>
-    public static async Task<bool> CheckAndApplyAsync(Action<string>? log = null)
+    public static async Task<bool> CheckAndApplyAsync(Action<string>? log = null, string? accessToken = null)
     {
         try
         {
-            _mgr = new UpdateManager(new GithubSource(RepoUrl, null, prerelease: false));
+            var token = string.IsNullOrWhiteSpace(accessToken) ? null : accessToken;
+            _mgr = new UpdateManager(new GithubSource(RepoUrl, token, prerelease: false));
 
             // No instalado via Velopack (ej. corriendo en dev) -> no update
             if (!_mgr.IsInstalled)
