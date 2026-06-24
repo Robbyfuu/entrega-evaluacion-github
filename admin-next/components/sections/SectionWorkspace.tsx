@@ -176,7 +176,7 @@ export function SectionWorkspace() {
       return;
     }
     const reason = window.prompt(
-      `Lockdown DIRIGIDO a ${pc ?? "?"} (@${github}).\nMotivo (opcional):`,
+      `Bloquear (pantalla roja) a ${pc ?? "?"} (@${github}).\nMotivo (opcional):`,
       "Trampa detectada por el profesor"
     );
     if (reason === null) return;
@@ -190,7 +190,7 @@ export function SectionWorkspace() {
       },
       { onConflict: "pc_name,github_username" }
     );
-    window.alert(error ? "Error: " + error.message : `✓ Lockdown enviado a @${github}. Se aplica en <20s.`);
+    window.alert(error ? "Error: " + error.message : `✓ Bloqueo enviado a @${github}. Se aplica en <20s.`);
   }
 
   async function releaseTargetLockdown(pc: string | null, github: string | null) {
@@ -198,7 +198,7 @@ export function SectionWorkspace() {
       .from("targeted_lockdowns")
       .update({ active: false, released_at: new Date().toISOString() })
       .match({ pc_name: pc, github_username: github });
-    window.alert(error ? "Error: " + error.message : `✓ Lockdown liberado para @${github}.`);
+    window.alert(error ? "Error: " + error.message : `✓ Bloqueo liberado para @${github}.`);
   }
 
   // ----- Render -----

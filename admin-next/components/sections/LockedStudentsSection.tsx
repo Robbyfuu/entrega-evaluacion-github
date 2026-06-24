@@ -85,9 +85,9 @@ export function LockedStudentsSection({ onCountChange }: LockedStudentsSectionPr
           </span>
         </CardTitle>
         <CardDescription>
-          Alumnos con la pantalla roja activa ahora. Incluye lockdown dirigido por
-          vos y trampas locales (repo sucio, navegación prohibida). Desbloquear los
-          libera en menos de 10s.
+          Alumnos con la pantalla roja activa ahora. Incluye los que bloqueaste
+          vos y las trampas locales (repo sucio, navegación prohibida). Desbloquear
+          los libera en menos de 10s.
         </CardDescription>
       </CardHeader>
       <CardContent>

@@ -107,7 +107,7 @@ export function SectionStudentsTable({
         <Table>
           <TableHeader className="sticky top-0 z-10 bg-muted/50 backdrop-blur">
             <TableRow>
-              {["Alumno", "GitHub", "Online", "Aceptó", "Entregó", "Versión", "Procesos", "Lockdown"].map(
+              {["Alumno", "GitHub", "Online", "Aceptó", "Entregó", "Versión", "Procesos", "Pantalla roja"].map(
                 (h) => (
                   <TableHead
                     key={h}
@@ -202,7 +202,7 @@ export function SectionStudentsTable({
                   </TableCell>
                   <TableCell>
                     {s.lockdown ? (
-                      <Badge solidColor={BADGE.lockdown}>ACTIVO</Badge>
+                      <Badge solidColor={BADGE.lockdown}>Bloqueado</Badge>
                     ) : (
                       <span className="text-xs text-muted-foreground">no</span>
                     )}

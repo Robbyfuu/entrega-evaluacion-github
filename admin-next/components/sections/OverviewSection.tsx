@@ -81,7 +81,7 @@ export function OverviewSection({ control, onlineCount, alertCount }: OverviewSe
             </div>
 
             <div className="flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">Lockdown</span>
+              <span className="text-sm text-muted-foreground">Pantalla roja</span>
               <span
                 className={cn(
                   "font-mono text-sm font-semibold tabular-nums",

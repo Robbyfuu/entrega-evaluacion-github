@@ -129,7 +129,7 @@ export function OnlineClientsSection({
       return;
     }
     const reason = window.prompt(
-      `Lockdown DIRIGIDO a ${pcName} (@${githubUsername}).\nMotivo (opcional):`,
+      `Bloquear (pantalla roja) a ${pcName} (@${githubUsername}).\nMotivo (opcional):`,
       "Trampa detectada por el profesor"
     );
     if (reason === null) return;
@@ -144,7 +144,7 @@ export function OnlineClientsSection({
       { onConflict: "pc_name,github_username" }
     );
     window.alert(
-      err ? "Error: " + err.message : `✓ Lockdown enviado a ${pcName}. Se aplicará en <20s.`
+      err ? "Error: " + err.message : `✓ Bloqueo enviado a ${pcName}. Se aplicará en <20s.`
     );
   }
 
@@ -157,7 +157,7 @@ export function OnlineClientsSection({
       .update({ active: false, released_at: new Date().toISOString() })
       .match({ pc_name: pcName, github_username: githubUsername });
     window.alert(
-      err ? "Error: " + err.message : `✓ Lockdown liberado para ${pcName}.`
+      err ? "Error: " + err.message : `✓ Bloqueo liberado para ${pcName}.`
     );
   }
 
@@ -231,7 +231,7 @@ export function OnlineClientsSection({
               <TableHead className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Última señal</TableHead>
               <TableHead className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Apps abiertas</TableHead>
               <TableHead className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Internet</TableHead>
-              <TableHead className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Lockdown</TableHead>
+              <TableHead className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Pantalla roja</TableHead>
               <TableHead className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Versión</TableHead>
               <TableHead className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Acción</TableHead>
             </TableRow>
@@ -319,7 +319,7 @@ export function OnlineClientsSection({
                           c.lockdown_state === "active" ? BADGE.lockdown : BADGE.neutral
                         }
                       >
-                        {c.lockdown_state === "active" ? "ACTIVO" : "no"}
+                        {c.lockdown_state === "active" ? "Bloqueado" : "no"}
                       </Badge>
                     </TableCell>
                     <TableCell>
@@ -351,12 +351,12 @@ export function OnlineClientsSection({
                           }}
                         >
                           <Lock className="size-3.5" />
-                          Lockdown
+                          Bloquear alumno
                         </Button>
                         <Button
                           variant="outline"
                           size="icon-sm"
-                          title="Liberar lockdown dirigido"
+                          title="Liberar (sacar pantalla roja)"
                           onClick={(e) => {
                             e.stopPropagation();
                             void releaseTargetLockdown(c.pc_name, c.github_username);

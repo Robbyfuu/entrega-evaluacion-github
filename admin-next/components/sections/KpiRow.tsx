@@ -102,7 +102,7 @@ export function KpiRow({ control, onlineCount, alertCount }: KpiRowProps) {
         accent={!control ? "muted" : netBlocked ? "danger" : "success"}
       />
       <Kpi
-        label="Lockdown"
+        label="Pantalla roja"
         value={<span className="text-xl">{lock}</span>}
         icon={<Lock className="size-5" />}
         accent={!control ? "muted" : locked ? "danger" : "success"}

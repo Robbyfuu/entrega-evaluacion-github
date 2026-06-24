@@ -180,7 +180,7 @@ export function StudentDrawer({
                     onClick={() => onTargetLockdown(pc, github)}
                     disabled={!github}
                   >
-                    <Lock className="size-3.5" /> Lockdown dirigido
+                    <Lock className="size-3.5" /> Bloquear alumno
                   </Button>
                   <Button
                     variant="outline"

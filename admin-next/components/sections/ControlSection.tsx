@@ -132,8 +132,8 @@ export function ControlSection({
 
   function confirmLockdown() {
     const warning = perEvalActive
-      ? "Esto activará el lockdown rojo en los PCs de esta evaluación. ¿Confirmar?"
-      : "Esto activará el lockdown rojo en TODOS los PCs conectados. ¿Confirmar?";
+      ? "Esto activará la pantalla roja en los PCs de esta evaluación. ¿Confirmar?"
+      : "Esto activará la pantalla roja en TODOS los PCs conectados. ¿Confirmar?";
     if (window.confirm(warning)) {
       void applyControl({ force_lockdown: true });
     }
@@ -221,7 +221,7 @@ export function ControlSection({
                 <span className="text-muted-foreground">…</span>
               )}
             </StatusItem>
-            <StatusItem label="Lockdown remoto">
+            <StatusItem label="Pantalla roja a todos">
               {statusError ? (
                 <span className="text-destructive">Error: {statusError}</span>
               ) : hasState ? (
@@ -231,7 +231,7 @@ export function ControlSection({
                     effLockdown ? "text-destructive" : "text-emerald-500"
                   )}
                 >
-                  {effLockdown ? "ACTIVO" : "inactivo"}
+                  {effLockdown ? "ACTIVA" : "inactiva"}
                 </span>
               ) : (
                 <span className="text-muted-foreground">…</span>
@@ -315,9 +315,9 @@ export function ControlSection({
             </div>
             <div className="flex flex-1 items-center justify-between gap-3 rounded-lg border px-4 py-3">
               <div className="flex flex-col gap-0.5">
-                <Label htmlFor="lockdownToggle">Lockdown remoto</Label>
+                <Label htmlFor="lockdownToggle">Pantalla roja a todos</Label>
                 <span className="text-xs text-muted-foreground">
-                  {effLockdown ? "Lockdown activo" : "Lockdown inactivo"}
+                  {effLockdown ? "Pantalla roja activa" : "Pantalla roja inactiva"}
                 </span>
               </div>
               <Switch
