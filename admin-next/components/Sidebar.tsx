@@ -10,6 +10,7 @@ import {
   LayoutDashboard,
   LayoutGrid,
   ListChecks,
+  LockKeyhole,
   Monitor,
   ScrollText,
   ShieldAlert,
@@ -38,6 +39,7 @@ interface NavItem {
 // Monitoreo (primario): el workspace por seccion drill-down + resumen global.
 const NAV_PRIMARY: NavItem[] = [
   { target: "sec-workspace", label: "Secciones", icon: LayoutGrid },
+  { target: "sec-locked", label: "Bloqueados", icon: LockKeyhole },
   { target: "sec-kpi", label: "Resumen", icon: LayoutDashboard },
   { target: "sec-control", label: "Controles", icon: ShieldAlert },
 ];

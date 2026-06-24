@@ -788,10 +788,7 @@ public partial class MainWindow : Window
                 Log($"TRAMPA: {clean.FilesCount} archivo(s) no permitidos.");
                 try { Directory.Delete(target, true); } catch { }
                 CarpetaBox.Text = "";
-                LockdownService.Trigger(repo, clean.FilesCount, clean.FilesNames);
-                await _sb.ReportCheatEventAsync(_user!.Login, Environment.MachineName, repo, clean.FilesCount, clean.FilesNames);
-                var alert = new CheatWindow(repo, clean.FilesCount, clean.FilesNames);
-                alert.ShowDialog();
+                await ShowLocalTrapLockAsync(repo, clean.FilesCount, clean.FilesNames);
                 UpdateButtonStates();
                 return;
             }
@@ -1562,6 +1559,47 @@ public partial class MainWindow : Window
         }
     }
 
+    /// <summary>
+    /// Pantalla roja por TRAMPA LOCAL (repo sucio, navegacion prohibida), ahora
+    /// VISIBLE en el panel y LIBERABLE remoto. Reporta el auto-lock a
+    /// targeted_lockdowns (via RPC) para que el profe lo vea y lo desbloquee; si
+    /// el reporte se confirma, la pantalla re-chequea cada 10s y se libera cuando
+    /// el profe apaga el lock (que ademas limpia el marker persistente). Si el
+    /// reporte FALLA (offline), cae a password-only: fail-safe, nunca auto-libera.
+    /// Reusa _targetedLockdownActive => visible como "active" en el heartbeat y
+    /// evita que CheckTargetedLockdownAsync abra una segunda pantalla.
+    /// </summary>
+    private async Task ShowLocalTrapLockAsync(string reasonOrRepo, int filesCount, string[] filesNames)
+    {
+        if (_targetedLockdownActive) return; // ya hay pantalla roja activa
+        _targetedLockdownActive = true;
+
+        LockdownService.Trigger(reasonOrRepo, filesCount, filesNames);
+
+        var me = _user?.Login ?? "";
+        var pc = Environment.MachineName;
+        try
+        {
+            await _sb.ReportCheatEventAsync(
+                me.Length > 0 ? me : "(sin sesion)", pc, reasonOrRepo, filesCount, filesNames);
+        }
+        catch { }
+
+        bool reported = await _sb.ReportSelfLockAsync(
+            pc, me, StudentSection.Get(), filesNames.FirstOrDefault() ?? reasonOrRepo);
+
+        CheatWindow alert = reported
+            ? new CheatWindow(reasonOrRepo, filesCount, filesNames, remoteSource: true,
+                checkStillLocked: () => Task.Run(() =>
+                    _sb.IsTargetedLockedAsync(pc, me).GetAwaiter().GetResult()
+                    || _sb.IsForceLockdownAsync().GetAwaiter().GetResult()).GetAwaiter().GetResult())
+            : new CheatWindow(reasonOrRepo, filesCount, filesNames);
+        alert.Owner = this;
+        alert.ShowDialog();
+
+        _targetedLockdownActive = false;
+    }
+
     private async Task SendHeartbeatAsync()
     {
         if (_user == null) return;
@@ -1732,14 +1770,7 @@ public partial class MainWindow : Window
         var reason = $"Navegacion prohibida: {host}";
         Log($"TRAMPA: {reason}");
 
-        LockdownService.Trigger(reason, 0, new[] { reason });
-
-        var user = _user?.Login ?? "(sin sesion)";
-        try { await _sb.ReportCheatEventAsync(user, Environment.MachineName, reason, 0, new[] { reason }); }
-        catch { }
-
-        var alert = new CheatWindow(reason, 0, new[] { reason }) { Owner = this };
-        alert.ShowDialog();
+        await ShowLocalTrapLockAsync(reason, 0, new[] { reason });
         UpdateButtonStates();
     }
 

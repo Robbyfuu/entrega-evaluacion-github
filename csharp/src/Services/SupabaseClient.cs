@@ -543,6 +543,35 @@ public class SupabaseClient
     }
 
     /// <summary>
+    /// Reporta que ESTE PC+usuario quedo bloqueado por una trampa LOCAL, via RPC
+    /// SECURITY DEFINER (anon no puede escribir targeted_lockdowns directo). Asi
+    /// el profe lo VE en el panel y puede DESBLOQUEARLO remoto (la liberacion es
+    /// authenticated-only: el alumno no se auto-libera). Devuelve true si el
+    /// reporte se confirmo: el caller usa eso para decidir si la pantalla roja es
+    /// liberable-remoto (reportada) o password-only (fallo => fail-safe, no auto-libera).
+    /// </summary>
+    public async Task<bool> ReportSelfLockAsync(
+        string pcName, string githubUsername, string? section, string? reason)
+    {
+        if (string.IsNullOrWhiteSpace(githubUsername)) return false;
+        try
+        {
+            var payload = JsonSerializer.Serialize(new
+            {
+                p_pc_name = pcName,
+                p_github_username = githubUsername,
+                p_section = section,
+                p_reason = reason,
+                p_source = "trap"
+            }, JsonOpts);
+            var content = new StringContent(payload, Encoding.UTF8, "application/json");
+            var resp = await _http.PostAsync(Rest("rpc/report_self_lock"), content);
+            return resp.IsSuccessStatusCode;
+        }
+        catch { return false; }
+    }
+
+    /// <summary>
     /// Predicado de force_lockdown EFECTIVO para la evaluacion actual del
     /// cliente: resuelve override por evaluacion ?? global id=1. Es a la vez el
     /// predicado de APERTURA (CheckAdminConfigAsync) y de LIBERACION

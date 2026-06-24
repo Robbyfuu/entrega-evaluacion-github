@@ -25,6 +25,7 @@ import { AssignmentsSection } from "@/components/sections/AssignmentsSection";
 import { ActivitySection } from "@/components/sections/ActivitySection";
 import { CheatEventsSection } from "@/components/sections/CheatEventsSection";
 import { SectionWorkspace } from "@/components/sections/SectionWorkspace";
+import { LockedStudentsSection } from "@/components/sections/LockedStudentsSection";
 
 interface PanelProps {
   user: User;
@@ -69,6 +70,9 @@ export function Panel({ user }: PanelProps) {
         <main className="w-full flex-1 px-4 py-6 sm:px-6 lg:px-8">
           <div className={view("sec-workspace")}>
             <SectionWorkspace />
+          </div>
+          <div className={view("sec-locked")}>
+            <LockedStudentsSection />
           </div>
           <div className={view("sec-kpi")}>
             <OverviewSection control={control} onlineCount={onlineCount} alertCount={alertCount} />

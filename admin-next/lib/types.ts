@@ -136,10 +136,15 @@ export interface AssignmentSubmissionRow {
 }
 
 export interface TargetedLockdownRow {
+  id?: number;
   pc_name: string;
   github_username: string;
   active: boolean;
   reason: string | null;
+  // 'teacher' = lockdown dirigido por el profe; 'trap' = auto-reportado por una
+  // trampa local del cliente (repo sucio / navegación prohibida).
+  source?: string | null;
+  created_at?: string | null;
   released_at: string | null;
 }
 
