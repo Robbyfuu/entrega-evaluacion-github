@@ -8,6 +8,7 @@ import {
   ClipboardList,
   Globe,
   LayoutDashboard,
+  LayoutGrid,
   ListChecks,
   Monitor,
   ScrollText,
@@ -34,12 +35,17 @@ interface NavItem {
   icon: LucideIcon;
 }
 
-// Same nav items + targets/ids as the original sidebar. Icons added per item.
-const NAV_ITEMS: NavItem[] = [
+// Monitoreo (primario): el workspace por seccion drill-down + resumen global.
+const NAV_PRIMARY: NavItem[] = [
+  { target: "sec-workspace", label: "Secciones", icon: LayoutGrid },
   { target: "sec-kpi", label: "Resumen", icon: LayoutDashboard },
   { target: "sec-control", label: "Controles", icon: ShieldAlert },
+];
+
+// Vistas globales / config (cruzan todas las secciones).
+const NAV_GLOBAL: NavItem[] = [
   { target: "sec-courses", label: "Cursos", icon: BookOpen },
-  { target: "sec-sections", label: "Secciones", icon: ListChecks },
+  { target: "sec-sections", label: "Config. secciones", icon: ListChecks },
   { target: "sec-evaluations", label: "Evaluaciones", icon: ClipboardList },
   { target: "sec-roster", label: "Roster", icon: Users },
   { target: "sec-pcs", label: "PCs conectados", icon: Monitor },
@@ -72,26 +78,31 @@ export function Sidebar({ active, onSelect }: SidebarProps) {
         </div>
       </SidebarHeader>
       <SidebarContent>
-        <SidebarGroup>
-          <SidebarGroupLabel>Navegación</SidebarGroupLabel>
-          <SidebarMenu>
-            {NAV_ITEMS.map((item) => {
-              const Icon = item.icon;
-              return (
-                <SidebarMenuItem key={item.target}>
-                  <SidebarMenuButton
-                    isActive={active === item.target}
-                    tooltip={item.label}
-                    onClick={() => onSelect(item.target)}
-                  >
-                    <Icon />
-                    <span>{item.label}</span>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              );
-            })}
-          </SidebarMenu>
-        </SidebarGroup>
+        {([
+          { label: "Monitoreo", items: NAV_PRIMARY },
+          { label: "Gestión / Global", items: NAV_GLOBAL },
+        ] as const).map((group) => (
+          <SidebarGroup key={group.label}>
+            <SidebarGroupLabel>{group.label}</SidebarGroupLabel>
+            <SidebarMenu>
+              {group.items.map((item) => {
+                const Icon = item.icon;
+                return (
+                  <SidebarMenuItem key={item.target}>
+                    <SidebarMenuButton
+                      isActive={active === item.target}
+                      tooltip={item.label}
+                      onClick={() => onSelect(item.target)}
+                    >
+                      <Icon />
+                      <span>{item.label}</span>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                );
+              })}
+            </SidebarMenu>
+          </SidebarGroup>
+        ))}
       </SidebarContent>
       <SidebarRail />
     </ShadSidebar>
