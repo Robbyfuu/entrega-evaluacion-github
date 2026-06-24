@@ -2,7 +2,8 @@
 
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
-import { ClipboardList, ExternalLink, Pencil, Plus, RefreshCw, Trash2, X } from "lucide-react";
+import { ClipboardList, ExternalLink, Pencil, Plus, RefreshCw, Trash2, Users, X } from "lucide-react";
+import { EvaluationStudentsDrawer } from "@/components/sections/EvaluationStudentsDrawer";
 import { supabase } from "@/lib/supabase";
 import type { EvaluationRow, SectionRow } from "@/lib/types";
 import { useEvaluations } from "@/hooks/useEvaluations";
@@ -49,6 +50,7 @@ export function EvaluationsSection() {
   const [url, setUrl] = useState("");
   const [org, setOrg] = useState("");
   const [editingId, setEditingId] = useState<number | null>(null);
+  const [detailEval, setDetailEval] = useState<EvaluationRow | null>(null);
 
   const sectionMap = useMemo(() => {
     const m = new Map<number, SectionRow>();
@@ -338,6 +340,14 @@ export function EvaluationsSection() {
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-1.5">
                           <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setDetailEval(e)}
+                          >
+                            <Users className="size-3.5" />
+                            Ver alumnos
+                          </Button>
+                          <Button
                             variant={e.active ? "outline" : "default"}
                             size="sm"
                             onClick={() => toggleEvaluation(e, !e.active)}
@@ -376,6 +386,17 @@ export function EvaluationsSection() {
           <RefreshCw />
           Refrescar
         </Button>
+
+        <EvaluationStudentsDrawer
+          evaluation={detailEval}
+          sectionLabel={(() => {
+            if (!detailEval) return "";
+            const sec = sectionMap.get(detailEval.section_id);
+            const cc = sec ? courseMap.get(sec.course_id) ?? "?" : "?";
+            return `${cc} / ${sec?.code ?? "?"}`;
+          })()}
+          onClose={() => setDetailEval(null)}
+        />
       </CardContent>
     </Card>
   );
