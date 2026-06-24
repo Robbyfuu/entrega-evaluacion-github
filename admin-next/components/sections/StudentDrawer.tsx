@@ -152,22 +152,29 @@ export function StudentDrawer({
                     ) : null}
                   </div>
                   {/* Enlace de la entrega capturado al subir al repo */}
-                  {submission?.repo_url ? (
-                    <a
-                      href={submission.repo_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1.5 text-sm text-primary underline-offset-2 hover:underline"
-                    >
-                      <ExternalLink className="size-3.5" />
-                      <span className="truncate">{submission.repo_url}</span>
-                    </a>
+                  {/* Solo mostramos el enlace si entregó la evaluacion ACTUAL
+                      (student.submitted ya viene scopeado a la tarea activa).
+                      Asi no aparece un link de una entrega vieja. */}
+                  {student.submitted && submission?.repo_url ? (
+                    <>
+                      <a
+                        href={submission.repo_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 text-sm text-primary underline-offset-2 hover:underline"
+                      >
+                        <ExternalLink className="size-3.5" />
+                        <span className="truncate">{submission.repo_url}</span>
+                      </a>
+                      {submission.submitted_at ? (
+                        <span className="text-xs text-muted-foreground">
+                          Entregado: {fmt(submission.submitted_at)}
+                        </span>
+                      ) : null}
+                    </>
                   ) : student.github ? (
-                    <span className="text-xs text-muted-foreground">Sin entrega registrada.</span>
-                  ) : null}
-                  {submission?.submitted_at ? (
                     <span className="text-xs text-muted-foreground">
-                      Entregado: {fmt(submission.submitted_at)}
+                      Sin entrega de esta evaluación.
                     </span>
                   ) : null}
                 </div>

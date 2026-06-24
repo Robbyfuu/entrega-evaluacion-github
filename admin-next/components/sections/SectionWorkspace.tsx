@@ -4,6 +4,9 @@ import { useEffect, useMemo, useState } from "react";
 import { ArrowLeft, DownloadCloud, RefreshCw } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import type {
+  AssignmentAcceptanceRow,
+  AssignmentRow,
+  AssignmentSubmissionRow,
   EnrollmentStatusRow,
   EvaluationRow,
   OnlineClientRow,
@@ -18,6 +21,7 @@ import {
   buildStudents,
   makeSuspChecker,
   ONLINE_WINDOW_MS,
+  scopedStatusForSection,
   type SectionStats,
   type UnifiedStudent,
 } from "@/lib/section-workspace";
@@ -61,6 +65,24 @@ export function SectionWorkspace() {
     getId: (r) => r.id,
   });
 
+  // Tareas + aceptaciones + entregas para calcular aceptó/entregó SCOPEADO a la
+  // tarea activa (no "cualquier entrega historica" que daba la vista).
+  const { rows: assignments } = useRealtimeTable<AssignmentRow & Record<string, unknown>>({
+    table: "assignments",
+    order: { column: "created_at", ascending: false },
+    getId: (r) => r.id,
+  });
+  const { rows: acceptances } = useRealtimeTable<AssignmentAcceptanceRow & Record<string, unknown>>({
+    table: "assignment_acceptances",
+    order: { column: "accepted_at", ascending: false },
+    getId: (r) => r.id ?? `${r.github_username}|${r.assignment_id}`,
+  });
+  const { rows: submissions } = useRealtimeTable<AssignmentSubmissionRow & Record<string, unknown>>({
+    table: "assignment_submissions",
+    order: { column: "submitted_at", ascending: false },
+    getId: (r) => r.id ?? `${r.github_username}|${r.assignment_id}`,
+  });
+
   const [selectedSectionId, setSelectedSectionId] = useState<number | null>(null);
   const [evalFilter, setEvalFilter] = useState<string>(ALL_EVALS);
   const [selectedStudent, setSelectedStudent] = useState<UnifiedStudent | null>(null);
@@ -102,16 +124,27 @@ export function SectionWorkspace() {
         const procs = Array.isArray(c.processes) ? c.processes : [];
         return procs.some((p) => isSuspiciousFor(p.name, code));
       }).length;
+      // Aceptó/entregó scopeado a las tareas ACTIVAS de la seccion.
+      const { acceptedSet, submittedSet } = scopedStatusForSection({
+        sectionCode: code,
+        evalId: null,
+        assignments,
+        acceptances,
+        submissions,
+      });
+      const rosterGh = roster
+        .map((r) => r.github_username?.toLowerCase())
+        .filter((g): g is string => !!g);
       map.set(sec.id, {
         online: secClients.length,
         enrolled: countForSection(sec.id),
-        accepted: roster.filter((r) => r.accepted).length,
-        submitted: roster.filter((r) => r.submitted).length,
+        accepted: rosterGh.filter((g) => acceptedSet.has(g)).length,
+        submitted: rosterGh.filter((g) => submittedSet.has(g)).length,
         suspicious,
       });
     }
     return map;
-  }, [sections, rosterBySection, onlineClients, isSuspiciousFor, sectionCodeById, countForSection]);
+  }, [sections, rosterBySection, onlineClients, isSuspiciousFor, sectionCodeById, countForSection, assignments, acceptances, submissions]);
 
   const activeEvalTitle = (sectionId: number): string | null => {
     const ev = evaluations.find((e) => e.section_id === sectionId && e.active);
@@ -130,18 +163,25 @@ export function SectionWorkspace() {
   const students = useMemo(() => {
     if (selectedSectionId == null) return [];
     const roster = rosterBySection.get(selectedSectionId) ?? [];
+    const evId = evalFilter !== ALL_EVALS ? Number(evalFilter) : null;
     let secClients = onlineClients.filter((c) => c.section_id === selectedSectionId);
-    if (evalFilter !== ALL_EVALS) {
-      const evId = Number(evalFilter);
-      secClients = secClients.filter((c) => c.evaluation_id === evId);
-    }
+    if (evId != null) secClients = secClients.filter((c) => c.evaluation_id === evId);
+    const { acceptedSet, submittedSet } = scopedStatusForSection({
+      sectionCode: selectedCode,
+      evalId: evId,
+      assignments,
+      acceptances,
+      submissions,
+    });
     return buildStudents({
       rosterStatus: roster,
       onlineClients: secClients,
       isSuspiciousFor,
       sectionCode: selectedCode,
+      acceptedSet,
+      submittedSet,
     });
-  }, [selectedSectionId, rosterBySection, onlineClients, evalFilter, isSuspiciousFor, selectedCode]);
+  }, [selectedSectionId, rosterBySection, onlineClients, evalFilter, isSuspiciousFor, selectedCode, assignments, acceptances, submissions]);
 
   function refreshAll() {
     void refreshRoster();

@@ -76,8 +76,14 @@ export function buildStudents(args: {
   onlineClients: OnlineClientRow[]; // ya filtrado a la seccion + online
   isSuspiciousFor: (n: string | null | undefined, s: string | null) => boolean;
   sectionCode: string | null;
+  // Aceptó/entregó SCOPEADO a la(s) tarea(s) activa(s) de la seccion/evaluacion
+  // (github en minuscula). NO usamos el accepted/submitted de la vista porque
+  // ese cuenta CUALQUIER entrega historica del alumno -> marcaba entregado para
+  // una evaluacion nueva por una entrega de una tarea vieja ya desactivada.
+  acceptedSet: Set<string>;
+  submittedSet: Set<string>;
 }): UnifiedStudent[] {
-  const { rosterStatus, onlineClients, isSuspiciousFor, sectionCode } = args;
+  const { rosterStatus, onlineClients, isSuspiciousFor, sectionCode, acceptedSet, submittedSet } = args;
 
   const byGithub = new Map<string, OnlineClientRow>();
   for (const c of onlineClients) {
@@ -94,8 +100,8 @@ export function buildStudents(args: {
       fullName: r.full_name,
       github: r.github_username,
       enrolled: true,
-      accepted: r.accepted,
-      submitted: r.submitted,
+      accepted: gh ? acceptedSet.has(gh) : false,
+      submitted: gh ? submittedSet.has(gh) : false,
       githubResolved: r.github_resolved,
       online: !!client,
       client,
@@ -115,8 +121,8 @@ export function buildStudents(args: {
       fullName: null,
       github: c.github_username,
       enrolled: false,
-      accepted: false,
-      submitted: false,
+      accepted: gh ? acceptedSet.has(gh) : false,
+      submitted: gh ? submittedSet.has(gh) : false,
       githubResolved: !!c.github_username,
       online: true,
       client: c,
@@ -133,6 +139,48 @@ export function buildStudents(args: {
   });
 
   return [...rosterRows, ...orphans];
+}
+
+// Aceptó/entregó scopeado a las tareas ACTIVAS de una seccion. Cruza por
+// assignment_id (no por "cualquier entrega del alumno"): una entrega de una
+// tarea vieja ya DESACTIVADA no cuenta para la evaluacion actual. Si evalId !=
+// null, restringe ademas a las tareas de esa evaluacion.
+export interface ScopedStatus {
+  acceptedSet: Set<string>; // github en minuscula
+  submittedSet: Set<string>;
+}
+
+export function scopedStatusForSection(args: {
+  sectionCode: string | null;
+  evalId: number | null;
+  assignments: { id: number | string; section: string | null; evaluation_id: number | null; active: boolean }[];
+  acceptances: { github_username: string | null; assignment_id: number | string }[];
+  submissions: { github_username: string | null; assignment_id: number | string | null }[];
+}): ScopedStatus {
+  const { sectionCode, evalId, assignments, acceptances, submissions } = args;
+  const code = (sectionCode ?? "").toUpperCase();
+
+  // Ids de tareas ACTIVAS de la seccion (o globales), opcionalmente de una eval.
+  const aids = new Set<number>();
+  for (const a of assignments) {
+    if (!a.active) continue;
+    const aCode = (a.section ?? "").toUpperCase();
+    if (aCode !== "" && aCode !== code) continue;
+    if (evalId != null && Number(a.evaluation_id) !== evalId) continue;
+    aids.add(Number(a.id));
+  }
+
+  const acceptedSet = new Set<string>();
+  for (const x of acceptances) {
+    if (x.github_username && aids.has(Number(x.assignment_id)))
+      acceptedSet.add(x.github_username.toLowerCase());
+  }
+  const submittedSet = new Set<string>();
+  for (const x of submissions) {
+    if (x.github_username && x.assignment_id != null && aids.has(Number(x.assignment_id)))
+      submittedSet.add(x.github_username.toLowerCase());
+  }
+  return { acceptedSet, submittedSet };
 }
 
 // Estadisticas por seccion para las tarjetas del nivel 1.
