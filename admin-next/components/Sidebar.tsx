@@ -17,6 +17,7 @@ import {
   ShieldCheck,
   ShieldX,
   Users,
+  WifiOff,
 } from "lucide-react";
 import {
   Sidebar as ShadSidebar,
@@ -40,6 +41,7 @@ interface NavItem {
 const NAV_PRIMARY: NavItem[] = [
   { target: "sec-workspace", label: "Secciones", icon: LayoutGrid },
   { target: "sec-locked", label: "Bloqueados", icon: LockKeyhole },
+  { target: "sec-blocked-offline", label: "Internet bloqueado (offline)", icon: WifiOff },
   { target: "sec-kpi", label: "Resumen", icon: LayoutDashboard },
   { target: "sec-control", label: "Controles", icon: ShieldAlert },
 ];

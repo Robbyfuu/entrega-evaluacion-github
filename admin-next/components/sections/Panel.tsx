@@ -26,6 +26,7 @@ import { ActivitySection } from "@/components/sections/ActivitySection";
 import { CheatEventsSection } from "@/components/sections/CheatEventsSection";
 import { SectionWorkspace } from "@/components/sections/SectionWorkspace";
 import { LockedStudentsSection } from "@/components/sections/LockedStudentsSection";
+import { BlockedOfflineSection } from "@/components/sections/BlockedOfflineSection";
 
 interface PanelProps {
   user: User;
@@ -73,6 +74,9 @@ export function Panel({ user }: PanelProps) {
           </div>
           <div className={view("sec-locked")}>
             <LockedStudentsSection />
+          </div>
+          <div className={view("sec-blocked-offline")}>
+            <BlockedOfflineSection />
           </div>
           <div className={view("sec-kpi")}>
             <OverviewSection control={control} onlineCount={onlineCount} alertCount={alertCount} />
