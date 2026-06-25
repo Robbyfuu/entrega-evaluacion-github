@@ -1508,6 +1508,40 @@ public partial class MainWindow : Window
         await SendHeartbeatAsync();
         await CheckTargetedLockdownAsync();
         await CheckUpdateRequestAsync();
+        await CheckNetworkProbeAsync();
+    }
+
+    // Sonda de red (deteccion de contacto a Copilot). Throttle + dedup para no
+    // spamear ni pesar: corre cada 30s y reporta cada (host+source) a lo sumo
+    // una vez cada 5 min. Es EVIDENCIA para revision, no veredicto.
+    private DateTime _lastNetProbeUtc = DateTime.MinValue;
+    private readonly Dictionary<string, DateTime> _reportedAiHits = new();
+
+    private async Task CheckNetworkProbeAsync()
+    {
+        if (_user == null) return;
+        if ((DateTime.UtcNow - _lastNetProbeUtc).TotalSeconds < 30) return;
+        _lastNetProbeUtc = DateTime.UtcNow;
+
+        List<NetworkProbeService.Finding> findings;
+        try { findings = await Task.Run(() => NetworkProbeService.Probe()); }
+        catch (Exception ex) { Log($"[NetProbe] fallo: {ex.Message}"); return; }
+
+        foreach (var f in findings)
+        {
+            var key = $"{f.Host}|{f.Source}";
+            if (_reportedAiHits.TryGetValue(key, out var last)
+                && (DateTime.UtcNow - last).TotalMinutes < 5) continue;
+            _reportedAiHits[key] = DateTime.UtcNow;
+            Log($"[NetProbe] contacto Copilot: {f.Host} ({f.Detail})");
+            try
+            {
+                await _sb.ReportStudentActivityAsync(
+                    "ai_endpoint_contacted", _user.Login, _user.Email, Environment.MachineName,
+                    StudentSection.Get(), f.Host, f.Detail, StudentSection.GetSectionId());
+            }
+            catch (Exception ex) { Log($"[NetProbe] reporte fallo: {ex.Message}"); }
+        }
     }
 
     // Arranque del cliente (UTC) y ultimo update_requested_at ya procesado.
