@@ -521,8 +521,36 @@ public partial class MainWindow : Window
         var r = MessageBox.Show("Cerrar sesion y borrar credenciales de este equipo?", "Cerrar sesion", MessageBoxButton.YesNo, MessageBoxImage.Warning);
         if (r != MessageBoxResult.Yes) return;
         _gh.Logout();
+        ClearSelectors();
         Log("Sesion cerrada.");
         await UpdateSessionPanel();
+    }
+
+    /// <summary>
+    /// Limpia los selectores (curso/seccion/evaluacion) y el estado persistido.
+    /// Al cerrar sesion no debe quedar una seleccion vieja que el heartbeat siga
+    /// reportando. Tambien reactiva los combos por si quedaron bloqueados por una
+    /// evaluacion aceptada (ver ApplyEvaluationLock).
+    /// </summary>
+    private void ClearSelectors()
+    {
+        CursoCombo.IsEnabled = true;
+        SectionCombo.IsEnabled = true;
+        EvaluationCombo.IsEnabled = true;
+        EvaluationCombo.ToolTip = null;
+
+        CursoCombo.SelectedIndex = -1;
+        SectionCombo.SelectedIndex = -1;
+        EvaluationCombo.SelectedIndex = -1;
+        EvaluationCombo.Items.Clear();
+        TipoCombo.Items.Clear();
+
+        StudentSection.Set("");
+        StudentSection.SetSectionId(null);
+        StudentSection.SetEvaluationId(null);
+
+        UpdateRepoPreview();
+        UpdateButtonStates();
     }
 
     // ===================== Modo UI =====================
