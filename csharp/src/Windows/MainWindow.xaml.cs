@@ -389,6 +389,7 @@ public partial class MainWindow : Window
             CursoCombo.IsEnabled = false;
             SectionCombo.IsEnabled = false;
             EvaluationCombo.IsEnabled = false;
+            ClearSelectionButton.IsEnabled = false;
             EvaluationCombo.ToolTip = "Evaluacion en curso: bloqueada hasta entregar o que el profesor la desactive.";
         }
         else
@@ -396,6 +397,7 @@ public partial class MainWindow : Window
             CursoCombo.IsEnabled = true;
             SectionCombo.IsEnabled = true;
             EvaluationCombo.IsEnabled = true;
+            ClearSelectionButton.IsEnabled = true;
             EvaluationCombo.ToolTip = null;
         }
     }
@@ -407,6 +409,11 @@ public partial class MainWindow : Window
     private async void LoginButton_Click(object sender, RoutedEventArgs e) => await DoLoginAsync();
 
     private async void LogoutButton_Click(object sender, RoutedEventArgs e) => await DoLogoutAsync();
+
+    // Boton "Limpiar seleccion": resetea curso/seccion/evaluacion sin cerrar
+    // sesion. Deshabilitado cuando hay una evaluacion bloqueada (aceptada-no-
+    // entregada) para no romper el lock.
+    private void ClearSelectionButton_Click(object sender, RoutedEventArgs e) => ClearSelectors();
 
     private void ModoNuevo_Checked(object sender, RoutedEventArgs e)
     {

@@ -106,6 +106,7 @@
                             <ComboBox x:Name="SectionCombo" HorizontalAlignment="Stretch" SelectionChanged="SectionCombo_SelectionChanged" />
                             <TextBlock Text="Tu evaluacion" Style="{StaticResource MutedText}" FontWeight="SemiBold" FontSize="11" Margin="0,8,0,6" />
                             <ComboBox x:Name="EvaluationCombo" HorizontalAlignment="Stretch" SelectionChanged="EvaluationCombo_SelectionChanged" />
+                            <ui:Button x:Name="ClearSelectionButton" Content="Limpiar seleccion" Appearance="Secondary" HorizontalAlignment="Stretch" Margin="0,8,0,0" Click="ClearSelectionButton_Click" />
                         </StackPanel>
                     </Border>
                 </StackPanel>
