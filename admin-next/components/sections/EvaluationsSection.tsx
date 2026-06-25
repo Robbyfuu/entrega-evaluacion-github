@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { ClipboardList, ExternalLink, Pencil, Plus, RefreshCw, Trash2, Users, X } from "lucide-react";
 import { EvaluationStudentsDrawer } from "@/components/sections/EvaluationStudentsDrawer";
 import { supabase } from "@/lib/supabase";
+import { EXAM_MODES } from "@/lib/types";
 import type { EvaluationRow, SectionRow } from "@/lib/types";
 import { useEvaluations } from "@/hooks/useEvaluations";
 import { useSections } from "@/hooks/useSections";
@@ -49,6 +50,7 @@ export function EvaluationsSection() {
   const [title, setTitle] = useState("");
   const [url, setUrl] = useState("");
   const [org, setOrg] = useState("");
+  const [examMode, setExamMode] = useState<string>("Off");
   const [editingId, setEditingId] = useState<number | null>(null);
   const [detailEval, setDetailEval] = useState<EvaluationRow | null>(null);
 
@@ -70,6 +72,7 @@ export function EvaluationsSection() {
     setUrl("");
     setOrg("");
     setSectionId("");
+    setExamMode("Off");
   }
 
   function startEdit(e: EvaluationRow) {
@@ -78,6 +81,7 @@ export function EvaluationsSection() {
     setTitle(e.title);
     setUrl(e.classroom_url ?? "");
     setOrg(e.org ?? "");
+    setExamMode(e.exam_mode ?? "Off");
   }
 
   // Mantiene sincronizada la `assignment` (lo que lee el cliente) con la
@@ -136,7 +140,7 @@ export function EvaluationsSection() {
       // EDITAR evaluación existente (incluye añadir/cambiar el link de Classroom).
       const { data, error: err } = await supabase
         .from("evaluations")
-        .update({ section_id: sid, title: t, classroom_url: classroomUrl || null, org: orgValue || null })
+        .update({ section_id: sid, title: t, classroom_url: classroomUrl || null, org: orgValue || null, exam_mode: examMode })
         .eq("id", editingId)
         .select();
       if (err) { toast.error("Error: " + err.message); return; }
@@ -152,7 +156,7 @@ export function EvaluationsSection() {
     // CREAR (inactiva). Se activa con el botón Activar.
     const { data, error: err } = await supabase
       .from("evaluations")
-      .insert({ section_id: sid, title: t, classroom_url: classroomUrl || null, org: orgValue || null, active: false })
+      .insert({ section_id: sid, title: t, classroom_url: classroomUrl || null, org: orgValue || null, exam_mode: examMode, active: false })
       .select();
     if (err) { toast.error("Error: " + err.message); return; }
     if (!data || data.length === 0) { toast.error("No se pudo agregar (¿sesión expirada?)."); return; }
@@ -237,6 +241,21 @@ export function EvaluationsSection() {
               onChange={(e) => setOrg(e.target.value)}
             />
           </div>
+          <div className="grid w-[180px] gap-1.5">
+            <Label htmlFor="evalExamMode">Modo evaluación</Label>
+            <Select value={examMode} onValueChange={setExamMode}>
+              <SelectTrigger id="evalExamMode" className="w-full">
+                <SelectValue placeholder="Modo evaluación..." />
+              </SelectTrigger>
+              <SelectContent>
+                {EXAM_MODES.map((m) => (
+                  <SelectItem key={m} value={m}>
+                    {m}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
           <div className="grid flex-1 gap-1.5">
             <Label htmlFor="evalUrl">Link de Classroom</Label>
             <Input
@@ -264,11 +283,12 @@ export function EvaluationsSection() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="w-[22%] text-xs font-medium uppercase tracking-wide text-muted-foreground">Título</TableHead>
-                <TableHead className="w-[18%] text-xs font-medium uppercase tracking-wide text-muted-foreground">Sección</TableHead>
-                <TableHead className="w-[28%] text-xs font-medium uppercase tracking-wide text-muted-foreground">Link Classroom</TableHead>
-                <TableHead className="w-[12%] text-xs font-medium uppercase tracking-wide text-muted-foreground">Estado</TableHead>
-                <TableHead className="w-[20%] text-right text-xs font-medium uppercase tracking-wide text-muted-foreground">Acciones</TableHead>
+                <TableHead className="w-[20%] text-xs font-medium uppercase tracking-wide text-muted-foreground">Título</TableHead>
+                <TableHead className="w-[16%] text-xs font-medium uppercase tracking-wide text-muted-foreground">Sección</TableHead>
+                <TableHead className="w-[26%] text-xs font-medium uppercase tracking-wide text-muted-foreground">Link Classroom</TableHead>
+                <TableHead className="w-[10%] text-xs font-medium uppercase tracking-wide text-muted-foreground">Modo</TableHead>
+                <TableHead className="w-[10%] text-xs font-medium uppercase tracking-wide text-muted-foreground">Estado</TableHead>
+                <TableHead className="w-[18%] text-right text-xs font-medium uppercase tracking-wide text-muted-foreground">Acciones</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -278,19 +298,20 @@ export function EvaluationsSection() {
                     <TableCell><Skeleton className="h-4 w-32" /></TableCell>
                     <TableCell><Skeleton className="h-5 w-20 rounded-md" /></TableCell>
                     <TableCell><Skeleton className="h-4 w-44" /></TableCell>
+                    <TableCell><Skeleton className="h-5 w-16 rounded-md" /></TableCell>
                     <TableCell><Skeleton className="h-5 w-16 rounded-full" /></TableCell>
                     <TableCell className="text-right"><Skeleton className="ml-auto h-8 w-24" /></TableCell>
                   </TableRow>
                 ))
               ) : error ? (
                 <TableRow>
-                  <TableCell colSpan={5} className="text-center text-destructive">
+                  <TableCell colSpan={6} className="text-center text-destructive">
                     Error: {error}
                   </TableCell>
                 </TableRow>
               ) : rows.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={5} className="py-10">
+                  <TableCell colSpan={6} className="py-10">
                     <div className="flex flex-col items-center gap-2 text-center text-muted-foreground">
                       <ClipboardList className="size-8 text-muted-foreground/40" />
                       <p className="text-sm">Sin evaluaciones configuradas.</p>
@@ -324,6 +345,23 @@ export function EvaluationsSection() {
                         ) : (
                           <span className="text-xs text-amber-600 dark:text-amber-400">Falta el link — Editar</span>
                         )}
+                      </TableCell>
+                      <TableCell>
+                        {(() => {
+                          const mode = e.exam_mode ?? "Off";
+                          const isOff = mode === "Off";
+                          return (
+                            <span
+                              className={
+                                isOff
+                                  ? "inline-flex items-center rounded-md bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground"
+                                  : "inline-flex items-center rounded-md bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-600 dark:text-amber-400"
+                              }
+                            >
+                              {mode}
+                            </span>
+                          );
+                        })()}
                       </TableCell>
                       <TableCell>
                         <span

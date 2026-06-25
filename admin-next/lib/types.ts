@@ -27,8 +27,18 @@ export interface EvaluationRow {
   classroom_url: string | null;
   org: string | null;
   active: boolean;
+  // Modo de evaluacion (PR0). Off => sin aplicacion del modo examen. El resto
+  // controla el nivel de bloqueo. Default 'Off' para filas previas a la columna.
+  exam_mode: string;
+  // Configuracion adicional del modo (JSONB en Postgres); NULL hasta que el
+  // profe la define.
+  policy_json: unknown | null;
   created_at: string | null;
 }
+
+// Valores validos de EvaluationRow.exam_mode (espeja el CHECK de la migracion).
+export const EXAM_MODES = ["Off", "AuditOnly", "SoftLock", "HardLock"] as const;
+export type ExamMode = (typeof EXAM_MODES)[number];
 
 export interface ControlRow {
   id: number;
