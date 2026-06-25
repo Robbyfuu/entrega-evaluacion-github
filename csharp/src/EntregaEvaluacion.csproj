@@ -9,7 +9,7 @@
     <LangVersion>latest</LangVersion>
     <AssemblyName>EntregaEvaluacion</AssemblyName>
     <RootNamespace>EntregaEvaluacion</RootNamespace>
-    <Version>2.7.12</Version>
+    <Version>2.7.13</Version>
     <Company>DUOC UC - FPY1101</Company>
     <Product>Entrega de Evaluacion a GitHub</Product>
     <ApplicationManifest>app.manifest</ApplicationManifest>
