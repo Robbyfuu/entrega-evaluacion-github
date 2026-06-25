@@ -101,6 +101,7 @@ public partial class MainWindow : Window
         {
             _allowExit = true;
             try { DaemonService.Unregister(); } catch { }
+            try { ExamPdfService.DeleteAllDownloaded(); } catch { }
             Application.Current.Shutdown();
         }
     }
@@ -127,6 +128,10 @@ public partial class MainWindow : Window
     private async Task InitAsync()
     {
         Log("Listo. Completa los datos y elige una accion.");
+        UpdateThemeButton();
+
+        // Limpiar cualquier enunciado PDF que haya quedado de una sesion previa.
+        try { ExamPdfService.CleanupPendingOnStartup(); } catch { }
 
         // NOTA: el chequeo de update NO es automatico (evita rafagas a la API de
         // GitHub = rate limit cuando muchos alumnos abren a la vez). La
@@ -357,6 +362,31 @@ public partial class MainWindow : Window
         // no hay id real que persistir.
         StudentSection.SetEvaluationId(ev.Id > 0 ? ev.Id : null);
         SyncTipoCombo(ev.Title);
+        UpdatePdfButton();
+    }
+
+    // PDF de enunciado: visible solo si la evaluacion seleccionada tiene uno.
+    private string? CurrentEvalPdfPath()
+    {
+        if (StudentSection.GetEvaluationId() is not { } eid) return null;
+        return _currentEvaluations.FirstOrDefault(e => e.Id == eid)?.ExamPdfPath;
+    }
+
+    private void UpdatePdfButton()
+    {
+        ViewPdfButton.Visibility = string.IsNullOrWhiteSpace(CurrentEvalPdfPath())
+            ? Visibility.Collapsed : Visibility.Visible;
+    }
+
+    private async void ViewPdfButton_Click(object sender, RoutedEventArgs e)
+    {
+        var path = CurrentEvalPdfPath();
+        if (string.IsNullOrWhiteSpace(path)) return;
+        ViewPdfButton.IsEnabled = false;
+        var local = await ExamPdfService.DownloadAndOpenAsync(path);
+        ViewPdfButton.IsEnabled = true;
+        if (local == null)
+            ShowToast("No se pudo abrir el enunciado. Reintenta.", ToastKind.Error);
     }
 
     /// <summary>
@@ -400,6 +430,7 @@ public partial class MainWindow : Window
             ClearSelectionButton.IsEnabled = true;
             EvaluationCombo.ToolTip = null;
         }
+        UpdatePdfButton();
     }
 
     private async void AssignmentsLink_Click(object sender, RoutedEventArgs e) => await ShowAssignmentsDialog();
@@ -414,6 +445,15 @@ public partial class MainWindow : Window
     // sesion. Deshabilitado cuando hay una evaluacion bloqueada (aceptada-no-
     // entregada) para no romper el lock.
     private void ClearSelectionButton_Click(object sender, RoutedEventArgs e) => ClearSelectors();
+
+    private void ThemeButton_Click(object sender, RoutedEventArgs e)
+    {
+        ThemeService.Toggle();
+        UpdateThemeButton();
+    }
+
+    private void UpdateThemeButton()
+        => ThemeButton.Content = ThemeService.IsDark ? "Tema claro" : "Tema oscuro";
 
     private void ModoNuevo_Checked(object sender, RoutedEventArgs e)
     {
@@ -556,6 +596,9 @@ public partial class MainWindow : Window
         StudentSection.SetSectionId(null);
         StudentSection.SetEvaluationId(null);
 
+        // No dejar el enunciado descargado tras cerrar sesion / limpiar.
+        ExamPdfService.DeleteAllDownloaded();
+        UpdatePdfButton();
         UpdateRepoPreview();
         UpdateButtonStates();
     }
@@ -956,6 +999,10 @@ public partial class MainWindow : Window
         // Captura el enlace como ENTREGA formal en el panel (el alumno no tiene
         // que apretar "Entregar repo" aparte). Best-effort, no bloquea.
         await RecordSubmissionIfClassroomRepoAsync(name, res.Url!);
+
+        // Termino la evaluacion: borrar el enunciado descargado (no debe quedar
+        // registro local que se pueda divulgar).
+        ExamPdfService.DeleteAllDownloaded();
 
         // tipo ahora es el titulo de la evaluacion (BD) o el tipo legacy
         // (Config.EvaluationTypes en fallback). Ya no mapeamos via switch: el

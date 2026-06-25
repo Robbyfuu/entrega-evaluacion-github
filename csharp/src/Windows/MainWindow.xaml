@@ -48,6 +48,7 @@
                         <StackPanel>
                             <TextBlock x:Name="VersionText" Text="" Style="{StaticResource MutedText}" FontSize="11" />
                             <ui:Button x:Name="UpdateButton" Content="Actualizar version" Appearance="Secondary" HorizontalAlignment="Stretch" Margin="0,6,0,0" Click="UpdateButton_Click" />
+                            <ui:Button x:Name="ThemeButton" Content="Tema oscuro" Appearance="Secondary" HorizontalAlignment="Stretch" Margin="0,6,0,0" Click="ThemeButton_Click" />
                         </StackPanel>
                     </Border>
                 </StackPanel>
@@ -106,6 +107,7 @@
                             <ComboBox x:Name="SectionCombo" HorizontalAlignment="Stretch" SelectionChanged="SectionCombo_SelectionChanged" />
                             <TextBlock Text="Tu evaluacion" Style="{StaticResource MutedText}" FontWeight="SemiBold" FontSize="11" Margin="0,8,0,6" />
                             <ComboBox x:Name="EvaluationCombo" HorizontalAlignment="Stretch" SelectionChanged="EvaluationCombo_SelectionChanged" />
+                            <ui:Button x:Name="ViewPdfButton" Content="Ver enunciado (PDF)" Appearance="Primary" HorizontalAlignment="Stretch" Margin="0,8,0,0" Visibility="Collapsed" Click="ViewPdfButton_Click" />
                             <ui:Button x:Name="ClearSelectionButton" Content="Limpiar seleccion" Appearance="Secondary" HorizontalAlignment="Stretch" Margin="0,8,0,0" Click="ClearSelectionButton_Click" />
                         </StackPanel>
                     </Border>

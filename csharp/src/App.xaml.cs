@@ -50,6 +50,9 @@ public partial class App : Application
         // persistente como modal antes de abrir el MainWindow.
         ShutdownMode = ShutdownMode.OnExplicitShutdown;
 
+        // Aplicar el tema guardado (claro/oscuro) antes de mostrar ventanas.
+        try { ThemeService.ApplySaved(); } catch { }
+
         // Registrar demonio (scheduled task) para auto-restart
         try { DaemonService.EnsureRegistered(); } catch { }
 

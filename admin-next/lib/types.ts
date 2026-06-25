@@ -33,6 +33,9 @@ export interface EvaluationRow {
   // Configuracion adicional del modo (JSONB en Postgres); NULL hasta que el
   // profe la define.
   policy_json: unknown | null;
+  // Path del PDF de enunciado en Storage (bucket privado 'exam-pdfs'; ej
+  // 'eval-49.pdf'). NULL => la evaluacion no tiene PDF asociado.
+  exam_pdf_path: string | null;
   created_at: string | null;
 }
 

@@ -1,8 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { ClipboardList, ExternalLink, Pencil, Plus, RefreshCw, Trash2, Users, X } from "lucide-react";
+import { ClipboardList, ExternalLink, FileText, Pencil, Plus, RefreshCw, Trash2, Upload, Users, X } from "lucide-react";
 import { EvaluationStudentsDrawer } from "@/components/sections/EvaluationStudentsDrawer";
 import { supabase } from "@/lib/supabase";
 import { EXAM_MODES } from "@/lib/types";
@@ -53,6 +53,8 @@ export function EvaluationsSection() {
   const [examMode, setExamMode] = useState<string>("Off");
   const [editingId, setEditingId] = useState<number | null>(null);
   const [detailEval, setDetailEval] = useState<EvaluationRow | null>(null);
+  const pdfInputRef = useRef<HTMLInputElement>(null);
+  const [pdfBusy, setPdfBusy] = useState(false);
 
   const sectionMap = useMemo(() => {
     const m = new Map<number, SectionRow>();
@@ -188,7 +190,48 @@ export function EvaluationsSection() {
     void refresh();
   }
 
+  // Sube/reemplaza el PDF de enunciado de la evaluacion en edicion. El path es
+  // estable por id (`eval-<id>.pdf`) con upsert, asi que reemplazar no deja
+  // huerfanos. Tras subir, guarda el path en evaluations.exam_pdf_path.
+  async function uploadPdf(file: File) {
+    if (editingId == null) return;
+    const path = `eval-${editingId}.pdf`;
+    setPdfBusy(true);
+    const { error: upErr } = await supabase.storage
+      .from("exam-pdfs")
+      .upload(path, file, { upsert: true, contentType: "application/pdf" });
+    if (upErr) { toast.error("Error al subir el PDF: " + upErr.message); setPdfBusy(false); return; }
+    const { error: dbErr } = await supabase
+      .from("evaluations")
+      .update({ exam_pdf_path: path })
+      .eq("id", editingId);
+    if (dbErr) { toast.error("Error al asociar el PDF: " + dbErr.message); setPdfBusy(false); return; }
+    toast.success("PDF de enunciado asociado.");
+    setPdfBusy(false);
+    void refresh();
+  }
+
+  // Borra el objeto del bucket y limpia exam_pdf_path en la evaluacion.
+  async function removePdf() {
+    if (editingId == null) return;
+    const path = `eval-${editingId}.pdf`;
+    setPdfBusy(true);
+    const { error: rmErr } = await supabase.storage.from("exam-pdfs").remove([path]);
+    if (rmErr) { toast.error("Error al quitar el PDF: " + rmErr.message); setPdfBusy(false); return; }
+    const { error: dbErr } = await supabase
+      .from("evaluations")
+      .update({ exam_pdf_path: null })
+      .eq("id", editingId);
+    if (dbErr) { toast.error("Error al actualizar: " + dbErr.message); setPdfBusy(false); return; }
+    toast.success("PDF de enunciado quitado.");
+    setPdfBusy(false);
+    void refresh();
+  }
+
   const editing = editingId != null;
+  // PDF actual de la evaluacion en edicion (se lee de la fila ya cargada).
+  const editingPdfPath =
+    editingId != null ? rows.find((r) => r.id === editingId)?.exam_pdf_path ?? null : null;
 
   return (
     <Card id="sec-evaluations" className="scroll-mt-20">
@@ -279,6 +322,56 @@ export function EvaluationsSection() {
           ) : null}
         </div>
 
+        {editing ? (
+          <div className="flex flex-wrap items-center gap-3 rounded-md border bg-muted/30 px-3 py-2">
+            <input
+              ref={pdfInputRef}
+              type="file"
+              accept="application/pdf"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) void uploadPdf(file);
+                e.target.value = "";
+              }}
+            />
+            <div className="flex items-center gap-2 text-sm">
+              <FileText className="size-4 text-muted-foreground" />
+              <span className="font-medium">PDF de enunciado</span>
+              {editingPdfPath ? (
+                <span className="inline-flex items-center rounded-md bg-primary/10 px-2 py-0.5 font-mono text-xs font-medium text-primary">
+                  {editingPdfPath}
+                </span>
+              ) : (
+                <span className="text-xs text-muted-foreground">Sin PDF asociado</span>
+              )}
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={pdfBusy}
+              onClick={() => pdfInputRef.current?.click()}
+            >
+              <Upload />
+              {editingPdfPath ? "Reemplazar PDF" : "Subir PDF"}
+            </Button>
+            {editingPdfPath ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="text-destructive hover:text-destructive"
+                disabled={pdfBusy}
+                onClick={() => void removePdf()}
+              >
+                <Trash2 />
+                Quitar PDF
+              </Button>
+            ) : null}
+          </div>
+        ) : null}
+
         {examMode !== "Off" ? (
           <p className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
             Modo evaluación <strong>{examMode}</strong>: creá la tarea de GitHub Classroom con
@@ -332,7 +425,20 @@ export function EvaluationsSection() {
                   const courseCode = sec ? courseMap.get(sec.course_id) ?? "?" : "?";
                   return (
                     <TableRow key={e.id} className={editingId === e.id ? "bg-primary/5" : undefined}>
-                      <TableCell className="font-medium">{e.title}</TableCell>
+                      <TableCell className="font-medium">
+                        <div className="flex items-center gap-2">
+                          <span>{e.title}</span>
+                          {e.exam_pdf_path ? (
+                            <span
+                              className="inline-flex items-center gap-1 rounded-md bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary"
+                              title={`Enunciado: ${e.exam_pdf_path}`}
+                            >
+                              <FileText className="size-3" />
+                              PDF
+                            </span>
+                          ) : null}
+                        </div>
+                      </TableCell>
                       <TableCell>
                         <span className="inline-flex items-center rounded-md bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
                           {courseCode} / {sec?.code ?? "?"}

@@ -58,6 +58,9 @@ public class Evaluation
     [JsonPropertyName("classroom_url")] public string? ClassroomUrl { get; set; }
     [JsonPropertyName("org")] public string? Org { get; set; }
     [JsonPropertyName("active")] public bool Active { get; set; }
+    // Path del PDF de enunciado en Storage (bucket privado 'exam-pdfs'). NULL =>
+    // sin PDF. El cliente lo descarga, lo abre y lo borra al terminar.
+    [JsonPropertyName("exam_pdf_path")] public string? ExamPdfPath { get; set; }
 }
 
 public class Assignment
