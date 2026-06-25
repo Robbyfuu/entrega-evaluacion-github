@@ -1,0 +1,24 @@
+change: secure-exam-mode
+title: Modo de Evaluacion Segura (integridad academica, reduccion de IA)
+status: proposed
+created: 2026-06-25
+artifacts:
+  proposal: done
+  design: done
+  tasks: done
+  spec: pending
+  apply: pending
+  verify: pending
+  archive: pending
+decisions:
+  scope: laboratorio Windows 10/11 administrado por DUOC; cliente WPF asInvoker
+  modes: Off | AuditOnly | SoftLock | HardLock (feature flag por curso/seccion/evaluacion)
+  source_of_truth: IExamSessionService (maquina de estados persistente) reemplaza bools dispersos
+  repo_integrity: PRIORIDAD = repos privados (Classroom/org) + repo nuevo por examen + baseline SHA + hora de servidor
+  network: SoftLock (proxy HKCU = control blando, declarado) + HardLock via servicio Windows separado instalado por TI
+  editor: si IDLE es el editor autorizado -> bloquear VS Code (verificable) ; si VS Code requerido -> CopilotBlockService + politica administrada
+  privacy: sin keylog/captura/portapapeles/contenido; eventos = evidencia para revision, NO veredicto
+  honesty: nunca presentar como detector infalible de IA; documentar riesgos residuales (telefono, 2do equipo)
+persistence: openspec
+phases_total: 11
+not_first_pr: implementacion NO va toda en un PR; primero auditoria + arquitectura + plan
