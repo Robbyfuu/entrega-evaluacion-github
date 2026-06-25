@@ -279,6 +279,13 @@ export function EvaluationsSection() {
           ) : null}
         </div>
 
+        {examMode !== "Off" ? (
+          <p className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
+            Modo evaluación <strong>{examMode}</strong>: creá la tarea de GitHub Classroom con
+            repositorio <strong>privado</strong> (calificada). Las prácticas pueden ir públicas.
+          </p>
+        ) : null}
+
         <div className="rounded-lg border">
           <Table>
             <TableHeader>

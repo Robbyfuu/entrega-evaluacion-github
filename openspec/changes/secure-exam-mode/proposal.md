@@ -63,3 +63,23 @@ evaluacion desde Supabase/panel:
 3. Politica ante edicion de settings de IA: lockdown automatico vs `policy_tamper_event`+revision.
 4. Editor por evaluacion: solo IDLE (bloquear VS Code) vs VS Code permitido.
 5. Red durante examen: offline total (mas seguro) vs allowlist FQDN (requiere proxy/HardLock).
+
+## Decisiones RESUELTAS (2026-06-25)
+1. Evaluaciones calificadas -> repo **PRIVADO**; tareas de practica -> **publico**. El profe
+   crea la tarea de Classroom calificada como privada; el codigo VERIFICA y avisa (no puede
+   forzarlo: la privacidad la fija Classroom).
+2. **Los equipos NO los administra el profe -> HardLock FUERA DE ALCANCE.** Sin servicio
+   privilegiado, sin GPO/Intune/AppLocker/WDAC. Techo = SoftLock asInvoker. PR8/PR9 se
+   descartan (quedan como nota institucional para DUOC, no como trabajo de este repo).
+3. Sin definir -> se mantiene el comportamiento ACTUAL (lockdown ante reactivacion de Copilot)
+   y se registra el evento para revision.
+4. **VS Code PERMITIDO** (porque se puede bloquear Copilot). NO bloquear VS Code; se mantiene
+   CopilotBlockService. El camino "solo IDLE / bloquear VS Code" se descarta.
+5. Red: **se mantiene el SoftLock actual** (proxy HKCU + allowlist del WebView + cierre de
+   navegadores). Sin offline total ni allowlist FQDN por proceso.
+
+### Consecuencia de alcance
+El Modo de Evaluacion Segura se reduce a lo que el cliente asInvoker puede hacer + integridad
+de repo. Entregado/dormido (PR0 flag, PR1 maquina, PR4 Copilot) sigue valido. PENDIENTE real:
+PR2 (verificar repo privado para calificadas + baseline + validar remoto) y la integracion de
+la maquina de estados. HardLock/institucional: descartado (no hay admin).
