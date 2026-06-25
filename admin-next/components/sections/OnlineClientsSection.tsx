@@ -116,7 +116,13 @@ export function OnlineClientsSection({
 
   const onlineData = useMemo(() => {
     const cutoff = now - ONLINE_WINDOW_MS;
-    return rows.filter((c) => new Date(c.last_seen).getTime() >= cutoff);
+    // Orden ESTABLE por nombre de PC: la fuente viene ordenada por last_seen, que
+    // cambia con cada heartbeat y hacia rotar la lista todo el rato. Ordenando
+    // por pc_name las filas quedan quietas; los datos (online/version/internet)
+    // igual se actualizan en su lugar via realtime.
+    return rows
+      .filter((c) => new Date(c.last_seen).getTime() >= cutoff)
+      .sort((a, b) => (a.pc_name ?? "").localeCompare(b.pc_name ?? ""));
   }, [rows, now]);
 
   useEffect(() => {
