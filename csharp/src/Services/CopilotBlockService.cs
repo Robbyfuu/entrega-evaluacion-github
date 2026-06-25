@@ -28,12 +28,25 @@ public static class CopilotBlockService
             SettingsDir = settingsDir;
             SettingsPath = Path.Combine(settingsDir, "settings.json");
             BackupPath = SettingsPath + ".copilot-bak";
+            OrigSnapshotPath = SettingsPath + ".copilot-orig";
+            CreatedMarkerPath = SettingsPath + ".copilot-created";
         }
 
         public string Label { get; }
         public string SettingsDir { get; }
         public string SettingsPath { get; }
+
+        // Respaldo del original cuando estaba malformado (JSON invalido).
         public string BackupPath { get; }
+
+        // Snapshot byte a byte del settings.json original valido, tomado antes
+        // de la primera modificacion. Permite restaurar el original exacto
+        // (comentarios, orden, JSONC) en lugar de re-serializar.
+        public string OrigSnapshotPath { get; }
+
+        // Marcador que indica que nosotros creamos el settings.json porque no
+        // existia. En el restore borramos el archivo que creamos.
+        public string CreatedMarkerPath { get; }
     }
 
     private static readonly string AppData =
@@ -188,11 +201,17 @@ public static class CopilotBlockService
     /// Copilot, y lo escribe de vuelta preservando el resto de la config del
     /// alumno. Idempotente. Si el archivo esta malformado, lo respalda y crea
     /// uno nuevo con solo las claves de Copilot.
+    ///
+    /// Antes de la primera modificacion toma un snapshot del original (byte a
+    /// byte) para poder restaurar el original exacto al desbloquear, o registra
+    /// que el archivo no existia para borrarlo en el restore.
     /// </summary>
     private static void EnsureDisableKeys(SettingsTarget target)
     {
         JsonElement root;
         bool hadFile = File.Exists(target.SettingsPath);
+
+        CaptureOriginalSnapshot(target, hadFile);
 
         if (hadFile)
         {
@@ -208,7 +227,14 @@ public static class CopilotBlockService
             catch (JsonException)
             {
                 // JSON malformado: respaldar y empezar de cero
-                try { File.Copy(target.SettingsPath, target.BackupPath, overwrite: true); } catch { }
+                try
+                {
+                    File.Copy(target.SettingsPath, target.BackupPath, overwrite: true);
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"[CopilotBlock] Respaldo de JSON malformado fallo en {target.Label}: {ex.Message}");
+                }
                 root = default;
             }
         }
@@ -232,6 +258,61 @@ public static class CopilotBlockService
         var opts = new JsonSerializerOptions { WriteIndented = true };
         var jsonOut = JsonSerializer.Serialize(dict, opts);
         WriteWithRetry(target, jsonOut);
+    }
+
+    /// <summary>
+    /// Snapshot del estado original antes de la primera modificacion de este
+    /// target. Solo actua la primera vez (idempotente): si ya existe un snapshot
+    /// o un marker no vuelve a tocar nada.
+    ///   - Si el archivo existia y es JSON valido: copia bytes tal cual a
+    ///     .copilot-orig para restaurar el original exacto al desbloquear.
+    ///   - Si el archivo no existia: deja un marker .copilot-created para borrar
+    ///     en el restore el settings.json que creamos nosotros.
+    /// El caso de JSON malformado lo maneja EnsureDisableKeys con .copilot-bak.
+    /// </summary>
+    private static void CaptureOriginalSnapshot(SettingsTarget target, bool hadFile)
+    {
+        // Ya tomamos snapshot/marker antes: no sobrescribir el estado original.
+        if (File.Exists(target.OrigSnapshotPath) || File.Exists(target.CreatedMarkerPath))
+            return;
+
+        try
+        {
+            if (hadFile)
+            {
+                // Solo guardamos snapshot del original si era JSON valido. Un
+                // archivo malformado lo respalda EnsureDisableKeys (.copilot-bak)
+                // y no debe restaurarse como "original valido".
+                if (IsValidJsonFile(target.SettingsPath))
+                    File.Copy(target.SettingsPath, target.OrigSnapshotPath, overwrite: false);
+            }
+            else
+            {
+                EnsureDir(target);
+                File.WriteAllText(target.CreatedMarkerPath, string.Empty);
+            }
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[CopilotBlock] CaptureOriginalSnapshot fallo en {target.Label}: {ex.Message}");
+        }
+    }
+
+    private static bool IsValidJsonFile(string path)
+    {
+        try
+        {
+            var raw = File.ReadAllText(path);
+            using var doc = JsonDocument.Parse(raw, new JsonDocumentOptions
+            {
+                CommentHandling = JsonCommentHandling.Skip
+            });
+            return true;
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
     }
 
     private static bool IsTargetBlocked(SettingsTarget target)
@@ -273,22 +354,69 @@ public static class CopilotBlockService
     }
 
     /// <summary>
-    /// Quita SOLO las claves de Copilot del settings.json, preservando todo lo
-    /// demas. Si hay un .copilot-bak lo restaura (era el original malformado).
+    /// Restaura el target a su estado original. Orden de preferencia:
+    ///   1. .copilot-orig: snapshot byte a byte del original valido -> restaura
+    ///      el original EXACTO (comentarios, orden, JSONC).
+    ///   2. .copilot-created: nosotros creamos el archivo -> lo borramos.
+    ///   3. .copilot-bak: el original estaba malformado -> lo restauramos.
+    ///   4. Fallback: re-serializar quitando solo las claves de Copilot.
+    /// En todos los casos se limpian los marcadores al terminar.
     /// </summary>
     private static void RemoveDisableKeys(SettingsTarget target)
     {
+        // 1. Restaurar el original exacto desde el snapshot byte a byte.
+        if (File.Exists(target.OrigSnapshotPath))
+        {
+            try
+            {
+                File.Move(target.OrigSnapshotPath, target.SettingsPath, overwrite: true);
+                CleanupMarkers(target);
+                return;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[CopilotBlock] Restore desde snapshot fallo en {target.Label}: {ex.Message}");
+            }
+        }
+
+        // 2. Nosotros creamos el archivo porque no existia: borrarlo.
+        if (File.Exists(target.CreatedMarkerPath))
+        {
+            try
+            {
+                if (File.Exists(target.SettingsPath))
+                    File.Delete(target.SettingsPath);
+                CleanupMarkers(target);
+                return;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[CopilotBlock] Borrado del archivo creado fallo en {target.Label}: {ex.Message}");
+            }
+        }
+
+        // 3. El original estaba malformado: restaurar el respaldo crudo.
         if (File.Exists(target.BackupPath))
         {
             try
             {
                 File.Move(target.BackupPath, target.SettingsPath, overwrite: true);
+                CleanupMarkers(target);
                 return;
             }
-            catch { }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[CopilotBlock] Restore desde backup fallo en {target.Label}: {ex.Message}");
+            }
         }
 
-        if (!File.Exists(target.SettingsPath)) return;
+        // 4. Fallback: sin snapshot/marker/backup, re-serializar quitando solo
+        //    las claves de Copilot y preservando el resto.
+        if (!File.Exists(target.SettingsPath))
+        {
+            CleanupMarkers(target);
+            return;
+        }
 
         try
         {
@@ -310,29 +438,66 @@ public static class CopilotBlockService
         {
             Debug.WriteLine($"[CopilotBlock] RemoveDisableKeys fallo en {target.Label}: {ex.Message}");
         }
+        finally
+        {
+            CleanupMarkers(target);
+        }
     }
 
     /// <summary>
-    /// Escribe el settings.json con reintentos: VS Code puede tenerlo abierto
-    /// brevemente al guardar config desde la UI.
+    /// Borra los marcadores residuales del ciclo de bloqueo (.copilot-orig,
+    /// .copilot-created, .copilot-bak) si quedaron tras el restore.
+    /// </summary>
+    private static void CleanupMarkers(SettingsTarget target)
+    {
+        TryDelete(target.OrigSnapshotPath);
+        TryDelete(target.CreatedMarkerPath);
+        TryDelete(target.BackupPath);
+    }
+
+    private static void TryDelete(string path)
+    {
+        try
+        {
+            if (File.Exists(path))
+                File.Delete(path);
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[CopilotBlock] No se pudo borrar marcador {path}: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Escribe el settings.json de forma atomica y con reintentos: VS Code puede
+    /// tenerlo abierto brevemente al guardar config desde la UI. La escritura va
+    /// a un archivo temporal en el mismo directorio y luego se reemplaza el
+    /// destino con File.Move(overwrite). Asi un fallo a mitad de camino no deja
+    /// el settings.json corrupto.
     /// </summary>
     private static void WriteWithRetry(SettingsTarget target, string content, int maxAttempts = 5)
     {
         for (int i = 0; i < maxAttempts; i++)
         {
+            // Archivo temporal unico en el mismo directorio para que File.Move
+            // sea un rename en el mismo volumen (atomico).
+            var tempPath = target.SettingsPath + "." + Guid.NewGuid().ToString("N") + ".tmp";
             try
             {
                 EnsureDir(target);
-                File.WriteAllText(target.SettingsPath, content);
+                File.WriteAllText(tempPath, content);
+                File.Move(tempPath, target.SettingsPath, overwrite: true);
                 return;
             }
             catch (IOException) when (i < maxAttempts - 1)
             {
+                TryDelete(tempPath);
                 Thread.Sleep(200);
             }
             catch (Exception ex)
             {
                 Debug.WriteLine($"[CopilotBlock] WriteWithRetry fallo en {target.Label}: {ex.Message}");
+                TryDelete(tempPath);
                 return;
             }
         }
@@ -403,7 +568,10 @@ public static class CopilotBlockService
                     StartMaintenanceTimer();
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[CopilotBlock] Maintenance tick fallo: {ex.Message}");
+            }
         }, null, TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(5));
     }
 
@@ -431,7 +599,10 @@ public static class CopilotBlockService
                     FireCheat();
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[CopilotBlock] Debounce de cambio fallo: {ex.Message}");
+            }
         }, null, 500, Timeout.Infinite);
     }
 
