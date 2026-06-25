@@ -64,12 +64,21 @@ public partial class App : Application
         {
             if (LockdownService.HasPersistentMarker())
             {
+                // remoteSource + checkStillLocked por OVERRIDE DE PC: en el lab el
+                // PC pudo quedar bloqueado de una sesion de otro alumno, sin sesion
+                // activa aca. El profe lo libera por NOMBRE de PC (pc_overrides),
+                // sin depender del usuario. Fail-safe: solo libera con un
+                // unblock_screen=true confirmado; error de red => sigue bloqueado.
+                var sb = new SupabaseClient();
+                var pc = Environment.MachineName;
                 var alert = new CheatWindow(
                     repoName: "(sesion anterior)",
                     filesCount: 0,
                     filesSample: new[] { "Bloqueo detectado en sesion anterior" },
                     isPersistent: true,
-                    remoteSource: false);
+                    remoteSource: true,
+                    checkStillLocked: () => !System.Threading.Tasks.Task.Run(
+                        () => sb.IsPcScreenUnblockedAsync(pc).GetAwaiter().GetResult()).GetAwaiter().GetResult());
                 alert.ShowDialog();
             }
         }

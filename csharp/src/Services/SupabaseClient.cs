@@ -50,6 +50,31 @@ public class SupabaseClient
     private string Rest(string path) => $"{Config.SupabaseUrl}/rest/v1/{path}";
 
     // ===== Control =====
+    /// <summary>
+    /// Override por PC (desbloqueo de internet/pantalla por nombre de equipo, sin
+    /// depender del usuario). null si no hay fila o si fallo el fetch (fail-safe:
+    /// sin override no se libera nada).
+    /// </summary>
+    public async Task<PcOverride?> GetPcOverrideAsync(string pcName)
+    {
+        try
+        {
+            var pc = Uri.EscapeDataString(pcName);
+            var json = await _http.GetStringAsync(
+                Rest($"pc_overrides?pc_name=eq.{pc}&select=pc_name,unblock_internet,unblock_screen"));
+            var arr = JsonSerializer.Deserialize<PcOverride[]>(json, JsonOpts);
+            return arr is { Length: > 0 } ? arr[0] : null;
+        }
+        catch { return null; }
+    }
+
+    /// <summary>
+    /// True solo si el profe puso unblock_screen=true para ESTE PC. Fail-safe:
+    /// error/red caida => false (la pantalla roja NO se libera por un blip).
+    /// </summary>
+    public async Task<bool> IsPcScreenUnblockedAsync(string pcName)
+        => (await GetPcOverrideAsync(pcName))?.UnblockScreen ?? false;
+
     public async Task<ControlState?> GetControlAsync()
     {
         try

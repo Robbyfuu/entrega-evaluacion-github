@@ -161,6 +161,17 @@ export interface TargetedLockdownRow {
   released_at: string | null;
 }
 
+// Override de desbloqueo por PC (por nombre de maquina). El cliente C# lee esta
+// tabla por pc_name y libera internet/pantalla de ESE PC sin importar el usuario.
+// Espeja public.pc_overrides exactamente (migration-pc-overrides.sql).
+export interface PcOverrideRow {
+  pc_name: string;
+  unblock_internet: boolean;
+  unblock_screen: boolean;
+  updated_at: string | null;
+  updated_by: string | null;
+}
+
 export interface SuspiciousProcess {
   id: number;
   process_name: string;

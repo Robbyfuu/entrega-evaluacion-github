@@ -2,6 +2,15 @@ using System.Text.Json.Serialization;
 
 namespace EntregaEvaluacion.Models;
 
+// Override por PC (tabla pc_overrides). Permite desbloquear internet/pantalla de
+// UN equipo por nombre, sin depender del usuario (en el lab los PC rotan).
+public class PcOverride
+{
+    [JsonPropertyName("pc_name")] public string PcName { get; set; } = "";
+    [JsonPropertyName("unblock_internet")] public bool UnblockInternet { get; set; }
+    [JsonPropertyName("unblock_screen")] public bool UnblockScreen { get; set; }
+}
+
 public class ControlState
 {
     [JsonPropertyName("internet_block")] public bool InternetBlock { get; set; }

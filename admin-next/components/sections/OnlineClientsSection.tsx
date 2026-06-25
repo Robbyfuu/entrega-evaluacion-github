@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Lock, MonitorOff, MonitorSmartphone, RefreshCw, Unlock } from "lucide-react";
+import { Globe, Lock, MonitorOff, MonitorSmartphone, RefreshCw, Unlock } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import type { OnlineClientRow, SuspiciousProcess } from "@/lib/types";
 import { useRealtimeTable } from "@/hooks/useRealtimeTable";
@@ -158,6 +158,30 @@ export function OnlineClientsSection({
       .match({ pc_name: pcName, github_username: githubUsername });
     window.alert(
       err ? "Error: " + err.message : `✓ Bloqueo liberado para ${pcName}.`
+    );
+  }
+
+  // Desbloquea internet + pantalla roja de ESTE PC por nombre de maquina, sin
+  // importar el usuario logueado (en el lab rotan de PC). Upsert sobre
+  // pc_overrides; el cliente C# lo aplica en <20s. Contrato FIJO de columnas.
+  async function unblockPc(pcName: string | null) {
+    if (!pcName) {
+      window.alert("Este PC no tiene nombre de maquina registrado.");
+      return;
+    }
+    const { error: err } = await supabase.from("pc_overrides").upsert(
+      {
+        pc_name: pcName,
+        unblock_internet: true,
+        unblock_screen: true,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "pc_name" }
+    );
+    window.alert(
+      err
+        ? "Error: " + err.message
+        : `✓ Internet y pantalla desbloqueados en ${pcName}. Se aplicará en <20s.`
     );
   }
 
@@ -363,6 +387,18 @@ export function OnlineClientsSection({
                           }}
                         >
                           <Unlock className="size-3.5" />
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          title="Desbloquear internet y pantalla de este PC (por nombre de maquina)"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            void unblockPc(c.pc_name);
+                          }}
+                        >
+                          <Globe className="size-3.5" />
+                          Desbloquear PC
                         </Button>
                       </div>
                     </TableCell>

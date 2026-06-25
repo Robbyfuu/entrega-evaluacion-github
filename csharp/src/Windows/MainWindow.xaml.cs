@@ -1718,6 +1718,12 @@ public partial class MainWindow : Window
         _blocklist = await _sb.GetBlocklistAsync(StudentSection.Get(), StudentSection.GetSectionId());
     }
 
+    // Override de pantalla por PC, en sincrono (para los checkStillLocked de las
+    // CheatWindow). true => el profe desbloqueo la pantalla de ESTE PC -> liberar.
+    private bool ScreenUnblockedSync()
+        => Task.Run(() => _sb.IsPcScreenUnblockedAsync(Environment.MachineName).GetAwaiter().GetResult())
+            .GetAwaiter().GetResult();
+
     private async Task CheckAdminConfigAsync()
     {
         // Control EFECTIVO de la evaluacion actual: override por evaluacion ??
@@ -1732,19 +1738,27 @@ public partial class MainWindow : Window
         var cfg = await _sb.GetEffectiveControlAsync(StudentSection.GetEvaluationId());
         if (cfg == null) return;
 
-        if (cfg.InternetBlock && !_internetBlocked) { Log("[ADMIN] Bloqueo de internet activado."); InternetBlockService.Block(); _internetBlocked = true; }
-        else if (!cfg.InternetBlock && _internetBlocked) { Log("[ADMIN] Bloqueo de internet desactivado."); InternetBlockService.Unblock(); _internetBlocked = false; }
+        // Override por PC (desbloqueo por nombre de equipo, sin depender del
+        // usuario). unblock_internet anula el bloqueo de internet/Copilot de ESTE
+        // PC; unblock_screen libera la pantalla roja. Fail-safe: si el fetch falla
+        // ovr es null -> no se libera nada.
+        var ovr = await _sb.GetPcOverrideAsync(Environment.MachineName);
+        bool effInternet = cfg.InternetBlock && !(ovr?.UnblockInternet ?? false);
+        bool screenUnblocked = ovr?.UnblockScreen ?? false;
+
+        if (effInternet && !_internetBlocked) { Log("[ADMIN] Bloqueo de internet activado."); InternetBlockService.Block(); _internetBlocked = true; }
+        else if (!effInternet && _internetBlocked) { Log("[ADMIN] Bloqueo de internet desactivado."); InternetBlockService.Unblock(); _internetBlocked = false; }
 
         // Copilot: amarrado al mismo toggle que internet. Sabotea el settings.json
         // de VS Code y monta un watcher que detecta si el alumno reactiva Copilot.
-        if (cfg.InternetBlock && !_copilotBlocked)
+        if (effInternet && !_copilotBlocked)
         {
             CopilotBlockService.OnCheatDetected += OnCopilotCheatDetected;
             CopilotBlockService.Block();
             _copilotBlocked = true;
             Log("[ADMIN] Bloqueo de Copilot activado.");
         }
-        else if (!cfg.InternetBlock && _copilotBlocked)
+        else if (!effInternet && _copilotBlocked)
         {
             CopilotBlockService.OnCheatDetected -= OnCopilotCheatDetected;
             CopilotBlockService.Unblock();
@@ -1752,11 +1766,13 @@ public partial class MainWindow : Window
             Log("[ADMIN] Bloqueo de Copilot desactivado.");
         }
 
-        if (cfg.ForceLockdown && !_remoteLockdownActive)
+        if (cfg.ForceLockdown && !screenUnblocked && !_remoteLockdownActive)
         {
             _remoteLockdownActive = true;
             Log("[ADMIN] Lockdown remoto activado.");
-            var alert = new CheatWindow("(remoto)", 0, new[] { "Lockdown remoto del profesor" }, remoteSource: true, checkStillLocked: () => Task.Run(() => _sb.IsForceLockdownAsync()).GetAwaiter().GetResult());
+            var alert = new CheatWindow("(remoto)", 0, new[] { "Lockdown remoto del profesor" }, remoteSource: true,
+                checkStillLocked: () => !ScreenUnblockedSync()
+                    && Task.Run(() => _sb.IsForceLockdownAsync()).GetAwaiter().GetResult());
             alert.ShowDialog();
             _remoteLockdownActive = false;
         }
@@ -1816,7 +1832,7 @@ public partial class MainWindow : Window
             Log("[ADMIN] Lockdown DIRIGIDO a tu PC.");
             var me = _user.Login;
             var alert = new CheatWindow("(dirigido)", 0, new[] { reason }, remoteSource: true,
-                checkStillLocked: () => Task.Run(() =>
+                checkStillLocked: () => !ScreenUnblockedSync() && Task.Run(() =>
                     _sb.IsTargetedLockedAsync(Environment.MachineName, me).GetAwaiter().GetResult()
                     || _sb.IsForceLockdownAsync().GetAwaiter().GetResult()).GetAwaiter().GetResult());
             alert.ShowDialog();
@@ -1855,7 +1871,7 @@ public partial class MainWindow : Window
 
         CheatWindow alert = reported
             ? new CheatWindow(reasonOrRepo, filesCount, filesNames, remoteSource: true,
-                checkStillLocked: () => Task.Run(() =>
+                checkStillLocked: () => !ScreenUnblockedSync() && Task.Run(() =>
                     _sb.IsTargetedLockedAsync(pc, me).GetAwaiter().GetResult()
                     || _sb.IsForceLockdownAsync().GetAwaiter().GetResult()).GetAwaiter().GetResult())
             : new CheatWindow(reasonOrRepo, filesCount, filesNames);
