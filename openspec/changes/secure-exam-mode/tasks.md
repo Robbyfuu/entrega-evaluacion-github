@@ -6,15 +6,16 @@ Leyenda: [APP] solo cliente/panel/Supabase (sin admin) · [TI] requiere infra/ad
 ## PR0 — Fundaciones (este cambio) [APP]
 - [x] Auditoria + threat model + arquitectura + plan (este OpenSpec).
 - [x] Validacion del CopilotBlockService endurecido (findings en design.md §5).
-- [ ] Migracion: `evaluations.exam_mode` enum (Off|AuditOnly|SoftLock|HardLock) DEFAULT 'Off'
-      + `policy_json` (allowlists/IDE/red por eval). RLS.
-- [ ] Panel: selector de modo por evaluacion (en "Evaluaciones y tareas").
+- [x] Migracion: `evaluations.exam_mode` enum (Off|AuditOnly|SoftLock|HardLock) DEFAULT 'Off'
+      + `policy_json`. (csharp/migration-exam-mode.sql — CORRER en Supabase antes de deploy panel)
+- [x] Panel: selector de modo por evaluacion (en "Evaluaciones y tareas").
 
 ## PR1 — Maquina de estados [APP]
-- [ ] `IExamSessionService` + `ExamState` + transiciones validas (tabla).
-- [ ] `ExamSessionId`, inicio por hora de servidor, persistencia local idempotente.
-- [ ] Recuperacion tras crash/reinicio; indicador visible permanente en ExamActive.
-- [ ] Migrar bools dispersos a la maquina (no romper lockdown/cierre actuales).
+- [x] `IExamSessionService` + `ExamState` + transiciones validas (tabla). (fundacion)
+- [x] `ExamSessionId`, inicio por hora de servidor, persistencia local idempotente.
+- [x] `RecoverAsync` idempotente. (Models/ExamSession.cs + Services/ExamSessionService.cs)
+- [ ] PENDIENTE INTEGRACION: indicador visible en ExamActive + migrar bools dispersos de
+      MainWindow a la maquina (sin romper lockdown/cierre). Requiere tocar MainWindow.
 - [ ] Tests: transiciones validas/invalidas, recovery idempotente.
 
 ## PR2 — Integridad de repo (PRIORIDAD) [APP+DEC]
@@ -31,11 +32,11 @@ Leyenda: [APP] solo cliente/panel/Supabase (sin admin) · [TI] requiere infra/ad
 - [ ] Tests: clasificacion de dominios; no romper clone/push/auth.
 
 ## PR4 — Editor/IA: fixes + AuditOnly [APP+DEC]
-- [ ] CopilotBlockService: escritura ATOMICA (temp+rename).
-- [ ] Snapshot del original SIEMPRE + Restore EXACTO (preservar JSONC/orden/comentarios).
-- [ ] Nivel efectivo (`NotApplicable..Unknown`); `Unknown` != protegido.
+- [x] CopilotBlockService: escritura ATOMICA (temp+rename).
+- [x] Snapshot del original SIEMPRE + Restore EXACTO (.copilot-orig/.copilot-created).
+- [x] Quitar `catch {}` silenciosos en rutas de seguridad (log estructurado).
+- [ ] Nivel efectivo (`NotApplicable..Unknown`); `Unknown` != protegido. (pendiente)
 - [DEC] `policy_tamper_event` (revision) vs auto-lockdown ante edicion de settings.
-- [ ] Quitar `catch {}` silenciosos en rutas de seguridad (log estructurado).
 - [ ] Modo IDLE: `ide_not_allowed_started` + bloquear/reportar VS Code si IDLE autorizado.
 - [ ] Tests: merge/restore JSONC, escritura atomica, deteccion propio-vs-externo.
 
