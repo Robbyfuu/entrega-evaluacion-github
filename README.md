@@ -1,226 +1,226 @@
-# Entrega de Evaluación a GitHub
+# Entrega de Evaluación — Control de Integridad
 
-Herramienta para subir tu evaluación a GitHub de forma automática.
+Plataforma para que alumnos de DUOC entreguen sus evaluaciones a GitHub bajo
+control de integridad durante evaluaciones presenciales. No promete prevención
+perfecta: combina prevención razonable, detección de eventos observables y
+evidencia para revisión docente, distinguiendo cada capa y sus límites.
 
-## Qué hace
+Estado actual del cliente: **v2.7.13**.
 
-Crea un repositorio en tu cuenta de GitHub con el formato:
+---
+
+## Componentes
+
+| Componente | Tecnología | Rol |
+|---|---|---|
+| **Cliente** (`csharp/`) | C# WPF, .NET 8 (`net8.0-windows`), WPF-UI, WebView2, LibGit2Sharp, Velopack | App de escritorio Windows que usa el alumno para entregar y que aplica los controles de integridad. |
+| **Panel** (`admin-next/`) | Next.js 16 (App Router), React 19, TypeScript, Tailwind v4, Supabase JS | Consola docente de monitoreo y configuración, en tiempo real. |
+| **Backend** | Supabase (Postgres + Auth + Realtime + Storage) | Fuente de verdad: políticas, eventos, roster, enunciados. Protegido por RLS. |
+| **Entrega** | GitHub + GitHub Classroom | Los repos de los alumnos viven en GitHub; las tareas se distribuyen vía Classroom. |
+
+### Flujo de datos
 
 ```
-<tu-nombre>-<forma-de-prueba>
+   Cliente WPF (alumno, asInvoker)                Panel Next.js (docente)
+        |  heartbeat / eventos / entrega                |  config / liberar lockdown
+        v                                                v
+                         Supabase (Postgres + RLS + Realtime + Storage)
+                                          |
+                                   GitHub / GitHub Classroom
 ```
 
-Y sube todos los archivos de tu carpeta de evaluación con un solo click.
+El cliente usa la **anon key** de Supabase (pública por diseño; RLS protege las
+escrituras). La autenticación de GitHub se hace por **device flow** con el OAuth
+Client ID público del GitHub CLI; las credenciales nunca se envían a un servidor
+propio (se guardan en el Credential Manager de Windows).
 
 ---
 
-## Requisitos
+## Cliente (app del alumno)
 
-- Windows 10 / 11
-- Cuenta en [GitHub](https://github.com) (gratuita — la app tiene un asistente para crearla)
-- Conexión a internet
-
-**No necesitas instalar nada manualmente.** La app detecta y ofrece instalar
-automáticamente `git` y `gh` (GitHub CLI) si no están presentes.
-
-### ¿No tienes cuenta de GitHub?
-
-En la esquina superior derecha de la app verás el link:
-
-> **¿No tienes cuenta de GitHub? Créala aquí**
-
-Al hacer clic se abre un asistente con instrucciones paso a paso para crear tu
-cuenta. Te lleva al formulario de GitHub, te guía con el email + contraseña +
-verificación, y al terminar te ofrece iniciar sesión directamente.
-
----
-
-## Cómo usar
-
-### 1. Descargar la app
-
-Descarga el instalador desde la sección **Releases** de este repositorio
-(app autocontenida generada con Velopack). No requiere instalar dependencias
-manualmente: la app detecta y ofrece instalar `git` y `gh` (GitHub CLI) si
-no están presentes.
-
-> El cliente legacy basado en PowerShell (`Subir-Evaluacion.ps1`,
-> `Subir-Evaluacion.bat`, `Reset-GitHubAuth.ps1`, `Reset-Internet.bat`)
-> fue removido del repo. La app C# self-contained lo reemplaza.
-
-### 2. Ejecutar
-
-Doble-click en el ejecutable descargado.
-
-### 3. Primera vez: instalar dependencias
-
-Si es la primera vez, la app te ofrecerá instalar `git` y `gh` con `winget`.
-
-- Click **Sí** cuando pregunte.
-- Acepta los permisos de administrador que aparezcan.
-- Cuando termine, cierra y vuelve a abrir la app.
-
-### 4. Primera vez: iniciar sesión en GitHub
-
-Cuando hagas click en cualquier acción, la app te pedirá iniciar sesión en
-GitHub **sin abrir un navegador automáticamente**:
-
-1. La app muestra un **código** grande tipo `XXXX-XXXX`.
-2. Abre en tu navegador (o **celular**): https://github.com/login/device
-3. Ingresa el código (puedes copiarlo con el botón "Copiar código").
-4. Inicia sesión en GitHub si no estás conectado.
-5. Autoriza el acceso a "GitHub CLI".
-6. La app detecta automáticamente la autorización y continúa.
-
-**Ventaja:** puedes usar tu celular para hacer el login. No necesitas navegador
-en la PC donde corre la app.
-
-Esto es **solo una vez**. La sesión queda guardada.
-
-### 5. Panel de cuenta
-
-En la esquina superior derecha verás siempre quién está conectado:
-
-- **Cuenta de GitHub**: `@usuario` + email
-- **Botón "Iniciar sesión"**: cuando no hay sesión activa
-- **Botón "Cerrar sesión"**: borra todas las credenciales del equipo y permite cambiar de cuenta
-
-### 6. Subir tu evaluación
-
-Antes de empezar, selecciona tu **Curso**, **Sección** y **Evaluación** en el
-panel izquierdo de la app. Estas opciones vienen de la base de datos (si el
-profesor las configuró) o de los valores por defecto.
-
-Hay **dos modos** de subida:
-
-#### Modo A: Crear repositorio nuevo (default)
-
-Para alumnos que vienen sin preparación previa.
-
-1. Selecciona **"Crear repositorio nuevo"**.
-2. Completa **Nombre completo** (ej: `Juan Pérez García`).
-3. El **Tipo de evaluación** se completa automáticamente con la evaluación que elegiste en el panel izquierdo.
-4. Click **Buscar...** y selecciona la carpeta de tu evaluación.
-5. Click **Crear repositorio** y luego **Subir evaluación**.
-
-La app crea el repositorio con formato `nombre-completo-tipo` (siempre **público** para que el profesor pueda verlo) y sube todo.
-
-#### Modo B: Usar repositorio existente
-
-Para alumnos que ya crearon el repo en su casa.
-
-1. Selecciona **"Usar repositorio existente de mi cuenta"**.
-2. La app carga automáticamente la lista de repos de tu cuenta.
-3. Elige tu repo del **dropdown** (los privados aparecen con `[Priv]`, públicos con `[Pub]`).
-4. Si creaste un repo nuevo recientemente, click **Refrescar** para actualizar la lista.
-5. Click **Clonar repositorio**.
-
-La app:
-- Clona el repositorio en tu **Escritorio** (`Desktop\nombre-del-repo`).
-- Te muestra la ruta donde quedó la carpeta.
-- Abre **IDLE de Python** apuntando a esa carpeta para que edites tu evaluación.
-- Auto-completa la ruta en "Carpeta del proyecto".
-
-Cuando termines de editar:
-1. Guarda los cambios en IDLE (`Ctrl+S`).
-2. Vuelve a la ventana de la app.
-3. Click **Subir evaluación**.
-
-#### Protección contra confusión de cuentas
-
-Si seleccionas una carpeta que ya tiene un `.git` asociado a **otra cuenta de GitHub** (no a la tuya actual), la app:
-
-- **NO permite** subir desde ahí.
-- Muestra el nombre de la cuenta conflictiva.
-- Sugiere cambiar de carpeta o cerrar sesión y entrar con la cuenta correcta.
-
-Si el `.git` es de **tu cuenta** pero apunta a otro repo, la app pregunta antes de reinicializar.
-
-#### Lo que hace la app en ambos modos
-
-- Configura tu nombre y email en el repositorio local.
-- Ejecuta `git init` (si hace falta), `git add`, `git commit`, `git push`.
-- Te muestra el link final al repo en GitHub.
+- **Login GitHub por device flow**: muestra un código `XXXX-XXXX`; el alumno lo
+  ingresa en `github.com/login/device` desde la PC **o el celular**. No abre un
+  navegador automáticamente. La sesión queda guardada en el equipo.
+- **Selección de Curso / Sección / Evaluación**: las opciones vienen de Supabase
+  (tablas `courses` / `sections` / `evaluations`), con fallback a una lista
+  hardcodeada en `Config.cs` si el fetch falla. Al **aceptar/iniciar** la
+  evaluación la selección queda **bloqueada** para evitar cambios a mitad de prueba.
+- **Aceptar tareas de Classroom**: ventana de tareas que registra la aceptación
+  (`assignment_acceptances`).
+- **Clonar y subir**: clona el repo en el Escritorio y, al terminar, hace
+  `commit` + `push` **siempre a `main`**. Incluye protección anti–repo-sucio
+  (`TestRepoIsClean`) y protección contra confusión de cuentas (no deja subir si
+  el `.git` pertenece a otra cuenta de GitHub).
+- **Navegador embebido (WebView2) con allowlist**: solo permite navegar a los
+  dominios y URLs exactas permitidos. La lista es **dinámica** (tabla
+  `allowed_urls`, editable por sección desde el panel) con fallback a la lista
+  hardcodeada de `Config.cs`; un fetch fallido nunca amplía lo permitido.
+  Cualquier navegación fuera de la lista dispara la pantalla roja.
+- **Bloqueo de internet (SoftLock)**: cierra navegadores externos y fija un proxy
+  inválido en `HKCU` (`127.0.0.1:1`). Declarado explícitamente como control
+  **blando**: CLI, WSL, VPN o clientes directos lo ignoran.
+- **Bloqueo de Copilot en VS Code**: sabotea `settings.json`
+  (`chat.disableAIFeatures` + claves Copilot) en Code / Insiders / VSCodium y
+  perfiles, con watchers + timer; reaplica si el alumno lo revierte.
+- **Sonda de red (detección de Copilot)**: inspecciona conexiones hacia endpoints
+  conocidos de Copilot y reporta hallazgos.
+- **Lockdown / pantalla roja**: modo kiosk que cubre la pantalla. Tres orígenes:
+  **remoto** (el profe bloquea a toda la sección), **dirigido** (a un PC) y
+  **trampa local** (repo sucio, navegación prohibida, reactivación de Copilot).
+  El cliente reporta su propio bloqueo a `targeted_lockdowns` (RPC
+  `report_self_lock`) para que el docente lo **vea y lo libere desde el panel**.
+  La trampa local también admite liberación con clave del profe en la máquina.
+- **Bloqueo de cierre**: cancela el cierre de la ventana y avisa; el escape es la
+  clave del profe. El cierre por Task Manager lo cubre el daemon.
+- **Daemon**: una Scheduled Task relanza la app (ventana de ~3 min).
+- **PDF de enunciado**: si la evaluación tiene enunciado, lo descarga del bucket
+  privado de Storage, lo abre y lo borra al terminar la evaluación o cerrar sesión.
+- **Tema oscuro** y **versión visible** en la propia ventana.
+- **Actualización**: es **manual y disparada por el docente** (el profe setea
+  `control.update_requested_at` en el panel; el cliente actualiza una vez vía
+  Velopack autenticado con el token del alumno). El cliente no hace fetch
+  automático a GitHub.
 
 ---
 
-## Acciones disponibles
+## Panel (consola docente)
 
-La app usa un **botón primario contextual** que cambia según el estado:
+Login = cuenta docente en Supabase Auth (email + contraseña). Secciones:
 
-| Estado               | Botón muestra            | Qué hace                                     |
-|----------------------|--------------------------|----------------------------------------------|
-| Sin sesión           | "Inicia sesión primero"  | Deshabilitado hasta iniciar sesión.          |
-| Datos incompletos    | "Completa los datos"     | Deshabilitado hasta llenar nombre + carpeta. |
-| Datos listos         | "Crear/Clonar repo"      | Crea o clona el repositorio.                 |
-| Repo + carpeta listos| "Subir evaluación"       | Sube los archivos al repo.                   |
+**Monitoreo**
 
-Adicionales: **Iniciar sesión** / **Cerrar sesión** / **Refrescar** (lista de repos) / **Buscar...** (carpeta).
+- **Secciones** — workspace con drill-down: secciones → alumnos → detalle.
+- **Bloqueados** — alumnos en pantalla roja (lockdown activo), con liberación.
+- **Internet bloqueado (offline)** — alumnos con internet bloqueado que no
+  reportan (offline).
+- **Resumen** — KPIs globales.
+- **Controles** — controles remotos (lockdown, internet, etc.).
 
----
+**Gestión / Global**
 
-## Problemas comunes
-
-### "winget no se reconoce..."
-
-Tu Windows no tiene `winget`. Instala **App Installer** desde Microsoft Store
-o descarga manualmente:
-- Git: https://git-scm.com/download/win
-- GitHub CLI: https://cli.github.com/
-
-### "No tienes una sesión de GitHub activa"
-
-Click **Sí** cuando la app ofrezca iniciar sesión. Sigue las instrucciones del
-diálogo con el código.
-
-### "Repositorio ya existe"
-
-La app lo detecta y reutiliza ese mismo repositorio. No es un error.
-
-### "Falló el push"
-
-Posibles causas:
-- Conexión a internet interrumpida.
-- Token expirado: usa el botón **Cerrar sesión** y vuelve a iniciar sesión.
-- El repositorio ya tenía commits desde otro lado: la app no sobrescribe historial.
-
-### Quiero cambiar de cuenta de GitHub
-
-Usa el botón **Cerrar sesión** dentro de la app y luego **Iniciar sesión**
-con la nueva cuenta. Limpia todas las credenciales y permite iniciar sesión
-con otra cuenta.
+- **Cursos** y **Config. secciones** — administración de la jerarquía.
+- **Evaluaciones y tareas** — vista unificada de evaluaciones y tareas de
+  Classroom: link de Classroom **editable**, **modo de evaluación**, **PDF de
+  enunciado** (subir/reemplazar/borrar) y acción **"ver alumnos"** por evaluación.
+- **Roster** — import del roster (PII; acceso solo authenticated) y asignación de
+  usuario de GitHub.
+- **PCs conectados** — clientes online con su **versión por PC** y acción de
+  **solicitar actualización**.
+- **Alertas** — alertas de procesos sospechosos.
+- **Navegación** — historial del navegador embebido (permitido / bloqueado).
+- **Procesos** — blocklist de procesos editable por sección.
+- **URLs permitidas** — allowlist del navegador embebido editable por sección.
+- **Actividad** — actividad de los alumnos.
+- **Trampas** — eventos de trampa (`cheat_events`).
 
 ---
 
-## Cómo se genera el nombre del repositorio
+## Modo de Evaluación Segura
 
-El nombre se sanitiza automáticamente:
+Cada evaluación tiene un campo `exam_mode` (columna `evaluations.exam_mode`, más
+`policy_json` opcional) con cuatro niveles:
 
-- Todo en minúsculas
-- Espacios convertidos a guiones (`-`)
-- Acentos y caracteres especiales eliminados
+- **Off** — sin controles (prácticas libres).
+- **AuditOnly** — observa y reporta, no bloquea (rodaje / calibración de falsos
+  positivos).
+- **SoftLock** — controles sin privilegios (lo que el cliente puede hacer solo,
+  como `asInvoker`).
+- **HardLock** — reservado a infraestructura administrada por TI.
 
-Ejemplos:
+Lo que el modo **NO** hace (por diseño y por alcance):
 
-| Nombre + Forma                  | Repositorio generado           |
-|---------------------------------|--------------------------------|
-| `Juan Pérez García` + `Forma-A` | `juan-perez-garcia-forma-a`    |
-| `María López` + `Forma B`       | `maria-lopez-forma-b`          |
-| `Ñoño Iñíguez` + `Final`        | `nono-iniguez-final`           |
+- **No corre con privilegios de administrador** ni instala un servicio de Windows
+  privilegiado. **HardLock está fuera del alcance de este repo** (requiere TI:
+  firewall transaccional, Intune/GPO/AppLocker/WDAC, VLAN de evaluación). El techo
+  real del cliente es **SoftLock asInvoker**.
+- No hay firewall real ni bloqueo de egress por proceso; el bloqueo de red es
+  blando (proxy HKCU + allowlist del WebView + cierre de navegadores).
+- No hay keylogging, capturas de pantalla, lectura de portapapeles ni del
+  contenido de los archivos del alumno.
+- No emite veredictos automáticos de "fraude": los eventos son **evidencia para
+  revisión docente**, no una sanción automática.
+
+Detalle de diseño y modelo de amenaza:
+`openspec/changes/secure-exam-mode/proposal.md` y `design.md`.
 
 ---
 
-## Seguridad
+## Distribución y actualización
 
-- La app **no envía tus credenciales a ningún servidor externo**.
-- Toda la autenticación pasa por `gh` (la herramienta oficial de GitHub).
-- Las credenciales se guardan en el **Credential Manager de Windows**, encriptadas.
-- El botón **Cerrar sesión** limpia todas las credenciales del equipo (gh CLI + Credential Manager + caché de git).
+- El build del cliente lo dispara un **tag `exe-v*`**, que ejecuta GitHub Actions
+  (`.github/workflows/build-csharp.yml`): `dotnet publish` → empaquetado
+  **Velopack** (`vpk pack`, con delta updates) → publicación como GitHub Release.
+- El alumno descarga el **instalador directo** desde Releases (app
+  autocontenida; la app ofrece instalar `git` y `gh` con `winget` si faltan).
+- **Auto-update autenticado**: las actualizaciones usan Velopack con el token de
+  GitHub del alumno (evita el rate-limit por IP). El update es manual/disparado
+  (ver sección Cliente).
 
 ---
 
-## Soporte
+## Setup mínimo
 
-Si algo no funciona, contacta a tu profesor con:
-- Captura de pantalla del error.
-- Contenido del log negro de la ventana (cópialo y pégalo).
+### Supabase
+
+1. Crear un proyecto en Supabase.
+2. Correr las migraciones en el **SQL Editor**, en orden de dependencia. Todas son
+   idempotentes. La base (`csharp/setup-supabase.sql` + browser + acceptances +
+   multi-evaluation + submissions + realtime) está bundleada en
+   `supabase-all-in-one.sql`; las migraciones de features posteriores
+   (`migration-blocklist`, `-allowed-urls`, `-evaluation-control`,
+   `-version-visibility`, `-self-lock`, `-enrollments`, `-enrollments-view`,
+   `-exam-mode`, `-exam-pdf`) se corren aparte. La lista canónica y ordenada está
+   en `admin-next/README.md`.
+3. Crear al menos una cuenta docente en Supabase Auth.
+
+### Panel (Vercel)
+
+```bash
+cd admin-next
+pnpm install
+pnpm dev          # http://localhost:3000
+pnpm build        # export estático -> out/
+```
+
+Deploy en Vercel: Root Directory = `admin-next`, framework Next.js, y las env vars
+`NEXT_PUBLIC_SUPABASE_URL` + `NEXT_PUBLIC_SUPABASE_ANON_KEY`. Ver
+`admin-next/README.md`.
+
+### Cliente
+
+`Config.cs` trae la URL y la anon key de Supabase, el Client ID del device flow y
+las listas de fallback. Build/empaquetado: ver sección Distribución.
+
+---
+
+## Limitaciones y riesgos residuales (honestos)
+
+Esto **no** garantiza la prevención del fraude. Fuera del alcance del software
+(mitigación docente + infraestructura, no código WPF):
+
+- **Teléfono, segundo computador o hotspot personal**: el software no los ve.
+- **Colaboración presencial** y **código memorizado o traído por medios externos**.
+- **Usuario con admin / acceso físico** a la máquina.
+- **Red blanda**: el SoftLock (proxy HKCU) lo ignoran CLI, WSL, VPN y clientes
+  directos. El egress real requiere TI (HardLock, fuera de alcance).
+- **Copilot en VS Code**: en modo sin admin el bloqueo se **vigila y reporta**,
+  no es inviolable (perfiles, portable, Insiders, WSL/Remote).
+- **Daemon**: ventana de ~3 min entre un kill y el relanzamiento.
+
+Para reducir la copia entre alumnos, las evaluaciones calificadas deberían usar
+**repos privados** (GitHub Classroom / org); el cliente lo verifica y avisa, pero
+no puede forzar la privacidad (la fija Classroom).
+
+---
+
+## Documentación adicional
+
+- `docs/Guia-Alumno.pdf` — guía paso a paso para el alumno (uso de la app).
+- `docs/Instructivo-Instalacion.pdf` — instructivo de instalación.
+- `admin-next/README.md` — stack del panel, env vars, deploy y migraciones.
+- `openspec/changes/secure-exam-mode/` — propuesta y diseño del modo seguro.
+
+> El cliente legacy basado en PowerShell (`Subir-Evaluacion.ps1` y compañía) fue
+> removido: la app C# autocontenida lo reemplaza por completo.
+</content>
+</invoke>
