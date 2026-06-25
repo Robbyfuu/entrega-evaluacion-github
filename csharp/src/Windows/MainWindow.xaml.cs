@@ -359,6 +359,47 @@ public partial class MainWindow : Window
         SyncTipoCombo(ev.Title);
     }
 
+    /// <summary>
+    /// Bloquea (deshabilita) curso/seccion/evaluacion cuando hay una tarea
+    /// ACEPTADA y NO entregada, fijando la evaluacion aceptada. Asi el alumno no
+    /// puede cambiar/borrar la seleccion mientras rinde (lo que cambiaba el
+    /// evaluation_id del heartbeat y hacia parpadear el PC a offline). Se libera
+    /// solo cuando entrega o el profe desactiva la evaluacion (la tarea deja de
+    /// estar activa -> ya no hay aceptada-no-entregada).
+    /// </summary>
+    private void ApplyEvaluationLock(List<AssignmentStatus> statuses)
+    {
+        var locked = statuses.FirstOrDefault(s =>
+            s.Accepted && !s.Submitted
+            && s.Assignment.EvaluationId is { } id && id > 0);
+
+        if (locked?.Assignment.EvaluationId is { } evalId)
+        {
+            if (StudentSection.GetEvaluationId() != evalId)
+                StudentSection.SetEvaluationId(evalId);
+
+            for (int i = 0; i < EvaluationCombo.Items.Count; i++)
+                if (EvaluationCombo.Items[i] is Evaluation ev && ev.Id == evalId
+                    && EvaluationCombo.SelectedIndex != i)
+                {
+                    EvaluationCombo.SelectedIndex = i;
+                    break;
+                }
+
+            CursoCombo.IsEnabled = false;
+            SectionCombo.IsEnabled = false;
+            EvaluationCombo.IsEnabled = false;
+            EvaluationCombo.ToolTip = "Evaluacion en curso: bloqueada hasta entregar o que el profesor la desactive.";
+        }
+        else
+        {
+            CursoCombo.IsEnabled = true;
+            SectionCombo.IsEnabled = true;
+            EvaluationCombo.IsEnabled = true;
+            EvaluationCombo.ToolTip = null;
+        }
+    }
+
     private async void AssignmentsLink_Click(object sender, RoutedEventArgs e) => await ShowAssignmentsDialog();
 
     private void SignupLink_Click(object sender, RoutedEventArgs e) => OpenUrl("https://github.com/signup");
@@ -1223,6 +1264,13 @@ public partial class MainWindow : Window
         var invitations = await _gh.GetPendingInvitationsAsync();
         var unassociated = new List<RepoInvitation>();
         var statuses = await ComputeAssignmentStatusesAsync(asg, invitations, unassociated);
+
+        // Si hay una tarea ACEPTADA y NO entregada, bloquear la seleccion de
+        // curso/seccion/evaluacion en esa evaluacion. Evita que el alumno (o un
+        // repoblado del combo) borre/cambie el evaluation_id durante la
+        // rendicion -> el heartbeat se mantiene estable y el PC no parpadea a
+        // offline. Se libera al entregar o cuando el profe desactiva la eval.
+        ApplyEvaluationLock(statuses);
 
         // Sentinel de error: si la API de invitaciones fallo, NO afirmar "0
         // pendientes". El alumno debe saber que el dato no se pudo verificar.
