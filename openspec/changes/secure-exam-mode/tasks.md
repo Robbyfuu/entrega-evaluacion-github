@@ -57,7 +57,14 @@ Leyenda: [APP] solo cliente/panel/Supabase (sin admin) · [TI] requiere infra/ad
 - [ ] Panel: estados "evento -> revision -> resolucion" (no "fraude confirmado");
       marcar falsos positivos; exportacion para revision/apelacion.
 
-## PR8 — Servicio privilegiado HardLock [TI]
+## ~~PR8 / PR9 — HardLock + despliegue institucional~~ DESCARTADO (decision #2)
+El profe NO administra los equipos -> sin admin, sin servicio privilegiado, sin GPO/Intune/
+AppLocker/WDAC/VLAN. Techo del proyecto = SoftLock asInvoker. Queda como recomendacion
+institucional para DUOC (fuera de este repo). Tambien descartado: PR3 "solo IDLE/bloquear
+VS Code" (decision #4: VS Code permitido) y red offline-total/FQDN (decision #5: SoftLock
+actual se mantiene).
+
+## PR8 — Servicio privilegiado HardLock [TI] (DESCARTADO, ver arriba)
 - [ ] Servicio Windows separado (cuenta minima), IPC named pipe + ACL + firma/sesion.
 - [ ] Comandos limitados (StartExamPolicy/Open/Close/Stop/GetStatus/Recover);
       firewall transaccional con id propio; snapshot+rollback; watchdog; expiry; Event Log.
