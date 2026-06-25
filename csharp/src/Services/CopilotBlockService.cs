@@ -6,13 +6,13 @@ using System.Threading;
 namespace EntregaEvaluacion.Services;
 
 /// <summary>
-/// Bloqueo de GitHub Copilot dentro de VS Code sabotizando el settings.json
-/// del usuario (%APPDATA%\Code\User\settings.json). No requiere admin: el
-/// archivo es del propio usuario.
+/// Bloqueo de GitHub Copilot dentro de VS Code sabotizando los settings.json
+/// del usuario. No requiere admin: son archivos del propio usuario.
 ///
 /// Claves que se inyectan para deshabilitar Copilot:
+///   "chat.disableAIFeatures": true            -> apaga/oculta AI y deshabilita Copilot
 ///   "github.copilot.enable": { "*": false }   -> apaga completions en todos los lenguajes
-///   "github.copilot.chat.enabled": false      -> apaga el chat de Copilot
+///   "github.copilot.chat.enabled": false      -> compatibilidad con VS Code/Copilot viejos
 ///
 /// Un FileSystemWatcher detecta si el alumno edita el archivo para reactivar
 /// Copilot: re-aplica el sabotaje y dispara OnCheatDetected para que MainWindow
@@ -20,20 +20,55 @@ namespace EntregaEvaluacion.Services;
 /// </summary>
 public static class CopilotBlockService
 {
-    private static readonly string SettingsDir =
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Code", "User");
+    private sealed class SettingsTarget
+    {
+        public SettingsTarget(string label, string settingsDir)
+        {
+            Label = label;
+            SettingsDir = settingsDir;
+            SettingsPath = Path.Combine(settingsDir, "settings.json");
+            BackupPath = SettingsPath + ".copilot-bak";
+        }
 
-    private static readonly string SettingsPath = Path.Combine(SettingsDir, "settings.json");
+        public string Label { get; }
+        public string SettingsDir { get; }
+        public string SettingsPath { get; }
+        public string BackupPath { get; }
+    }
 
-    private static readonly string BackupPath = SettingsPath + ".copilot-bak";
+    private static readonly string AppData =
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
 
-    // Claves que inyectamos/quitamos. Si el alumno las borra o las pone en true
-    // mientras el watcher esta activo, se dispara OnCheatDetected.
+    // Claves que inyectamos/quitamos. Si el alumno las borra/cambia mientras
+    // el bloqueo esta activo, se re-aplican y se dispara OnCheatDetected.
+    private const string DisableAiFeaturesKey = "chat.disableAIFeatures";
     private const string EnableKey = "github.copilot.enable";
-    private const string ChatKey = "github.copilot.chat.enabled";
+    private const string LegacyChatKey = "github.copilot.chat.enabled";
 
-    private static FileSystemWatcher? _watcher;
+    private static readonly Dictionary<string, object?> DisableSettings = new()
+    {
+        // Config oficial actual: deshabilita/oculta AI integrada y Copilot.
+        [DisableAiFeaturesKey] = true,
+
+        // Cinturon y tirantes: cubre completions, NES, acciones y agentes aunque
+        // una version vieja/nueva no respete aun chat.disableAIFeatures.
+        [EnableKey] = new Dictionary<string, object?> { ["*"] = false },
+        [LegacyChatKey] = false,
+        ["github.copilot.nextEditSuggestions.enabled"] = false,
+        ["github.copilot.nextEditSuggestions.fixes"] = false,
+        ["github.copilot.editor.enableCodeActions"] = false,
+        ["github.copilot.renameSuggestions.triggerAutomatically"] = false,
+        ["github.copilot.chat.agent.autoFix"] = false,
+        ["github.copilot.chat.codesearch.enabled"] = false,
+        ["github.copilot.chat.reviewSelection.enabled"] = false,
+        ["github.copilot.chat.reviewAgent.enabled"] = false,
+        ["chat.agent.enabled"] = false,
+        ["chat.commandCenter.enabled"] = false
+    };
+
+    private static readonly List<FileSystemWatcher> _watchers = new();
     private static Timer? _debounce;
+    private static Timer? _maintenance;
     private static bool _armed;
 
     /// <summary>
@@ -48,9 +83,9 @@ public static class CopilotBlockService
     {
         try
         {
-            EnsureDir();
-            EnsureDisableKeys();
+            EnsureDisableKeysForAllTargets();
             StartWatcher();
+            StartMaintenanceTimer();
             _armed = true;
         }
         catch (Exception ex)
@@ -65,7 +100,7 @@ public static class CopilotBlockService
         {
             StopWatcher();
             _armed = false;
-            RemoveDisableKeys();
+            RemoveDisableKeysForAllTargets();
         }
         catch (Exception ex)
         {
@@ -77,20 +112,8 @@ public static class CopilotBlockService
     {
         try
         {
-            if (!File.Exists(SettingsPath)) return false;
-            var json = File.ReadAllText(SettingsPath);
-            using var doc = JsonDocument.Parse(json, new JsonDocumentOptions
-            {
-                CommentHandling = JsonCommentHandling.Skip
-            });
-            if (!doc.RootElement.TryGetProperty(EnableKey, out var enable)) return false;
-            // {"*": false} -> la propiedad "*" debe existir y ser false
-            if (enable.ValueKind != JsonValueKind.Object) return false;
-            if (!enable.TryGetProperty("*", out var star)) return false;
-            if (star.ValueKind != JsonValueKind.False) return false;
-            // Chat key debe ser false (si existe; si no existe lo consideramos bloqueado
-            // porque igual lo inyectamos en Block)
-            return true;
+            var targets = GetSettingsTargets().ToList();
+            return targets.Count > 0 && targets.All(IsTargetBlocked);
         }
         catch
         {
@@ -99,7 +122,7 @@ public static class CopilotBlockService
     }
 
     /// <summary>
-    /// Fail-safe igual a InternetBlockService: NO desbloqueamos自动 al iniciar.
+    /// Fail-safe distinto a InternetBlockService: NO desbloqueamos al iniciar.
     /// Solo logueamos si encontramos un bloqueo huerfano. El primer AdminTick
     /// re-aplica si el profe sigue queriendo bloqueo.
     /// </summary>
@@ -108,17 +131,56 @@ public static class CopilotBlockService
         try
         {
             if (IsBlocked())
-                Debug.WriteLine("[CopilotBlock] Bloqueo huerfano encontrado en settings.json (no se desbloquea).");
+                Debug.WriteLine("[CopilotBlock] Bloqueo huerfano encontrado en settings.json de VS Code (no se desbloquea).");
         }
         catch { }
     }
 
     // ===================== Escritura del settings.json =====================
 
-    private static void EnsureDir()
+    private static IReadOnlyList<SettingsTarget> GetSettingsTargets()
     {
-        if (!Directory.Exists(SettingsDir))
-            Directory.CreateDirectory(SettingsDir);
+        var targets = new List<SettingsTarget>();
+
+        // VS Code estable es el objetivo obligatorio en los laboratorios.
+        AddProductTargets(targets, "Code", alwaysIncludeDefault: true);
+
+        // Variantes: solo se tocan si existen, para no ensuciar perfiles que el
+        // alumno nunca tuvo.
+        AddProductTargets(targets, "Code - Insiders", alwaysIncludeDefault: false);
+        AddProductTargets(targets, "VSCodium", alwaysIncludeDefault: false);
+
+        return targets
+            .GroupBy(t => t.SettingsPath, StringComparer.OrdinalIgnoreCase)
+            .Select(g => g.First())
+            .ToList();
+    }
+
+    private static void AddProductTargets(List<SettingsTarget> targets, string productDirName, bool alwaysIncludeDefault)
+    {
+        var userDir = Path.Combine(AppData, productDirName, "User");
+        var productExists = Directory.Exists(Path.Combine(AppData, productDirName));
+
+        if (alwaysIncludeDefault || productExists)
+            targets.Add(new SettingsTarget($"{productDirName}/default", userDir));
+
+        var profilesDir = Path.Combine(userDir, "profiles");
+        if (!Directory.Exists(profilesDir)) return;
+
+        foreach (var profileDir in Directory.GetDirectories(profilesDir))
+            targets.Add(new SettingsTarget($"{productDirName}/profile/{Path.GetFileName(profileDir)}", profileDir));
+    }
+
+    private static void EnsureDir(SettingsTarget target)
+    {
+        if (!Directory.Exists(target.SettingsDir))
+            Directory.CreateDirectory(target.SettingsDir);
+    }
+
+    private static void EnsureDisableKeysForAllTargets()
+    {
+        foreach (var target in GetSettingsTargets())
+            EnsureDisableKeys(target);
     }
 
     /// <summary>
@@ -127,16 +189,16 @@ public static class CopilotBlockService
     /// alumno. Idempotente. Si el archivo esta malformado, lo respalda y crea
     /// uno nuevo con solo las claves de Copilot.
     /// </summary>
-    private static void EnsureDisableKeys()
+    private static void EnsureDisableKeys(SettingsTarget target)
     {
         JsonElement root;
-        bool hadFile = File.Exists(SettingsPath);
+        bool hadFile = File.Exists(target.SettingsPath);
 
         if (hadFile)
         {
             try
             {
-                var raw = File.ReadAllText(SettingsPath);
+                var raw = File.ReadAllText(target.SettingsPath);
                 using var doc = JsonDocument.Parse(raw, new JsonDocumentOptions
                 {
                     CommentHandling = JsonCommentHandling.Skip
@@ -146,7 +208,7 @@ public static class CopilotBlockService
             catch (JsonException)
             {
                 // JSON malformado: respaldar y empezar de cero
-                try { File.Copy(SettingsPath, BackupPath, overwrite: true); } catch { }
+                try { File.Copy(target.SettingsPath, target.BackupPath, overwrite: true); } catch { }
                 root = default;
             }
         }
@@ -163,36 +225,74 @@ public static class CopilotBlockService
                 dict[prop.Name] = JsonSerializer.Deserialize<object?>(prop.Value);
         }
 
-        // Claves de Copilot (sobreescriben lo que el alumno tenga)
-        dict[EnableKey] = new Dictionary<string, object?> { ["*"] = false };
-        dict[ChatKey] = false;
+        // Claves de Copilot/AI (sobreescriben lo que el alumno tenga)
+        foreach (var setting in DisableSettings)
+            dict[setting.Key] = setting.Value;
 
         var opts = new JsonSerializerOptions { WriteIndented = true };
         var jsonOut = JsonSerializer.Serialize(dict, opts);
-        WriteWithRetry(jsonOut);
+        WriteWithRetry(target, jsonOut);
+    }
+
+    private static bool IsTargetBlocked(SettingsTarget target)
+    {
+        if (!File.Exists(target.SettingsPath)) return false;
+
+        var json = File.ReadAllText(target.SettingsPath);
+        using var doc = JsonDocument.Parse(json, new JsonDocumentOptions
+        {
+            CommentHandling = JsonCommentHandling.Skip
+        });
+
+        foreach (var expected in DisableSettings)
+        {
+            if (!doc.RootElement.TryGetProperty(expected.Key, out var actual)) return false;
+
+            if (expected.Key == EnableKey)
+            {
+                if (actual.ValueKind != JsonValueKind.Object) return false;
+                if (!actual.TryGetProperty("*", out var star)) return false;
+                if (star.ValueKind != JsonValueKind.False) return false;
+                continue;
+            }
+
+            if (expected.Value is bool expectedBool)
+            {
+                if (expectedBool && actual.ValueKind != JsonValueKind.True) return false;
+                if (!expectedBool && actual.ValueKind != JsonValueKind.False) return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static void RemoveDisableKeysForAllTargets()
+    {
+        foreach (var target in GetSettingsTargets())
+            RemoveDisableKeys(target);
     }
 
     /// <summary>
     /// Quita SOLO las claves de Copilot del settings.json, preservando todo lo
     /// demas. Si hay un .copilot-bak lo restaura (era el original malformado).
     /// </summary>
-    private static void RemoveDisableKeys()
+    private static void RemoveDisableKeys(SettingsTarget target)
     {
-        if (File.Exists(BackupPath))
+        if (File.Exists(target.BackupPath))
         {
             try
             {
-                File.Move(BackupPath, SettingsPath, overwrite: true);
+                File.Move(target.BackupPath, target.SettingsPath, overwrite: true);
                 return;
             }
             catch { }
         }
 
-        if (!File.Exists(SettingsPath)) return;
+        if (!File.Exists(target.SettingsPath)) return;
 
         try
         {
-            var raw = File.ReadAllText(SettingsPath);
+            var raw = File.ReadAllText(target.SettingsPath);
             using var doc = JsonDocument.Parse(raw, new JsonDocumentOptions
             {
                 CommentHandling = JsonCommentHandling.Skip
@@ -200,15 +300,15 @@ public static class CopilotBlockService
             var dict = new Dictionary<string, object?>();
             foreach (var prop in doc.RootElement.EnumerateObject())
             {
-                if (prop.Name == EnableKey || prop.Name == ChatKey) continue;
+                if (DisableSettings.ContainsKey(prop.Name)) continue;
                 dict[prop.Name] = JsonSerializer.Deserialize<object?>(prop.Value);
             }
             var opts = new JsonSerializerOptions { WriteIndented = true };
-            WriteWithRetry(JsonSerializer.Serialize(dict, opts));
+            WriteWithRetry(target, JsonSerializer.Serialize(dict, opts));
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"[CopilotBlock] RemoveDisableKeys fallo: {ex.Message}");
+            Debug.WriteLine($"[CopilotBlock] RemoveDisableKeys fallo en {target.Label}: {ex.Message}");
         }
     }
 
@@ -216,13 +316,14 @@ public static class CopilotBlockService
     /// Escribe el settings.json con reintentos: VS Code puede tenerlo abierto
     /// brevemente al guardar config desde la UI.
     /// </summary>
-    private static void WriteWithRetry(string content, int maxAttempts = 5)
+    private static void WriteWithRetry(SettingsTarget target, string content, int maxAttempts = 5)
     {
         for (int i = 0; i < maxAttempts; i++)
         {
             try
             {
-                File.WriteAllText(SettingsPath, content);
+                EnsureDir(target);
+                File.WriteAllText(target.SettingsPath, content);
                 return;
             }
             catch (IOException) when (i < maxAttempts - 1)
@@ -231,7 +332,7 @@ public static class CopilotBlockService
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"[CopilotBlock] WriteWithRetry fallo: {ex.Message}");
+                Debug.WriteLine($"[CopilotBlock] WriteWithRetry fallo en {target.Label}: {ex.Message}");
                 return;
             }
         }
@@ -242,48 +343,75 @@ public static class CopilotBlockService
     private static void StartWatcher()
     {
         StopWatcher();
-        try
+        foreach (var target in GetSettingsTargets())
         {
-            EnsureDir();
-            _watcher = new FileSystemWatcher(SettingsDir, "settings.json")
+            try
             {
-                NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite | NotifyFilters.Size | NotifyFilters.CreationTime,
-                EnableRaisingEvents = true
-            };
-            _watcher.Changed += OnFileChanged;
-            _watcher.Deleted += OnFileDeleted;
-            _watcher.Renamed += OnFileChanged;
-        }
-        catch (Exception ex)
-        {
-            Debug.WriteLine($"[CopilotBlock] StartWatcher fallo: {ex.Message}");
+                EnsureDir(target);
+                var watcher = new FileSystemWatcher(target.SettingsDir, "settings.json")
+                {
+                    NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite | NotifyFilters.Size | NotifyFilters.CreationTime,
+                    EnableRaisingEvents = true
+                };
+                watcher.Changed += OnFileChanged;
+                watcher.Deleted += OnFileDeleted;
+                watcher.Renamed += OnFileChanged;
+                _watchers.Add(watcher);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[CopilotBlock] StartWatcher fallo en {target.Label}: {ex.Message}");
+            }
         }
     }
 
     private static void StopWatcher()
     {
-        if (_watcher != null)
+        foreach (var watcher in _watchers)
         {
             try
             {
-                _watcher.EnableRaisingEvents = false;
-                _watcher.Changed -= OnFileChanged;
-                _watcher.Deleted -= OnFileDeleted;
-                _watcher.Renamed -= OnFileChanged;
-                _watcher.Dispose();
+                watcher.EnableRaisingEvents = false;
+                watcher.Changed -= OnFileChanged;
+                watcher.Deleted -= OnFileDeleted;
+                watcher.Renamed -= OnFileChanged;
+                watcher.Dispose();
             }
             catch { }
-            _watcher = null;
         }
+        _watchers.Clear();
         _debounce?.Dispose();
         _debounce = null;
+        _maintenance?.Dispose();
+        _maintenance = null;
+    }
+
+    private static void StartMaintenanceTimer()
+    {
+        _maintenance?.Dispose();
+        _maintenance = new Timer(_ =>
+        {
+            if (!_armed) return;
+
+            try
+            {
+                if (!IsBlocked())
+                {
+                    EnsureDisableKeysForAllTargets();
+                    FireCheat();
+                    StartWatcher();
+                    StartMaintenanceTimer();
+                }
+            }
+            catch { }
+        }, null, TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(5));
     }
 
     private static void OnFileDeleted(object sender, FileSystemEventArgs e)
     {
         if (!_armed) return;
         // El alumno borro el settings.json: lo re-creamos con las claves y disparamos cheat
-        EnsureDisableKeys();
+        EnsureDisableKeysForAllTargets();
         FireCheat();
     }
 
@@ -299,7 +427,7 @@ public static class CopilotBlockService
                 if (!IsBlocked())
                 {
                     // El alumno saco/cambio las claves: re-aplicar y disparar cheat
-                    EnsureDisableKeys();
+                    EnsureDisableKeysForAllTargets();
                     FireCheat();
                 }
             }
