@@ -10,9 +10,15 @@ namespace EntregaEvaluacion.Services;
 /// </summary>
 public static class LockdownService
 {
-    // Hash SHA-256 del password del profesor. Password real NO esta en el codigo.
-    private const string TeacherPasswordHash =
-        "203ed3a8347bae6d9659e8830f4f5b882828e91b5249f63d61392ead80ec2d74";
+    // Verificacion del password del profe: PBKDF2-HMAC-SHA256 sobre SHA256(pass),
+    // con salt + 200k iteraciones. El plaintext NO esta en el codigo. El SHA256
+    // interno mantiene el formato con que se genera el hash; PBKDF2 + salt encarece
+    // el cracking offline ~200.000x si alguien extrae estos valores del binario.
+    // (Sigue siendo client-side: el desbloqueo confiable es por panel / pc_overrides.)
+    private const string TeacherPwSalt = "d32a46ee2bbf89786a970cf26d98df1e";
+    private const int TeacherPwIterations = 200000;
+    private const string TeacherPwHash =
+        "64387bbc78763feb3a635492d0e26b04c29f722cfde707a8621424a0d8451ee3";
 
     private static string AppDataDir =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "EntregaEvaluacion");
@@ -26,9 +32,11 @@ public static class LockdownService
     public static bool VerifyPassword(string candidate)
     {
         if (string.IsNullOrEmpty(candidate)) return false;
-        var bytes = Encoding.UTF8.GetBytes(candidate);
-        var hash = Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
-        return hash == TeacherPasswordHash;
+        var inner = SHA256.HashData(Encoding.UTF8.GetBytes(candidate));
+        var salt = Convert.FromHexString(TeacherPwSalt);
+        var derived = Rfc2898DeriveBytes.Pbkdf2(inner, salt, TeacherPwIterations, HashAlgorithmName.SHA256, 32);
+        var expected = Convert.FromHexString(TeacherPwHash);
+        return CryptographicOperations.FixedTimeEquals(derived, expected);
     }
 
     public static bool HasPersistentMarker() => File.Exists(MarkerFile);
