@@ -1010,11 +1010,44 @@ public partial class MainWindow : Window
         var tipoLabel = !string.IsNullOrEmpty(tipo) ? tipo : "la evaluacion correspondiente";
         MessageBox.Show($"Entrega subida correctamente.\n\nURL (copiada al portapapeles):\n{res.Url}\n\nProximo paso:\n1. Abre el AVA\n2. Ve a {tipoLabel}\n3. Pega el enlace (Ctrl+V)\n4. Envia", "Listo - Entrega en el AVA", MessageBoxButton.OK, MessageBoxImage.Information);
 
-        var del = MessageBox.Show($"Ya terminaste la evaluacion?\n\nSi presionas SI se elimina la carpeta local:\n{folder}\n\n(El repo en GitHub se mantiene)", "Eliminar carpeta local?", MessageBoxButton.YesNo, MessageBoxImage.Question);
+        var del = MessageBox.Show(
+            "Ya terminaste la evaluacion?\n\nSi presionas SI:\n" +
+            $"  - Se elimina la carpeta local ({folder}); el repo en GitHub se mantiene.\n" +
+            "  - Se cierra tu sesion de GitHub.\n" +
+            "  - Se libera el internet del equipo.\n\n" +
+            "El PC queda listo para el siguiente alumno.",
+            "Finalizar evaluacion?", MessageBoxButton.YesNo, MessageBoxImage.Question);
         if (del == MessageBoxResult.Yes)
         {
             try { Directory.Delete(folder, true); CarpetaBox.Text = ""; Log("Carpeta local eliminada."); UpdateButtonStates(); } catch { }
+            await FinishExamCleanupAsync();
         }
+    }
+
+    /// <summary>
+    /// Cierre de evaluacion tras entregar: libera internet/Copilot de ESTE PC y
+    /// cierra la sesion de GitHub para que el equipo no quede "con internet
+    /// tomado" ni logueado para el siguiente alumno (PC de laboratorio
+    /// compartido). Al limpiar la seleccion, el evaluation_id queda en null y el
+    /// AdminTick cae al control global -> no se vuelve a bloquear.
+    /// </summary>
+    private async Task FinishExamCleanupAsync()
+    {
+        try { InternetBlockService.Unblock(); _internetBlocked = false; } catch { }
+        try
+        {
+            if (_copilotBlocked)
+            {
+                CopilotBlockService.OnCheatDetected -= OnCopilotCheatDetected;
+                CopilotBlockService.Unblock();
+                _copilotBlocked = false;
+            }
+        }
+        catch { }
+        try { _gh.Logout(); } catch { }
+        ClearSelectors();
+        Log("Evaluacion finalizada: internet liberado y sesion de GitHub cerrada.");
+        try { await UpdateSessionPanel(); } catch { }
     }
 
     // ===================== Classroom assignments =====================
