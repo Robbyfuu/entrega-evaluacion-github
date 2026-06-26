@@ -123,8 +123,12 @@ public class SupabaseClient
         try
         {
             var payload = JsonSerializer.Serialize(new { github_token = githubToken }, JsonOpts);
+            // Slug real de la Edge Function en Supabase. Se deployo bajo el slug
+            // por defecto "rapid-task" (el slug no es renombrable); el codigo es
+            // el de enroll-identity. Si se recrea con slug "enroll-identity",
+            // cambiar aca.
             using var req = new HttpRequestMessage(
-                HttpMethod.Post, $"{Config.SupabaseUrl}/functions/v1/enroll-identity")
+                HttpMethod.Post, $"{Config.SupabaseUrl}/functions/v1/rapid-task")
             {
                 Content = new StringContent(payload, Encoding.UTF8, "application/json")
             };
