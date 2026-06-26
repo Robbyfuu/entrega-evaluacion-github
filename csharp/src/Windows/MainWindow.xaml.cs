@@ -194,6 +194,12 @@ public partial class MainWindow : Window
         _initializing = false;
 
         await UpdateSessionPanel();
+        // El cliente Supabase puede re-enrolar la identidad por su cuenta cuando
+        // el JWT esta por expirar, pidiendo el token de GitHub vigente.
+        _sb.SetGitHubTokenProvider(() => _gh.Token);
+        // Si ya hay sesion guardada de un arranque anterior, enrolar la identidad
+        // ahora (best-effort) para no esperar a un nuevo login.
+        if (_gh.IsAuthenticated) await EnrollIdentityAsync();
         SetModoUi();
         UpdateButtonStates();
         await UpdateAssignmentsBanner();
@@ -558,8 +564,27 @@ public partial class MainWindow : Window
         if (dlg.ShowDialog() == true)
         {
             await UpdateSessionPanel();
+            await EnrollIdentityAsync();
             Log("Sesion iniciada.");
         }
+    }
+
+    /// <summary>
+    /// Intercambia el token de GitHub del alumno por el JWT de identidad
+    /// verificada del backend (enroll-identity) y lo deja portado en el cliente
+    /// Supabase. Best-effort: si no hay token o el enrolado falla, el cliente
+    /// sigue usando el anon key crudo (no bloquea ni rompe el flujo). Se llama
+    /// tras un login exitoso y al arrancar con sesion ya guardada.
+    /// </summary>
+    private async Task EnrollIdentityAsync()
+    {
+        try
+        {
+            var tok = _gh.Token;
+            if (string.IsNullOrEmpty(tok)) return;
+            await _sb.EnrollIdentityAsync(tok);
+        }
+        catch { }
     }
 
     private async Task DoLogoutAsync()
@@ -568,6 +593,7 @@ public partial class MainWindow : Window
         var r = MessageBox.Show("Cerrar sesion y borrar credenciales de este equipo?", "Cerrar sesion", MessageBoxButton.YesNo, MessageBoxImage.Warning);
         if (r != MessageBoxResult.Yes) return;
         _gh.Logout();
+        _sb.SetIdentityToken(null); // volver a anon: ya no hay identidad verificada
         ClearSelectors();
         Log("Sesion cerrada.");
         await UpdateSessionPanel();
@@ -1045,6 +1071,7 @@ public partial class MainWindow : Window
         }
         catch { }
         try { _gh.Logout(); } catch { }
+        try { _sb.SetIdentityToken(null); } catch { } // volver a anon para el siguiente alumno
         ClearSelectors();
         Log("Evaluacion finalizada: internet liberado y sesion de GitHub cerrada.");
         try { await UpdateSessionPanel(); } catch { }
@@ -1665,6 +1692,10 @@ public partial class MainWindow : Window
     // ===================== Admin polling =====================
     private async Task AdminTickAsync()
     {
+        // Refresca el JWT de identidad si esta por expirar (no-op si no hay
+        // identidad o todavia no vence). Antes del resto del poll para que las
+        // llamadas de este tick ya viajen con un token vigente.
+        await _sb.EnsureIdentityFreshAsync();
         await CheckAdminConfigAsync();
         await RefreshBlocklistAsync();
         await UpdateAssignmentsBanner();

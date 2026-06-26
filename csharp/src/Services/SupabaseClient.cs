@@ -34,6 +34,27 @@ public class SupabaseClient
     // lock dirigido NUNCA libera al alumno.
     private bool? _lastKnownTargeted;
 
+    // ===== Identidad verificada (JWT de enroll-identity) =====
+    // El alumno arranca usando el anon key crudo como Bearer (comportamiento
+    // historico). Tras un login exitoso de GitHub se intercambia el token de
+    // GitHub por un JWT HS256 (role=anon) que porta github_username/github_id
+    // VERIFICADOS. Desde entonces, TODAS las llamadas REST/RPC viajan con
+    // Authorization: Bearer <jwt> (apikey sigue siendo el anon). Si no hay JWT
+    // (cliente recien arrancado o enrolado fallido) se cae a anon crudo, asi el
+    // flujo nunca se rompe (BACKWARD-COMPAT, FASE 1).
+    private readonly string _anonKey = Config.SupabaseAnonKey;
+
+    // Serializa la escritura del header Authorization default (puede ocurrir
+    // concurrente con polls en vuelo) y protege _identityToken/_identityExpEpoch.
+    private readonly object _identityLock = new();
+    private string? _identityToken;
+    private long _identityExpEpoch; // exp (epoch segundos) del JWT; 0 = sin identidad
+
+    // Proveedor opcional del token de GitHub vigente, para re-enrolar la
+    // identidad automaticamente cuando el JWT esta por expirar. Sin proveedor,
+    // el cliente solo se enrola cuando el caller invoca EnrollIdentityAsync.
+    private Func<string?>? _githubTokenProvider;
+
     public SupabaseClient()
     {
         // CRITICO: UseProxy=false. Sin esto, cuando bloqueamos internet (proxy
@@ -48,6 +69,135 @@ public class SupabaseClient
     }
 
     private string Rest(string path) => $"{Config.SupabaseUrl}/rest/v1/{path}";
+
+    // ===== Identidad verificada =====
+
+    /// <summary>
+    /// Registra un proveedor del token de GitHub vigente para que el cliente
+    /// pueda re-enrolar la identidad por su cuenta cuando el JWT esta por
+    /// expirar (ver EnsureIdentityFreshAsync). Es opcional: sin proveedor, la
+    /// identidad solo se establece cuando el caller invoca EnrollIdentityAsync.
+    /// </summary>
+    public void SetGitHubTokenProvider(Func<string?>? provider) => _githubTokenProvider = provider;
+
+    /// <summary>
+    /// Porta (o limpia con null) el JWT de identidad verificada. Mientras haya
+    /// token, TODAS las llamadas REST/RPC usan Authorization: Bearer &lt;jwt&gt;
+    /// (apikey sigue siendo el anon). Con null, vuelve al anon key crudo como
+    /// Bearer (backward-compat).
+    ///
+    /// CONCURRENCIA: la escritura del header default puede coincidir con
+    /// peticiones en vuelo, pero solo reemplaza el VALOR de Authorization (no
+    /// agrega/quita headers), de modo que cada request siguiente toma el token
+    /// nuevo o el viejo de forma atomica. El lock serializa multiples
+    /// SetIdentityToken entre si (login + refresh + logout). Es el mismo patron
+    /// que GitHubService usa sobre sus DefaultRequestHeaders.
+    /// </summary>
+    public void SetIdentityToken(string? token)
+    {
+        lock (_identityLock)
+        {
+            _identityToken = string.IsNullOrWhiteSpace(token) ? null : token;
+            if (_identityToken == null) _identityExpEpoch = 0;
+            var bearer = _identityToken ?? _anonKey;
+            _http.DefaultRequestHeaders.Authorization =
+                new AuthenticationHeaderValue("Bearer", bearer);
+        }
+    }
+
+    /// <summary>
+    /// Intercambia el token de GitHub del alumno por un JWT de identidad firmado
+    /// por la Edge Function enroll-identity. La function verifica el token contra
+    /// api.github.com y emite un JWT HS256 con role=anon + github_username/
+    /// github_id. En exito guarda el JWT (SetIdentityToken) y su exp. En
+    /// CUALQUIER fallo deja la identidad en null: el cliente cae a anon crudo y
+    /// el flujo no se rompe. Devuelve true si quedo enrolado.
+    ///
+    /// La llamada a la function se autentica SIEMPRE con el anon key (apikey +
+    /// Authorization = anon), incluso si ya hay un identity JWT portado: forzamos
+    /// el Bearer anon en el request para no encadenar identidades.
+    /// </summary>
+    public async Task<bool> EnrollIdentityAsync(string githubToken)
+    {
+        if (string.IsNullOrWhiteSpace(githubToken)) return false;
+        try
+        {
+            var payload = JsonSerializer.Serialize(new { github_token = githubToken }, JsonOpts);
+            using var req = new HttpRequestMessage(
+                HttpMethod.Post, $"{Config.SupabaseUrl}/functions/v1/enroll-identity")
+            {
+                Content = new StringContent(payload, Encoding.UTF8, "application/json")
+            };
+            // apikey default ya es anon (nunca cambia). Solo forzamos el Bearer
+            // anon en el request para sobrescribir un posible identity JWT default.
+            req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _anonKey);
+
+            using var resp = await _http.SendAsync(req);
+            if (!resp.IsSuccessStatusCode)
+            {
+                SetIdentityToken(null);
+                return false;
+            }
+
+            var json = await resp.Content.ReadAsStringAsync();
+            var data = JsonSerializer.Deserialize<EnrollIdentityResponse>(json, JsonOpts);
+            if (data?.Token is { Length: > 0 } jwt)
+            {
+                SetIdentityToken(jwt);
+                lock (_identityLock) { _identityExpEpoch = data.Exp; }
+                return true;
+            }
+
+            // 200 sin token utilizable: tratar como fallo (cae a anon).
+            SetIdentityToken(null);
+            return false;
+        }
+        catch
+        {
+            SetIdentityToken(null);
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// True si hay identidad portada y el JWT vence dentro de los proximos 2 min
+    /// (o ya vencio). Usado para re-enrolar proactivamente antes de un 401.
+    /// </summary>
+    private bool IdentityExpiringSoon()
+    {
+        lock (_identityLock)
+        {
+            if (_identityToken == null || _identityExpEpoch <= 0) return false;
+            var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+            return _identityExpEpoch - now <= 120;
+        }
+    }
+
+    /// <summary>
+    /// Re-enrola la identidad si el JWT vigente esta por expirar, usando el
+    /// proveedor de token de GitHub registrado. Best-effort y barato: no hace
+    /// nada si no hay identidad, si todavia no vence pronto, o si no hay
+    /// proveedor/token. Pensado para llamarse en el poll periodico del cliente.
+    /// El enrolado inicial NO ocurre aca (lo dispara el caller tras el login).
+    /// </summary>
+    public async Task EnsureIdentityFreshAsync()
+    {
+        if (!IdentityExpiringSoon()) return;
+        var gh = _githubTokenProvider?.Invoke();
+        if (string.IsNullOrWhiteSpace(gh)) return;
+        await EnrollIdentityAsync(gh);
+    }
+
+    /// <summary>Respuesta de la Edge Function enroll-identity.</summary>
+    private sealed class EnrollIdentityResponse
+    {
+        public string? Token { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("github_username")]
+        public string? GithubUsername { get; set; }
+
+        public long Exp { get; set; }
+    }
 
     // ===== Control =====
     /// <summary>
