@@ -1766,13 +1766,21 @@ public partial class MainWindow : Window
             Log("[ADMIN] Bloqueo de Copilot desactivado.");
         }
 
-        if (cfg.ForceLockdown && !screenUnblocked && !_remoteLockdownActive)
+        // La pantalla roja remota SOLO debe saltar en modo evaluacion: el control
+        // global force_lockdown no debe bloquear a un alumno que no esta rindiendo.
+        // Sin evaluation_id activo (no acepto/selecciono evaluacion) NO se bloquea.
+        bool inExam = StudentSection.GetEvaluationId() is { } examEvalId && examEvalId > 0;
+        if (cfg.ForceLockdown && inExam && !screenUnblocked && !_remoteLockdownActive)
         {
             _remoteLockdownActive = true;
             Log("[ADMIN] Lockdown remoto activado.");
+            // Heartbeat inmediato (fire-and-forget) para que el panel vea a ESTE PC
+            // como bloqueado al instante; el AdminTick queda detenido tras ShowDialog.
+            _ = SendHeartbeatAsync();
             var alert = new CheatWindow("(remoto)", 0, new[] { "Lockdown remoto del profesor" }, remoteSource: true,
                 checkStillLocked: () => !ScreenUnblockedSync()
-                    && Task.Run(() => _sb.IsForceLockdownAsync()).GetAwaiter().GetResult());
+                    && Task.Run(() => _sb.IsForceLockdownAsync()).GetAwaiter().GetResult(),
+                onHeartbeat: () => _ = SendHeartbeatAsync());
             alert.ShowDialog();
             _remoteLockdownActive = false;
         }
@@ -1831,10 +1839,12 @@ public partial class MainWindow : Window
             var reason = await _sb.GetTargetedReasonAsync(Environment.MachineName, _user.Login) ?? "El profesor te bloqueo";
             Log("[ADMIN] Lockdown DIRIGIDO a tu PC.");
             var me = _user.Login;
+            _ = SendHeartbeatAsync();
             var alert = new CheatWindow("(dirigido)", 0, new[] { reason }, remoteSource: true,
                 checkStillLocked: () => !ScreenUnblockedSync() && Task.Run(() =>
                     _sb.IsTargetedLockedAsync(Environment.MachineName, me).GetAwaiter().GetResult()
-                    || _sb.IsForceLockdownAsync().GetAwaiter().GetResult()).GetAwaiter().GetResult());
+                    || _sb.IsForceLockdownAsync().GetAwaiter().GetResult()).GetAwaiter().GetResult(),
+                onHeartbeat: () => _ = SendHeartbeatAsync());
             alert.ShowDialog();
             _targetedLockdownActive = false;
         }
@@ -1869,11 +1879,13 @@ public partial class MainWindow : Window
         bool reported = await _sb.ReportSelfLockAsync(
             pc, me, StudentSection.Get(), filesNames.FirstOrDefault() ?? reasonOrRepo);
 
+        _ = SendHeartbeatAsync();
         CheatWindow alert = reported
             ? new CheatWindow(reasonOrRepo, filesCount, filesNames, remoteSource: true,
                 checkStillLocked: () => !ScreenUnblockedSync() && Task.Run(() =>
                     _sb.IsTargetedLockedAsync(pc, me).GetAwaiter().GetResult()
-                    || _sb.IsForceLockdownAsync().GetAwaiter().GetResult()).GetAwaiter().GetResult())
+                    || _sb.IsForceLockdownAsync().GetAwaiter().GetResult()).GetAwaiter().GetResult(),
+                onHeartbeat: () => _ = SendHeartbeatAsync())
             : new CheatWindow(reasonOrRepo, filesCount, filesNames);
         alert.Owner = this;
         alert.ShowDialog();

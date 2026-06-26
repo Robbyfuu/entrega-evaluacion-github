@@ -14,6 +14,7 @@ public partial class CheatWindow : Window
 {
     private readonly bool _remoteSource;
     private readonly Func<bool>? _checkStillLocked;
+    private readonly Action? _onHeartbeat;
     private DispatcherTimer? _releaseTimer;
 
     // Mientras no se libere correctamente, no se permite cerrar la ventana.
@@ -25,12 +26,14 @@ public partial class CheatWindow : Window
         string[] filesSample,
         bool isPersistent = false,
         bool remoteSource = false,
-        Func<bool>? checkStillLocked = null)
+        Func<bool>? checkStillLocked = null,
+        Action? onHeartbeat = null)
     {
         InitializeComponent();
 
         _remoteSource = remoteSource;
         _checkStillLocked = checkStillLocked;
+        _onHeartbeat = onHeartbeat;
 
         var sample = string.Join(", ", filesSample);
         var msg =
@@ -58,14 +61,19 @@ public partial class CheatWindow : Window
         Topmost = true;
         Activate();
 
-        if (_remoteSource && _checkStillLocked != null)
+        // Timer mientras la pantalla roja esta arriba: (1) late el heartbeat para
+        // que el panel siga viendo a ESTE PC como online + bloqueado (el AdminTick
+        // queda bloqueado tras el ShowDialog modal), y (2) si es remoto, consulta
+        // si ya se libero para cerrarse.
+        if (_onHeartbeat != null || (_remoteSource && _checkStillLocked != null))
         {
             _releaseTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(10000) };
             _releaseTimer.Tick += (_, _) =>
             {
+                try { _onHeartbeat?.Invoke(); } catch { }
                 try
                 {
-                    if (!_checkStillLocked())
+                    if (_checkStillLocked != null && !_checkStillLocked())
                     {
                         _releaseTimer?.Stop();
                         LockdownService.Release();
