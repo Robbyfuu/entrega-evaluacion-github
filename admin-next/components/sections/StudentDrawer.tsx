@@ -21,6 +21,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { safeHref } from "@/lib/url";
 
 interface StudentDrawerProps {
   student: UnifiedStudent | null;
@@ -158,7 +159,7 @@ export function StudentDrawer({
                   {student.submitted && submission?.repo_url ? (
                     <>
                       <a
-                        href={submission.repo_url}
+                        href={safeHref(submission.repo_url) ?? undefined}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="inline-flex items-center gap-1.5 text-sm text-primary underline-offset-2 hover:underline"

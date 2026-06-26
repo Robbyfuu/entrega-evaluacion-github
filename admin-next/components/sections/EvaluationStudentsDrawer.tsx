@@ -24,6 +24,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
+import { safeHref } from "@/lib/url";
 
 interface EnrollRow {
   id: number;
@@ -214,7 +215,7 @@ export function EvaluationStudentsDrawer({
                               <TableCell>
                                 {sub?.repo_url ? (
                                   <a
-                                    href={sub.repo_url}
+                                    href={safeHref(sub.repo_url) ?? undefined}
                                     target="_blank"
                                     rel="noopener noreferrer"
                                     className="inline-flex max-w-[220px] items-center gap-1 truncate font-mono text-xs text-primary hover:underline"

@@ -19,6 +19,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { safeHref } from "@/lib/url";
 import {
   Select,
   SelectContent,
@@ -389,7 +390,7 @@ export function AssignmentsSection() {
                       <TableCell>
                         {a.classroom_url ? (
                           <a
-                            href={a.classroom_url}
+                            href={safeHref(a.classroom_url) ?? undefined}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="inline-flex max-w-[240px] items-center gap-1 truncate font-mono text-xs text-primary hover:underline"

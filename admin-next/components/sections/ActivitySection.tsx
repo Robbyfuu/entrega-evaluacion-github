@@ -32,6 +32,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
+import { safeHref } from "@/lib/url";
 
 // Sentinel value for the "all" option in shadcn Select (it cannot hold "").
 const ALL = "__all__";
@@ -218,7 +219,7 @@ export function ActivitySection() {
                     <TableCell>
                       {e.repo_url ? (
                         <a
-                          href={e.repo_url}
+                          href={safeHref(e.repo_url) ?? undefined}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="inline-flex items-center gap-1 text-primary hover:underline"

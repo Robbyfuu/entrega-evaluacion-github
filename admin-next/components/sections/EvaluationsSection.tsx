@@ -21,6 +21,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { safeHref } from "@/lib/url";
 import {
   Select,
   SelectContent,
@@ -447,7 +448,7 @@ export function EvaluationsSection() {
                       <TableCell>
                         {e.classroom_url ? (
                           <a
-                            href={e.classroom_url}
+                            href={safeHref(e.classroom_url) ?? undefined}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="inline-flex max-w-[280px] items-center gap-1 truncate font-mono text-xs text-primary hover:underline"
