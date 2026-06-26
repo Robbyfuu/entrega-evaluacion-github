@@ -47,11 +47,29 @@ public static class ExamPdfService
         {
             Directory.CreateDirectory(Dir);
             var safe = Path.GetFileName(storagePath); // evita traversal
-            var local = Path.Combine(Dir, safe);
+            // Forzar SIEMPRE la extension .pdf: nunca confiar en storagePath para
+            // decidir con que se abre el archivo (UseShellExecute resuelve por
+            // extension). Asi un objeto .exe/.bat/.cmd no puede shell-ejecutarse.
+            var safePdf = Path.GetFileNameWithoutExtension(safe) + ".pdf";
+            var local = Path.Combine(Dir, safePdf);
 
             var url = $"{Config.SupabaseUrl}/storage/v1/object/exam-pdfs/{Uri.EscapeDataString(storagePath)}";
             var bytes = await Http.GetByteArrayAsync(url);
             await File.WriteAllBytesAsync(local, bytes);
+
+            // Validar MAGIC BYTES del contenido descargado: un PDF real empieza con
+            // "%PDF-" (25 50 44 46 2D). Si no coincide, NO abrir: borrar el archivo
+            // y devolver null. Esto bloquea el RCE distribuido (sec-client-08) donde
+            // un objeto no-PDF se shell-ejecutaria en TODOS los clientes de la sala.
+            if (!HasPdfMagicBytes(bytes))
+            {
+                Debug.WriteLine(
+                    $"[ExamPdf] contenido NO es PDF (magic bytes invalidos) para '{storagePath}'; " +
+                    "se borra y se aborta apertura por seguridad (sec-client-08)");
+                try { File.Delete(local); }
+                catch (Exception delEx) { Debug.WriteLine($"[ExamPdf] borrado no-PDF fallo: {delEx.Message}"); }
+                return null;
+            }
 
             Process.Start(new ProcessStartInfo(local) { UseShellExecute = true });
             return local;
@@ -61,6 +79,21 @@ public static class ExamPdfService
             Debug.WriteLine($"[ExamPdf] descarga/abrir fallo: {ex.Message}");
             return null;
         }
+    }
+
+    // Magic bytes de un PDF: "%PDF-" => 25 50 44 46 2D.
+    private static readonly byte[] PdfMagic = { 0x25, 0x50, 0x44, 0x46, 0x2D };
+
+    /// <summary>
+    /// True si el contenido empieza con la firma "%PDF-". Defensa contra
+    /// shell-execute de objetos no-PDF (RCE distribuido, sec-client-08).
+    /// </summary>
+    private static bool HasPdfMagicBytes(byte[] bytes)
+    {
+        if (bytes is null || bytes.Length < PdfMagic.Length) return false;
+        for (var i = 0; i < PdfMagic.Length; i++)
+            if (bytes[i] != PdfMagic[i]) return false;
+        return true;
     }
 
     /// <summary>
