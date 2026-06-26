@@ -56,7 +56,12 @@ export function OnlineClientsSection({
   >({
     table: "online_clients",
     order: { column: "last_seen", ascending: false },
-    limit: 100,
+    // Cap holgado para un lab multi-seccion: con un top-N chico (100) y varias
+    // secciones rindiendo a la vez, alumnos realmente online podian quedar fuera
+    // del fetch Y del cap de merge realtime (useRealtimeTable corta a `limit` en
+    // ambos lados). El orden last_seen DESC ya prioriza los heartbeats recientes,
+    // asi que 1000 garantiza que ningun PC online se pierda del monitoreo.
+    limit: 1000,
     // Identity mirrors the (pc_name, github_username, COALESCE(evaluation_id,0))
     // re-sit isolation key: the same PC re-sitting another evaluation is a
     // distinct live row, not an overwrite.
