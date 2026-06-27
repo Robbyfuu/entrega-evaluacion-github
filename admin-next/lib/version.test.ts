@@ -18,9 +18,12 @@ describe("compareVersions", () => {
     expect(compareVersions("2.7.1", "2.7")).toBeGreaterThan(0);
   });
 
-  it("segmentos no numéricos cuentan como 0", () => {
+  it("segmentos no numéricos (incl. prefijos parciales) cuentan como 0", () => {
     expect(compareVersions("2.7.x", "2.7.0")).toBe(0);
     expect(compareVersions("2.7.1", "2.7.x")).toBeGreaterThan(0);
+    // Estricto: "1a" NO es 1 (a diferencia de parseInt) -> cuenta como 0.
+    expect(compareVersions("2.7.1a", "2.7.0")).toBe(0);
+    expect(compareVersions("2.7.2", "2.7.1a")).toBeGreaterThan(0);
   });
 
   it("diferencia en el segmento mayor domina", () => {
