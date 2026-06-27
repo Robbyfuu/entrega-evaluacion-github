@@ -1,13 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Globe, Lock, MonitorOff, MonitorSmartphone, RefreshCw, Unlock } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import type { OnlineClientRow, SuspiciousProcess } from "@/lib/types";
 import { useRealtimeTable } from "@/hooks/useRealtimeTable";
 import { useSectionLookup } from "@/hooks/useSectionLookup";
 import { fmt, timeAgo } from "@/lib/format";
-import { FALLBACK_SUSPICIOUS_PROCESSES, normalizeProcessName } from "@/lib/suspicious";
+import { makeSuspChecker, ONLINE_WINDOW_MS } from "@/lib/section-workspace";
 import { BADGE } from "@/lib/colors";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/button";
@@ -27,8 +27,6 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
-
-const ONLINE_WINDOW_MS = 90_000;
 
 // Compara versiones "x.y.z": >0 si a>b, <0 si a<b, 0 iguales.
 function cmpVer(a: string, b: string): number {
@@ -80,37 +78,9 @@ export function OnlineClientsSection({
     getId: (r) => r.id,
   });
 
-  // Build per-section lookup. Falls back to the static set when the table is
-  // empty/unavailable, mirroring the client's fallback invariant.
-  const suspicious = useMemo(() => {
-    const globalSet = new Set<string>();
-    const bySection = new Map<string, Set<string>>();
-    for (const r of suspiciousRows) {
-      const norm = normalizeProcessName(r.process_name);
-      if (!norm) continue;
-      if (r.section === null) {
-        globalSet.add(norm);
-      } else {
-        const set = bySection.get(r.section) ?? new Set<string>();
-        set.add(norm);
-        bySection.set(r.section, set);
-      }
-    }
-    const useFallback = suspiciousRows.length === 0;
-    return { globalSet, bySection, useFallback };
-  }, [suspiciousRows]);
-
-  const isSuspiciousFor = useCallback(
-    (procName: string | null | undefined, clientSection: string | null) => {
-      const norm = normalizeProcessName(procName ?? "");
-      if (!norm) return false;
-      if (suspicious.useFallback) return FALLBACK_SUSPICIOUS_PROCESSES.has(norm);
-      if (suspicious.globalSet.has(norm)) return true;
-      if (clientSection) return suspicious.bySection.get(clientSection)?.has(norm) ?? false;
-      return false;
-    },
-    [suspicious]
-  );
+  // Predicado de proceso sospechoso. Misma logica (global/por-seccion + fallback
+  // estatico) ahora compartida via makeSuspChecker (lib/section-workspace).
+  const isSuspiciousFor = useMemo(() => makeSuspChecker(suspiciousRows), [suspiciousRows]);
 
   // Tick every 5s so the "online" filter and "hace Ns" labels stay fresh.
   const [now, setNow] = useState(() => Date.now());

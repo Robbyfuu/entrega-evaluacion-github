@@ -6,6 +6,7 @@ import type { OnlineClientRow } from "@/lib/types";
 import { useRealtimeTable } from "@/hooks/useRealtimeTable";
 import { useSectionLookup } from "@/hooks/useSectionLookup";
 import { fmt, timeAgo } from "@/lib/format";
+import { ONLINE_WINDOW_MS } from "@/lib/section-workspace";
 import { BADGE } from "@/lib/colors";
 import { Badge } from "@/components/ui/Badge";
 import {
@@ -24,8 +25,6 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
-
-const ONLINE_WINDOW_MS = 90_000;
 
 interface BlockedOfflineSectionProps {
   onCountChange?: (count: number) => void;
