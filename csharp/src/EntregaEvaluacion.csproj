@@ -36,7 +36,7 @@
 
   <ItemGroup>
     <!-- Git nativo: no requiere git CLI instalado -->
-    <PackageReference Include="LibGit2Sharp" Version="0.30.0" />
+    <PackageReference Include="LibGit2Sharp" Version="0.31.0" />
     <!-- DPAPI para cifrar el token en disco (per-user) -->
     <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="8.0.0" />
     <!-- Velopack: auto-update framework (instalador + delta updates) -->
