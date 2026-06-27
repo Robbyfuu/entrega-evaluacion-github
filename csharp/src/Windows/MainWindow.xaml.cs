@@ -5,6 +5,7 @@ using System.Windows;
 using System.Windows.Media;
 using System.Windows.Threading;
 using Microsoft.Win32;
+using EntregaEvaluacion.Core;
 using EntregaEvaluacion.Models;
 using EntregaEvaluacion.Services;
 
@@ -647,20 +648,6 @@ public partial class MainWindow : Window
         UpdateRepoPreview();
     }
 
-    private static string Sanitize(string text)
-    {
-        var normalized = text.Normalize(System.Text.NormalizationForm.FormD);
-        var sb = new System.Text.StringBuilder();
-        foreach (var c in normalized)
-            if (System.Globalization.CharUnicodeInfo.GetUnicodeCategory(c) != System.Globalization.UnicodeCategory.NonSpacingMark)
-                sb.Append(c);
-        var clean = sb.ToString().Normalize(System.Text.NormalizationForm.FormC).ToLowerInvariant();
-        clean = Regex.Replace(clean, @"\s+", "-");
-        clean = Regex.Replace(clean, @"[^a-z0-9\-]", "");
-        clean = Regex.Replace(clean, @"-+", "-").Trim('-');
-        return clean;
-    }
-
     private string? GetRepoName()
     {
         if (ModoExistente.IsChecked == true)
@@ -671,7 +658,7 @@ public partial class MainWindow : Window
         var n = NombreBox.Text.Trim();
         var t = (TipoCombo.SelectedItem as string ?? "").Trim();
         if (string.IsNullOrEmpty(n) || string.IsNullOrEmpty(t)) return null;
-        return Sanitize($"{n}-{t}");
+        return RepoNameSanitizer.Sanitize($"{n}-{t}");
     }
 
     private void UpdateRepoPreview()
@@ -1149,24 +1136,6 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// Nombre de repo esperado para una tarea de Classroom: {slug-del-titulo}-{username}.
-    /// Reusa la misma normalizacion (Sanitize) que el resto de la app.
-    /// </summary>
-    private static string ExpectedClassroomRepo(string title, string username)
-        => $"{Sanitize(title)}-{username.ToLowerInvariant()}";
-
-    /// <summary>
-    /// Prefijo de slug de una tarea de Classroom: {slug-del-titulo}-. GitHub
-    /// Classroom nombra el repo del alumno como {slug}-{login}, pero el login
-    /// puede no coincidir byte a byte con el username GitHub (mayusculas,
-    /// reclaim de cuenta). La invitacion se asocia por PREFIJO de slug, no por
-    /// igualdad exacta con ExpectedClassroomRepo, para no perder invitaciones
-    /// con login distinto al esperado.
-    /// </summary>
-    private static string ClassroomRepoPrefix(string title)
-        => $"{Sanitize(title)}-";
-
-    /// <summary>
     /// Org efectiva de la evaluacion activa (para el desempate de invitaciones
     /// por inviter-org). Resuelve la Evaluation cargada que matchea el
     /// evaluation_id activo; null si no hay evaluacion resuelta.
@@ -1253,7 +1222,7 @@ public partial class MainWindow : Window
 
             if (!string.IsNullOrEmpty(me))
             {
-                var expected = ExpectedClassroomRepo(a.Title, me);
+                var expected = ClassroomRepoNaming.ExpectedClassroomRepo(a.Title, me);
                 if (repoNames.Contains(expected))
                 {
                     hasRepo = true;
@@ -1369,7 +1338,7 @@ public partial class MainWindow : Window
         bool bestOrgMatch = false;
         foreach (var a in candidates)
         {
-            var prefix = ClassroomRepoPrefix(a.Title);
+            var prefix = ClassroomRepoNaming.ClassroomRepoPrefix(a.Title);
             if (!repoName.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) continue;
 
             var expectedOrg = evalOrg ?? a.Org;
@@ -1538,7 +1507,7 @@ public partial class MainWindow : Window
         var asg = await GetSectionAssignmentsAsync();
         foreach (var a in asg)
         {
-            if (string.Equals(ExpectedClassroomRepo(a.Title, me), repoName, StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(ClassroomRepoNaming.ExpectedClassroomRepo(a.Title, me), repoName, StringComparison.OrdinalIgnoreCase))
             {
                 await _sb.RecordAcceptanceAsync(me, a.Id, a.Title, StudentSection.Get(), repoName, repoUrl, StudentSection.GetEvaluationId());
                 break;
@@ -1564,7 +1533,7 @@ public partial class MainWindow : Window
             if (asg.Count == 0) return;
             foreach (var a in asg)
             {
-                if (string.Equals(ExpectedClassroomRepo(a.Title, me), repoName, StringComparison.OrdinalIgnoreCase))
+                if (string.Equals(ClassroomRepoNaming.ExpectedClassroomRepo(a.Title, me), repoName, StringComparison.OrdinalIgnoreCase))
                 {
                     await _sb.RecordSubmissionAsync(a.Id, me, repoUrl);
                     return;
@@ -1591,7 +1560,7 @@ public partial class MainWindow : Window
         var me = _user?.Login;
         if (!string.IsNullOrEmpty(me))
         {
-            var repoName = status.RepoName ?? ExpectedClassroomRepo(a.Title, me);
+            var repoName = status.RepoName ?? ClassroomRepoNaming.ExpectedClassroomRepo(a.Title, me);
             var repoUrl = status.RepoUrl ?? $"https://github.com/{me}/{repoName}";
             await _sb.RecordAcceptanceAsync(me, a.Id, a.Title, StudentSection.Get(), repoName, repoUrl, StudentSection.GetEvaluationId());
         }
