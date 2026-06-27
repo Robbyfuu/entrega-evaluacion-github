@@ -8,8 +8,10 @@ public static class LogClassifier
 {
     // Decide si un mensaje de Log() merece toast y de que tipo.
     // Devuelve null para mensajes rutinarios (solo barra de estado).
-    public static ToastKind? Classify(string msg)
+    public static ToastKind? Classify(string? msg)
     {
+        // Mensaje nulo/vacio -> sin toast (degradar, no romper la UI).
+        if (string.IsNullOrEmpty(msg)) return null;
         var m = msg.ToLowerInvariant();
         if (m.Contains("error") || m.Contains("fallo") || m.Contains("trampa") || m.StartsWith("no se"))
             return ToastKind.Error;

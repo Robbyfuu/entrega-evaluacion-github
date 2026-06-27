@@ -78,6 +78,26 @@ public class ClassroomRepoMatcherTests
     }
 
     [Fact]
+    public void EvalOrg_OverridesCandidateOrg()
+    {
+        // Con evalOrg seteado, expectedOrg = evalOrg para TODOS (ignora Candidate.Org).
+        // b.Org="orgB" coincidiria con inviter "orgB" si se usara su Org (ver
+        // EqualLengthTie_OrgMatchWins, que da "b"), pero evalOrg="orgA" lo
+        // sobrescribe -> ningun candidato matchea el inviter -> gana el primero
+        // estable, NO "b". Congela el contrato del override CurrentEvaluationOrg().
+        var candidates = new[]
+        {
+            new Candidate("a", "Tarea 1", "orgA"),
+            new Candidate("b", "Tarea 1", "orgB"),
+        };
+
+        var match = Pick(candidates, "tarea-1-login", inviter: "orgB", evalOrg: "orgA");
+
+        Assert.NotNull(match);
+        Assert.Equal("a", match!.Id);
+    }
+
+    [Fact]
     public void TotalTie_FirstStableCandidateWins()
     {
         // Mismo titulo, misma org, sin org-match: empate total -> gana el primero

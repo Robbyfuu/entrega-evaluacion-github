@@ -43,4 +43,13 @@ public class LogClassifierTests
         // No matchea ninguna categoria -> solo barra de estado.
         Assert.Null(LogClassifier.Classify("Subiendo archivos al repositorio"));
     }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    public void Classify_NullOrEmpty_ReturnsNull(string? msg)
+    {
+        // Mensaje nulo/vacio -> sin toast (no debe lanzar NullReferenceException).
+        Assert.Null(LogClassifier.Classify(msg));
+    }
 }
