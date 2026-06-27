@@ -42,15 +42,11 @@ public static class Config
     // fetch a la tabla falla por red O devuelve vacio (ver ProcessMonitor.IsSuspicious
     // y SupabaseClient.GetBlocklistAsync). Mantener normalizada (sin .exe, lowercase)
     // y sincronizada con el seed de la migracion.
+    // Re-export delgado a la capa Core (logica pura, testeable cross-platform).
+    // La fuente unica es EntregaEvaluacion.Core.SuspiciousProcesses.Fallback;
+    // los callers siguen usando Config.SuspiciousProcesses sin cambios.
     public static readonly string[] SuspiciousProcesses =
-    {
-        "chrome", "msedge", "firefox", "opera", "brave", "iexplore", "vivaldi", "tor",
-        "whatsapp", "discord", "telegram", "slack", "teams", "skype",
-        "notion", "obsidian", "evernote", "onenote", "winword", "excel",
-        "code", "pycharm", "pycharm64", "sublime_text", "notepad", "notepad++", "devenv",
-        "anydesk", "teamviewer", "rustdesk", "msrdc",
-        "chatgpt", "claude", "copilot"
-    };
+        EntregaEvaluacion.Core.SuspiciousProcesses.Fallback;
 
     /// <summary>
     /// Normaliza un nombre de proceso para comparar contra el blocklist. DEBE
@@ -66,14 +62,11 @@ public static class Config
     ///   5. trim final (por si quedaba espacio antes del ".exe").
     /// Ej.: "Chrome.exe" -> "chrome"; "  CODE  " -> "code"; "notepad++" -> "notepad++".
     /// </summary>
+    // Re-export delgado a la capa Core. Behavior-preserving: el cuerpo real vive
+    // en EntregaEvaluacion.Core.SuspiciousProcesses.Normalize y esta cubierto por
+    // golden tests cross-runtime (SuspiciousProcessesTests.cs / suspicious.test.ts).
     public static string NormalizeProcessName(string name)
-    {
-        if (string.IsNullOrWhiteSpace(name)) return "";
-        var s = name.Trim().ToLowerInvariant();
-        if (s.EndsWith(".exe", StringComparison.Ordinal))
-            s = s.Substring(0, s.Length - 4);
-        return s.Trim();
-    }
+        => EntregaEvaluacion.Core.SuspiciousProcesses.Normalize(name);
 
     // Archivos permitidos en un repo "limpio" (anti-trampa)
     public static readonly string[] AllowedRepoFiles =
