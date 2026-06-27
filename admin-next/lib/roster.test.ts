@@ -26,13 +26,22 @@ describe("parseRoster — happy path", () => {
     expect(roster.courseId).toBe("");
   });
 
-  it("email/github no-string -> null (coerción)", () => {
+  it("email/github no-string o vacío -> null (coerción)", () => {
     const roster = parseRoster({
       section: "001D",
       students: [{ blackboard_student_id: "BB-002", full_name: "Sin Datos", email: 123, github_username: "" }],
     });
     expect(roster.students[0].email).toBeNull();
     expect(roster.students[0].github_username).toBeNull();
+  });
+
+  it("email vacío -> null (consistente con github_username)", () => {
+    const roster = parseRoster({
+      section: "001D",
+      students: [{ blackboard_student_id: "BB-003", full_name: "Sin Email", email: "", github_username: "gh" }],
+    });
+    expect(roster.students[0].email).toBeNull();
+    expect(roster.students[0].github_username).toBe("gh");
   });
 
   it("acepta lista de students vacía", () => {

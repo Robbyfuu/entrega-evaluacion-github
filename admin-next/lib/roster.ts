@@ -41,7 +41,9 @@ export function parseRoster(raw: unknown): RosterFile {
     return {
       blackboard_student_id: so.blackboard_student_id,
       full_name: so.full_name,
-      email: typeof so.email === "string" ? so.email : null,
+      // Email vacio -> null (consistente con github_username y con lo que espera
+      // el downstream: el RPC y el placeholder de la UI tratan "sin email" como null).
+      email: typeof so.email === "string" && so.email ? so.email : null,
       github_username:
         typeof so.github_username === "string" && so.github_username
           ? so.github_username
