@@ -19,6 +19,10 @@ const NORMALIZE_VECTORS: ReadonlyArray<readonly [string, string]> = [
   [".exe", ""], // solo el sufijo -> vacio
   ["", ""], // vacio
   ["   ", ""], // solo whitespace
+  // No-ASCII: latin acentuado concuerda byte-a-byte con ToLowerInvariant (.NET).
+  // Chars patologicos (U+0130 I turca, U+1E9E ss) SI divergen entre runtimes y
+  // quedan fuera de contrato (los nombres de proceso reales son ASCII/latin).
+  ["Café.EXE", "café"], // acento preservado + .exe
 ];
 
 describe("normalizeProcessName (paridad con C# SuspiciousProcesses.Normalize)", () => {

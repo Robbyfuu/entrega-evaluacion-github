@@ -24,6 +24,12 @@ public class SuspiciousProcessesTests
     [InlineData(".exe", "")]                                      // solo el sufijo -> vacio
     [InlineData("", "")]                                          // vacio
     [InlineData("   ", "")]                                       // solo whitespace
+    // No-ASCII: latin acentuado concuerda byte-a-byte entre ToLowerInvariant (.NET)
+    // y toLowerCase (JS). NOTA: caracteres patologicos como U+0130 (I turca) o
+    // U+1E9E (ss) SI divergen entre runtimes; quedan FUERA de contrato porque los
+    // nombres de proceso reales son ASCII/latin. Si algun dia un proceso usa esos
+    // chars, este golden test forzaria una decision explicita de contrato.
+    [InlineData("Café.EXE", "café")]                              // acento preservado + .exe
     public void Normalize_ProducesExpectedOutput(string input, string expected)
     {
         Assert.Equal(expected, SuspiciousProcesses.Normalize(input));
