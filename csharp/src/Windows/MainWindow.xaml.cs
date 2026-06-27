@@ -881,8 +881,9 @@ public partial class MainWindow : Window
             if (!string.IsNullOrEmpty(me))
             {
                 var repoName = inv.Repository?.Name ?? "";
-                var match = PickAssignmentByLongestPrefix(
-                    asg, repoName, inv.Inviter?.Login, evalOrg);
+                var match = ClassroomRepoMatcher.PickByLongestPrefix(
+                    asg, repoName, inv.Inviter?.Login, evalOrg,
+                    a => a.Title, a => a.Org);
                 if (match != null)
                 {
                     var repoUrl = repoFullName != null
@@ -1297,8 +1298,8 @@ public partial class MainWindow : Window
     /// Resuelve, para una invitacion de repo, la tarea (AssignmentStatus) a la
     /// que pertenece usando LONGEST-PREFIX-WINS. Solo considera tareas aun sin
     /// invitacion asociada (InvitationPending=false) y delega el algoritmo de
-    /// matching al core compartido PickAssignmentByLongestPrefix para que el
-    /// banner y AcceptInvitationsAsync usen EXACTAMENTE la misma logica.
+    /// matching al core compartido ClassroomRepoMatcher.PickByLongestPrefix para
+    /// que el banner y AcceptInvitationsAsync usen EXACTAMENTE la misma logica.
     /// </summary>
     private AssignmentStatus? MatchAssignmentForRepo(
         List<AssignmentStatus> statuses, RepoInvitation inv)
@@ -1309,54 +1310,12 @@ public partial class MainWindow : Window
         // Solo tareas que aun no tienen invitacion: asi cada invitacion se
         // asigna a lo sumo a una tarea (matching bipartito).
         var unclaimed = statuses.Where(s => !s.InvitationPending).ToList();
-        var match = PickAssignmentByLongestPrefix(
+        var match = ClassroomRepoMatcher.PickByLongestPrefix(
             unclaimed.Select(s => s.Assignment),
-            repoName, inv.Inviter?.Login, CurrentEvaluationOrg());
+            repoName, inv.Inviter?.Login, CurrentEvaluationOrg(),
+            a => a.Title, a => a.Org);
         if (match == null) return null;
         return unclaimed.FirstOrDefault(s => ReferenceEquals(s.Assignment, match));
-    }
-
-    /// <summary>
-    /// Core compartido de asociacion invitacion -> tarea con LONGEST-PREFIX-WINS.
-    ///
-    /// Entre las tareas cuyo prefijo de slug ({Sanitize(title)}-) es prefijo del
-    /// nombre del repo invitado, gana la del prefijo MAS LARGO (mas especifica):
-    /// asi "Tarea Extra" ("tarea-extra-") reclama "tarea-extra-login" en vez de
-    /// "Tarea" ("tarea-"), eliminando la colision de prefijos dependiente del
-    /// orden. Desempate entre prefijos de IGUAL longitud: preferir la tarea cuyo
-    /// expectedOrg (evalOrg ?? Assignment.Org) coincide con el inviter; ante
-    /// empate total gana la primera en orden estable de entrada. Devuelve null
-    /// si ninguna tarea matchea. El resultado es DETERMINISTA.
-    /// </summary>
-    private static Assignment? PickAssignmentByLongestPrefix(
-        IEnumerable<Assignment> candidates, string repoName, string? inviter, string? evalOrg)
-    {
-        if (string.IsNullOrEmpty(repoName)) return null;
-
-        Assignment? best = null;
-        int bestLen = -1;
-        bool bestOrgMatch = false;
-        foreach (var a in candidates)
-        {
-            var prefix = ClassroomRepoNaming.ClassroomRepoPrefix(a.Title);
-            if (!repoName.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) continue;
-
-            var expectedOrg = evalOrg ?? a.Org;
-            bool orgMatch = !string.IsNullOrEmpty(expectedOrg)
-                && string.Equals(inviter, expectedOrg, StringComparison.OrdinalIgnoreCase);
-
-            // Prioridad: (1) prefijo mas largo; (2) a igual longitud, el que
-            // coincide en org. Determinista: el primer candidato estable gana
-            // ante empate total.
-            if (prefix.Length > bestLen
-                || (prefix.Length == bestLen && orgMatch && !bestOrgMatch))
-            {
-                best = a;
-                bestLen = prefix.Length;
-                bestOrgMatch = orgMatch;
-            }
-        }
-        return best;
     }
 
     private async Task UpdateAssignmentsBanner()
@@ -1969,7 +1928,7 @@ public partial class MainWindow : Window
         StatusText.Text = msg;
 
         // Toast para eventos clave (login, repo creado/clonado, subida, errores).
-        var kind = ClassifyLog(msg);
+        var kind = LogClassifier.Classify(msg);
         if (kind != null) ShowToast(msg, kind.Value);
     }
 
@@ -1977,22 +1936,6 @@ public partial class MainWindow : Window
     {
         if (!Dispatcher.CheckAccess()) { Dispatcher.Invoke(() => Status(msg)); return; }
         StatusText.Text = msg;
-    }
-
-    // Decide si un mensaje de Log() merece toast y de que tipo.
-    // Devuelve null para mensajes rutinarios (solo barra de estado).
-    private static ToastKind? ClassifyLog(string msg)
-    {
-        var m = msg.ToLowerInvariant();
-        if (m.Contains("error") || m.Contains("fallo") || m.Contains("trampa") || m.StartsWith("no se"))
-            return ToastKind.Error;
-        if (m.StartsWith("ok ") || m.Contains("completada") || m.Contains("creado") ||
-            m.Contains("clonado") || m.Contains("sesion iniciada") || m.Contains("sesion cerrada") ||
-            m.Contains("limpio"))
-            return ToastKind.Success;
-        if (m.StartsWith("[admin]"))
-            return ToastKind.Info;
-        return null;
     }
 
     // ===================== Toast =====================
@@ -2121,9 +2064,6 @@ public partial class MainWindow : Window
         Log("Python no encontrado. Abre IDLE manualmente.");
     }
 }
-
-/// <summary>Tipo de toast (color del acento y semantica del mensaje).</summary>
-public enum ToastKind { Info, Success, Error }
 
 /// <summary>
 /// Ventana de detalle del log (mono, fondo oscuro "Consola Ops"). Util para
