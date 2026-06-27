@@ -7,6 +7,7 @@ import type { OnlineClientRow, SuspiciousProcess } from "@/lib/types";
 import { useRealtimeTable } from "@/hooks/useRealtimeTable";
 import { useSectionLookup } from "@/hooks/useSectionLookup";
 import { fmt, timeAgo } from "@/lib/format";
+import { compareVersions } from "@/lib/version";
 import { makeSuspChecker, ONLINE_WINDOW_MS } from "@/lib/section-workspace";
 import { BADGE } from "@/lib/colors";
 import { Badge } from "@/components/ui/Badge";
@@ -27,17 +28,6 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
-
-// Compara versiones "x.y.z": >0 si a>b, <0 si a<b, 0 iguales.
-function cmpVer(a: string, b: string): number {
-  const pa = a.split(".").map((n) => parseInt(n, 10) || 0);
-  const pb = b.split(".").map((n) => parseInt(n, 10) || 0);
-  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
-    const d = (pa[i] ?? 0) - (pb[i] ?? 0);
-    if (d !== 0) return d;
-  }
-  return 0;
-}
 
 interface OnlineClientsSectionProps {
   onOpenProcesses: (client: OnlineClientRow) => void;
@@ -194,7 +184,7 @@ export function OnlineClientsSection({
   const latestVersion = onlineData.reduce<string | null>((max, c) => {
     const v = c.app_version;
     if (!v) return max;
-    return !max || cmpVer(v, max) > 0 ? v : max;
+    return !max || compareVersions(v, max) > 0 ? v : max;
   }, null);
 
   const emptyMessage =
@@ -331,13 +321,13 @@ export function OnlineClientsSection({
                       {c.app_version ? (
                         <Badge
                           solidColor={
-                            latestVersion && cmpVer(c.app_version, latestVersion) < 0
+                            latestVersion && compareVersions(c.app_version, latestVersion) < 0
                               ? BADGE.danger
                               : BADGE.neutral
                           }
                         >
                           v{c.app_version}
-                          {latestVersion && cmpVer(c.app_version, latestVersion) < 0
+                          {latestVersion && compareVersions(c.app_version, latestVersion) < 0
                             ? " ⚠"
                             : ""}
                         </Badge>
