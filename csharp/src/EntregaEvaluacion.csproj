@@ -30,6 +30,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Capa de dominio pura (net8.0, cross-platform, testeable) -->
+    <ProjectReference Include="..\core\EntregaEvaluacion.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- Git nativo: no requiere git CLI instalado -->
     <PackageReference Include="LibGit2Sharp" Version="0.30.0" />
     <!-- DPAPI para cifrar el token en disco (per-user) -->
