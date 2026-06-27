@@ -70,6 +70,19 @@ public class SupabaseClient
 
     private string Rest(string path) => $"{Config.SupabaseUrl}/rest/v1/{path}";
 
+    /// <summary>
+    /// Helper generico para los GET de LISTA: trae el JSON de Rest(path) y lo
+    /// deserializa a List&lt;T&gt;. En CUALQUIER error de red/parseo devuelve lista
+    /// vacia (mismo fallback que tenian los metodos individuales: el caller cae a
+    /// Config.* segun corresponda). NO usar para Blocklist/Allowlist, que devuelven
+    /// null en error a proposito (semantica de fallback distinta).
+    /// </summary>
+    private async Task<List<T>> GetListAsync<T>(string path)
+    {
+        try { return JsonSerializer.Deserialize<List<T>>(await _http.GetStringAsync(Rest(path)), JsonOpts) ?? new(); }
+        catch { return new(); }
+    }
+
     // ===== Identidad verificada =====
 
     /// <summary>
@@ -350,40 +363,24 @@ public class SupabaseClient
 
     public async Task<List<Course>> GetCoursesAsync()
     {
-        try
-        {
-            var json = await _http.GetStringAsync(
-                Rest("courses?active=eq.true&select=*&order=code.asc"));
-            return JsonSerializer.Deserialize<List<Course>>(json, JsonOpts) ?? new();
-        }
-        catch { return new(); }
+        return await GetListAsync<Course>("courses?active=eq.true&select=*&order=code.asc");
     }
 
     public async Task<List<SectionRow>> GetSectionsAsync(long? courseId = null)
     {
-        try
-        {
-            // PostgREST espera el filtro DESPUES del nombre de tabla:
-            //   sections?course_id=eq.123&select=*
-            // Antes se generaba "course_id=eq.123&sections?select=*" (URL invalida).
-            var filter = courseId is { } cid ? $"?course_id=eq.{cid}&select=*&order=code.asc"
-                                             : "?select=*&order=code.asc";
-            var json = await _http.GetStringAsync(Rest($"sections{filter}"));
-            return JsonSerializer.Deserialize<List<SectionRow>>(json, JsonOpts) ?? new();
-        }
-        catch { return new(); }
+        // PostgREST espera el filtro DESPUES del nombre de tabla:
+        //   sections?course_id=eq.123&select=*
+        // Antes se generaba "course_id=eq.123&sections?select=*" (URL invalida).
+        var filter = courseId is { } cid ? $"?course_id=eq.{cid}&select=*&order=code.asc"
+                                         : "?select=*&order=code.asc";
+        return await GetListAsync<SectionRow>($"sections{filter}");
     }
 
     public async Task<List<Evaluation>> GetEvaluationsAsync(long sectionId, bool onlyActive = true)
     {
-        try
-        {
-            var activeFilter = onlyActive ? "&active=eq.true" : "";
-            var json = await _http.GetStringAsync(
-                Rest($"evaluations?section_id=eq.{sectionId}{activeFilter}&select=*&order=created_at.desc"));
-            return JsonSerializer.Deserialize<List<Evaluation>>(json, JsonOpts) ?? new();
-        }
-        catch { return new(); }
+        var activeFilter = onlyActive ? "&active=eq.true" : "";
+        return await GetListAsync<Evaluation>(
+            $"evaluations?section_id=eq.{sectionId}{activeFilter}&select=*&order=created_at.desc");
     }
 
     // ===== Assignments =====
@@ -395,14 +392,9 @@ public class SupabaseClient
     /// </summary>
     public async Task<List<Assignment>> GetActiveAssignmentsAsync(long? evaluationId = null)
     {
-        try
-        {
-            var evalFilter = evaluationId is { } id ? $"evaluation_id=eq.{id}&" : "";
-            var json = await _http.GetStringAsync(
-                Rest($"assignments?{evalFilter}active=eq.true&select=*&order=created_at.desc"));
-            return JsonSerializer.Deserialize<List<Assignment>>(json, JsonOpts) ?? new();
-        }
-        catch { return new(); }
+        var evalFilter = evaluationId is { } id ? $"evaluation_id=eq.{id}&" : "";
+        return await GetListAsync<Assignment>(
+            $"assignments?{evalFilter}active=eq.true&select=*&order=created_at.desc");
     }
 
     // ===== Blocklist de procesos sospechosos =====
@@ -528,14 +520,9 @@ public class SupabaseClient
     /// </summary>
     public async Task<List<Acceptance>> GetAcceptancesAsync(string githubUsername)
     {
-        try
-        {
-            var user = Uri.EscapeDataString(githubUsername);
-            var json = await _http.GetStringAsync(
-                Rest($"assignment_acceptances?github_username=eq.{user}&select=*"));
-            return JsonSerializer.Deserialize<List<Acceptance>>(json, JsonOpts) ?? new();
-        }
-        catch { return new(); }
+        var user = Uri.EscapeDataString(githubUsername);
+        return await GetListAsync<Acceptance>(
+            $"assignment_acceptances?github_username=eq.{user}&select=*");
     }
 
     /// <summary>
@@ -543,14 +530,9 @@ public class SupabaseClient
     /// </summary>
     public async Task<List<Submission>> GetSubmissionsAsync(string githubUsername)
     {
-        try
-        {
-            var user = Uri.EscapeDataString(githubUsername);
-            var json = await _http.GetStringAsync(
-                Rest($"assignment_submissions?github_username=eq.{user}&select=*"));
-            return JsonSerializer.Deserialize<List<Submission>>(json, JsonOpts) ?? new();
-        }
-        catch { return new(); }
+        var user = Uri.EscapeDataString(githubUsername);
+        return await GetListAsync<Submission>(
+            $"assignment_submissions?github_username=eq.{user}&select=*");
     }
 
     /// <summary>
