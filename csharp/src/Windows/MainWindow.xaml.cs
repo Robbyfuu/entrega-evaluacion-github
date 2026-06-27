@@ -1716,6 +1716,24 @@ public partial class MainWindow : Window
         => Task.Run(() => _sb.IsPcScreenUnblockedAsync(Environment.MachineName).GetAwaiter().GetResult())
             .GetAwaiter().GetResult();
 
+    // Predicados de "sigue bloqueada la pantalla" para los checkStillLocked de las
+    // CheatWindow. Fail-safe: solo libera si el profe desbloqueo ESTE PC por
+    // nombre (ScreenUnblockedSync) Y el backend ya no reporta el lock. Antes
+    // estaban como 3 lambdas casi identicas inline; consolidadas aca.
+
+    // Lockdown REMOTO (force-only).
+    private bool StillLockedByForce()
+        => !ScreenUnblockedSync()
+            && Task.Run(() => _sb.IsForceLockdownAsync()).GetAwaiter().GetResult();
+
+    // Lockdown DIRIGIDO (pc+usuario) o force. pc varia: Environment.MachineName
+    // en el dirigido remoto, el pc real en la trampa local.
+    private bool StillLockedByTargetOrForce(string pc, string me)
+        => !ScreenUnblockedSync()
+            && Task.Run(() =>
+                _sb.IsTargetedLockedAsync(pc, me).GetAwaiter().GetResult()
+                || _sb.IsForceLockdownAsync().GetAwaiter().GetResult()).GetAwaiter().GetResult();
+
     private async Task CheckAdminConfigAsync()
     {
         // Control EFECTIVO de la evaluacion actual: override por evaluacion ??
@@ -1770,8 +1788,7 @@ public partial class MainWindow : Window
             // como bloqueado al instante; el AdminTick queda detenido tras ShowDialog.
             _ = SendHeartbeatAsync();
             var alert = new CheatWindow("(remoto)", 0, new[] { "Lockdown remoto del profesor" }, remoteSource: true,
-                checkStillLocked: () => !ScreenUnblockedSync()
-                    && Task.Run(() => _sb.IsForceLockdownAsync()).GetAwaiter().GetResult(),
+                checkStillLocked: StillLockedByForce,
                 onHeartbeat: () => _ = SendHeartbeatAsync());
             alert.ShowDialog();
             _remoteLockdownActive = false;
@@ -1833,9 +1850,7 @@ public partial class MainWindow : Window
             var me = _user.Login;
             _ = SendHeartbeatAsync();
             var alert = new CheatWindow("(dirigido)", 0, new[] { reason }, remoteSource: true,
-                checkStillLocked: () => !ScreenUnblockedSync() && Task.Run(() =>
-                    _sb.IsTargetedLockedAsync(Environment.MachineName, me).GetAwaiter().GetResult()
-                    || _sb.IsForceLockdownAsync().GetAwaiter().GetResult()).GetAwaiter().GetResult(),
+                checkStillLocked: () => StillLockedByTargetOrForce(Environment.MachineName, me),
                 onHeartbeat: () => _ = SendHeartbeatAsync());
             alert.ShowDialog();
             _targetedLockdownActive = false;
@@ -1874,9 +1889,7 @@ public partial class MainWindow : Window
         _ = SendHeartbeatAsync();
         CheatWindow alert = reported
             ? new CheatWindow(reasonOrRepo, filesCount, filesNames, remoteSource: true,
-                checkStillLocked: () => !ScreenUnblockedSync() && Task.Run(() =>
-                    _sb.IsTargetedLockedAsync(pc, me).GetAwaiter().GetResult()
-                    || _sb.IsForceLockdownAsync().GetAwaiter().GetResult()).GetAwaiter().GetResult(),
+                checkStillLocked: () => StillLockedByTargetOrForce(pc, me),
                 onHeartbeat: () => _ = SendHeartbeatAsync())
             : new CheatWindow(reasonOrRepo, filesCount, filesNames);
         alert.Owner = this;
