@@ -1238,6 +1238,16 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier
         List<RepoInvitation>? invitations,
         List<RepoInvitation> unassociatedInvitations)
     {
+        // Sin tareas esperadas, no hace falta NINGUN fetch (repos/aceptaciones/
+        // entregas): toda invitacion viva queda sin asociar. Restaura el
+        // short-circuit previo a ENT-7 para no pegarle a GitHub/Supabase en una
+        // seccion sin assignments (paridad exacta de I/O).
+        if (asg.Count == 0)
+        {
+            if (invitations != null) unassociatedInvitations.AddRange(invitations);
+            return new List<AssignmentStatus>();
+        }
+
         // Sin sesion no podemos cruzar contra repos; usamos solo acceptances
         // si hubiera username, pero sin user todo queda pendiente.
         var me = _user?.Login;
