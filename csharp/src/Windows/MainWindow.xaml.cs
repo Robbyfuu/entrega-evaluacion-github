@@ -28,6 +28,14 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier
     // (ENT-6 step 5).
     private readonly ISelectionStore _selection;
 
+    // Colaboradores extraidos del polling admin (ENT-7 extraction #2). Dependen
+    // solo de _sb (ya inyectado) y, en el caso del heartbeat, de este MainWindow
+    // como ILogSink; por eso se CONSTRUYEN en el constructor en vez de inyectarse
+    // desde el composition root. HeartbeatReporter es duenio del prior-set de
+    // procesos (antes _lastProcSet vivia aca).
+    private readonly HeartbeatReporter _heartbeat;
+    private readonly BlocklistRefresher _blocklistRefresher;
+
     // Estado
     private GitHubUser? _user;
     private bool _internetBlocked;
@@ -35,7 +43,6 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier
     private bool _remoteLockdownActive;
     private bool _targetedLockdownActive;
     private string _lastAdminMessage = "";
-    private readonly HashSet<string> _lastProcSet = new();
 
     // Blocklist efectivo (global union seccion) cacheado desde la tabla
     // suspicious_processes. Se refresca en cada AdminTick. null = fallback a
@@ -82,6 +89,11 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier
         _gh = gh;
         _sb = sb;
         _selection = selection;
+
+        // Colaboradores del polling admin: _sb ya esta asignado y este MainWindow
+        // ya es un ILogSink valido, asi que se pueden construir aqui (no tocan UI).
+        _heartbeat = new HeartbeatReporter(_sb, this);
+        _blocklistRefresher = new BlocklistRefresher(_sb);
 
         InitializeComponent();
 
@@ -1651,9 +1663,11 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier
     /// </summary>
     private async Task RefreshBlocklistAsync()
     {
-        // section_id (multi-evaluacion) es preferido; cae a section TEXT si es
-        // null (forward-compat con clientes viejos).
-        _blocklist = await _sb.GetBlocklistAsync(_selection.SectionText, _selection.SectionId);
+        // Delega el fetch al BlocklistRefresher (section_id preferido, cae a
+        // section TEXT). null preservado = fallback a Config. El resultado se
+        // guarda en _blocklist, que SendHeartbeatAsync pasa al armado de procesos.
+        _blocklist = await _blocklistRefresher.RefreshAsync(
+            _selection.SectionText, _selection.SectionId);
     }
 
     // Override de pantalla por PC, en sincrono (para los checkStillLocked de las
@@ -1851,25 +1865,20 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier
         // sus global usings, asi que apuntamos al DTO propio sin ambiguedad.
         List<EntregaEvaluacion.Models.ProcessInfo> procs = ProcessMonitor.GetOpenWindows();
 
-        // Detectar nuevos sospechosos
-        var current = new HashSet<string>();
-        foreach (EntregaEvaluacion.Models.ProcessInfo p in procs)
-        {
-            var key = $"{p.Name}:{p.Pid}";
-            current.Add(key);
-            if (!_lastProcSet.Contains(key) && ProcessMonitor.IsSuspicious(p.Name, _blocklist))
-                await _sb.ReportProcessAlertAsync(_user.Login, Environment.MachineName, _selection.SectionText, p.Name, p.Title);
-        }
-        _lastProcSet.Clear();
-        foreach (var k in current) _lastProcSet.Add(k);
-
+        // Estados derivados de los flags privados de lockdown de ESTE MainWindow
+        // (decision D1: los flags NO se mueven). Se pasan ya resueltos como strings
+        // al HeartbeatReporter, que nunca lee los flags.
         var internetState = InternetBlockService.IsBlocked() ? "blocked" : "free";
         var lockdownState = (_remoteLockdownActive || _targetedLockdownActive) ? "active" : "none";
-        // Atribuye la presencia a la evaluacion actual del alumno. El ON CONFLICT
-        // de online_clients NO cambia en este slice (sigue pc_name+github_username);
-        // el aislamiento de re-rendiciones por evaluacion es PR5.
-        await _sb.SendHeartbeatAsync(Environment.MachineName, _user.Login, _user.Email,
-            _selection.SectionText, procs, internetState, lockdownState,
+
+        // El HeartbeatReporter detecta procesos nuevos sospechosos (set-diff puro),
+        // alerta cada uno UNA vez y envia el heartbeat. Atribuye la presencia a la
+        // evaluacion actual del alumno. El ON CONFLICT de online_clients NO cambia
+        // en este slice (sigue pc_name+github_username); el aislamiento de
+        // re-rendiciones por evaluacion es PR5.
+        await _heartbeat.SendAsync(
+            Environment.MachineName, _user.Login, _user.Email, _selection.SectionText,
+            procs, _blocklist, internetState, lockdownState,
             _selection.EvaluationId, UpdateService.CurrentVersion());
     }
 
