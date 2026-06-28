@@ -41,6 +41,11 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier
     private readonly NetworkProbeReporter _networkProbe;
     private readonly RemoteUpdateWatcher _remoteUpdate;
 
+    // Colaborador de I/O del PDF de enunciado (ENT-7 extraction #4). No tiene
+    // dependencias (envuelve llamadas estaticas a ExamPdfService), asi que se
+    // inicializa inline en vez de construirse en el constructor como los de arriba.
+    private readonly PdfViewer _pdfViewer = new();
+
     // Estado
     private GitHubUser? _user;
     private bool _internetBlocked;
@@ -425,9 +430,9 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier
         var path = CurrentEvalPdfPath();
         if (string.IsNullOrWhiteSpace(path)) return;
         ViewPdfButton.IsEnabled = false;
-        var local = await ExamPdfService.DownloadAndOpenAsync(path);
+        var ok = await _pdfViewer.TryOpenAsync(path);
         ViewPdfButton.IsEnabled = true;
-        if (local == null)
+        if (!ok)
             ShowToast("No se pudo abrir el enunciado. Reintenta.", ToastKind.Error);
     }
 
@@ -712,12 +717,13 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier
     }
 
     /// <summary>
-    /// Boton primario unico y contextual. Decide texto, color, handler y
-    /// estado segun el estado actual. Reemplaza los antiguos botones
-    /// "1. Crear" / "2. Subir". No cambia la logica de negocio: solo
-    /// reconecta a los handlers existentes (CrearRepoAsync, SubirArchivosAsync).
+    /// Lee el estado real de la UI (sesion, carpeta, modo, datos de repo) y delega
+    /// la decision al core <see cref="PrimaryActionResolver"/>. Unica fuente de
+    /// lectura del estado para el boton primario y el paso activo, asi ambos no
+    /// pueden divergir. Sin logica de negocio aqui: solo proyecta los controles a
+    /// los 4 booleans puros que el resolver consume.
     /// </summary>
-    private void UpdatePrimaryAction()
+    private PrimaryActionResolution ResolvePrimaryAction()
     {
         var hasAuth = _gh.IsAuthenticated;
         var hasFolder = !string.IsNullOrEmpty(CarpetaBox.Text) && Directory.Exists(CarpetaBox.Text);
@@ -725,57 +731,85 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier
         var hasRepoData = existente ? ReposCombo.SelectedItem != null
             : (!string.IsNullOrEmpty(NombreBox.Text.Trim()) && !string.IsNullOrEmpty((TipoCombo.SelectedItem as string ?? "").Trim()));
 
-        // 1) Sin sesion.
-        if (!hasAuth)
-        {
-            PrimaryButton.Content = "Inicia sesion primero";
-            PrimaryButton.Appearance = Wpf.Ui.Controls.ControlAppearance.Secondary;
-            PrimaryButton.IsEnabled = false;
-            _primaryAction = null;
-            return;
-        }
+        return PrimaryActionResolver.Resolve(hasAuth, hasFolder, existente, hasRepoData);
+    }
 
-        // 3) Carpeta lista + repo (creado o clonado) -> Subir.
-        if (hasFolder && hasRepoData)
-        {
-            PrimaryButton.Content = "Subir evaluacion";
-            PrimaryButton.Appearance = Wpf.Ui.Controls.ControlAppearance.Success;
-            PrimaryButton.IsEnabled = true;
-            _primaryAction = SubirArchivosAsync;
-            return;
-        }
+    /// <summary>
+    /// Boton primario unico y contextual. Resuelve el estado en el core y aplica el
+    /// <see cref="PrimaryActionKind"/> a la UI/handler. No cambia la logica de
+    /// negocio: solo reconecta a los handlers existentes (CrearRepoAsync,
+    /// SubirArchivosAsync).
+    /// </summary>
+    private void UpdatePrimaryAction() => ApplyPrimaryAction(ResolvePrimaryAction().Kind);
 
-        // 2) Datos completos -> Crear / Clonar.
-        if (hasRepoData)
+    /// <summary>
+    /// Traduce el <see cref="PrimaryActionKind"/> resuelto en el core al texto,
+    /// apariencia, estado habilitado y handler del boton primario. Todo el wiring de
+    /// UI/handler vive aqui (la vista), no en el core.
+    /// </summary>
+    private void ApplyPrimaryAction(PrimaryActionKind kind)
+    {
+        switch (kind)
         {
-            PrimaryButton.Content = existente ? "Clonar repositorio" : "Crear repositorio";
-            PrimaryButton.Appearance = Wpf.Ui.Controls.ControlAppearance.Primary;
-            PrimaryButton.IsEnabled = true;
-            _primaryAction = CrearRepoAsync;
-            return;
-        }
+            // 1) Sin sesion.
+            case PrimaryActionKind.LoginRequired:
+                PrimaryButton.Content = "Inicia sesion primero";
+                PrimaryButton.Appearance = Wpf.Ui.Controls.ControlAppearance.Secondary;
+                PrimaryButton.IsEnabled = false;
+                _primaryAction = null;
+                break;
 
-        // Sesion iniciada pero faltan datos del repo.
-        PrimaryButton.Content = existente ? "Selecciona un repositorio" : "Completa los datos";
-        PrimaryButton.Appearance = Wpf.Ui.Controls.ControlAppearance.Secondary;
-        PrimaryButton.IsEnabled = false;
-        _primaryAction = null;
+            // 3) Carpeta lista + repo (creado o clonado) -> Subir.
+            case PrimaryActionKind.Submit:
+                PrimaryButton.Content = "Subir evaluacion";
+                PrimaryButton.Appearance = Wpf.Ui.Controls.ControlAppearance.Success;
+                PrimaryButton.IsEnabled = true;
+                _primaryAction = SubirArchivosAsync;
+                break;
+
+            // 2) Datos completos, modo nuevo -> Crear.
+            case PrimaryActionKind.CreateRepo:
+                PrimaryButton.Content = "Crear repositorio";
+                PrimaryButton.Appearance = Wpf.Ui.Controls.ControlAppearance.Primary;
+                PrimaryButton.IsEnabled = true;
+                _primaryAction = CrearRepoAsync;
+                break;
+
+            // 2) Datos completos, modo existente -> Clonar (mismo handler que Crear).
+            case PrimaryActionKind.CloneRepo:
+                PrimaryButton.Content = "Clonar repositorio";
+                PrimaryButton.Appearance = Wpf.Ui.Controls.ControlAppearance.Primary;
+                PrimaryButton.IsEnabled = true;
+                _primaryAction = CrearRepoAsync;
+                break;
+
+            // Sesion iniciada pero falta elegir repositorio (modo existente).
+            case PrimaryActionKind.SelectRepo:
+                PrimaryButton.Content = "Selecciona un repositorio";
+                PrimaryButton.Appearance = Wpf.Ui.Controls.ControlAppearance.Secondary;
+                PrimaryButton.IsEnabled = false;
+                _primaryAction = null;
+                break;
+
+            // Sesion iniciada pero faltan nombre/tipo (modo nuevo).
+            case PrimaryActionKind.CompleteData:
+                PrimaryButton.Content = "Completa los datos";
+                PrimaryButton.Appearance = Wpf.Ui.Controls.ControlAppearance.Secondary;
+                PrimaryButton.IsEnabled = false;
+                _primaryAction = null;
+                break;
+        }
     }
 
     /// <summary>
     /// Resalta el paso del sidebar que refleja el estado real del alumno:
     /// sin sesion = paso 1; con sesion sin repo+carpeta listos = paso 2;
-    /// repo + carpeta listos = paso 3.
+    /// repo + carpeta listos = paso 3. El paso lo decide el core; aqui solo se
+    /// aplica al UI.
     /// </summary>
     private void UpdateActiveStep()
     {
-        var hasAuth = _gh.IsAuthenticated;
-        var hasFolder = !string.IsNullOrEmpty(CarpetaBox.Text) && Directory.Exists(CarpetaBox.Text);
-        var existente = ModoExistente.IsChecked == true;
-        var hasRepoData = existente ? ReposCombo.SelectedItem != null
-            : (!string.IsNullOrEmpty(NombreBox.Text.Trim()) && !string.IsNullOrEmpty((TipoCombo.SelectedItem as string ?? "").Trim()));
-
-        int active = !hasAuth ? 1 : (hasFolder && hasRepoData ? 3 : 2);
+        var active = ResolvePrimaryAction().ActiveStep;
 
         SetStepActive(Step1Border, Step1Dot, Step1Num, Step1Title, active == 1, active > 1);
         SetStepActive(Step2Border, Step2Dot, Step2Num, Step2Title, active == 2, active > 2);
