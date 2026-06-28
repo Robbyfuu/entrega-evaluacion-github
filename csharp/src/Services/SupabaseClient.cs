@@ -10,7 +10,7 @@ namespace EntregaEvaluacion.Services;
 /// Cliente REST de Supabase. Anon key safe-to-share; escrituras protegidas
 /// por RLS y/o RPC SECURITY DEFINER.
 /// </summary>
-public class SupabaseClient
+public class SupabaseClient : ISupabaseClient
 {
     private readonly HttpClient _http;
     private static readonly JsonSerializerOptions JsonOpts = new()

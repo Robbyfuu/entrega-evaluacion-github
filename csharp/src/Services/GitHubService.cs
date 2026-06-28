@@ -10,7 +10,7 @@ namespace EntregaEvaluacion.Services;
 /// Autenticacion + API de GitHub nativa (sin gh CLI). Device flow OAuth +
 /// llamadas a la API REST. El token se guarda en memoria y en disco cifrado.
 /// </summary>
-public class GitHubService
+public class GitHubService : IGitHubService
 {
     // DOS HttpClients para cubrir ambos escenarios sin tocar el registro del
     // sistema (los navegadores siguen bloqueados durante el bloqueo):

@@ -13,7 +13,7 @@ namespace EntregaEvaluacion.Windows;
 /// </summary>
 public partial class LoginWindow : Window
 {
-    private readonly GitHubService _gh;
+    private readonly IGitHubService _gh;
     private DispatcherTimer? _pollTimer;
     private string _deviceCode = "";
     private DateTime _expiresAt;
@@ -23,7 +23,7 @@ public partial class LoginWindow : Window
     // este en vuelo a la vez.
     private bool _isPolling;
 
-    public LoginWindow(GitHubService gh)
+    public LoginWindow(IGitHubService gh)
     {
         InitializeComponent();
         _gh = gh;

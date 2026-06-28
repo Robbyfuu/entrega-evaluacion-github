@@ -19,8 +19,8 @@ namespace EntregaEvaluacion.Windows;
 /// </summary>
 public partial class MainWindow : Window, ILogSink, IUserNotifier
 {
-    private readonly GitHubService _gh = new();
-    private readonly SupabaseClient _sb = new();
+    private readonly IGitHubService _gh = new GitHubService();
+    private readonly ISupabaseClient _sb = new SupabaseClient();
 
     // Estado
     private GitHubUser? _user;
