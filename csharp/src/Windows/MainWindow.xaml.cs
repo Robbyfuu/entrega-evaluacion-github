@@ -22,6 +22,12 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier
     private readonly IGitHubService _gh = new GitHubService();
     private readonly ISupabaseClient _sb = new SupabaseClient();
 
+    // Seleccion del alumno (seccion + evaluacion) detras de ISelectionStore, en
+    // reemplazo de la clase estatica global StudentSection. La construccion sigue
+    // inline (igual que _gh/_sb); la inyeccion via composition root es un paso
+    // posterior (ENT-6 step 5).
+    private readonly ISelectionStore _selection = new SelectionStore(new RegistrySelectionPersistence());
+
     // Estado
     private GitHubUser? _user;
     private bool _internetBlocked;
@@ -120,7 +126,7 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier
         {
             await _sb.ReportStudentActivityAsync(
                 "close_attempt", _user.Login, _user.Email, Environment.MachineName,
-                StudentSection.Get(), "", null, StudentSection.GetSectionId());
+                _selection.SectionText, "", null, _selection.SectionId);
         }
         catch { }
     }
@@ -159,9 +165,9 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier
         // Priorizar section_id (identidad real) sobre section TEXT (codigo,
         // que puede repetirse entre cursos). Si section_id no existe, caer
         // a buscar por code como fallback legacy.
-        var savedCode = StudentSection.Get();
-        var savedSectionId = StudentSection.GetSectionId();
-        var savedEvalId = StudentSection.GetEvaluationId();
+        var savedCode = _selection.SectionText;
+        var savedSectionId = _selection.SectionId;
+        var savedEvalId = _selection.EvaluationId;
         var savedRow = savedSectionId.HasValue
             ? _sections.FirstOrDefault(s => s.Id == savedSectionId.Value)
             : null;
@@ -173,8 +179,8 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier
             SelectCourseById(savedRow.CourseId);
             PopulateSectionCombo(savedRow.CourseId);
             SectionCombo.SelectedItem = savedRow.Code;
-            StudentSection.Set(savedRow.Code);
-            StudentSection.SetSectionId(savedRow.Id);
+            _selection.SetSectionText(savedRow.Code);
+            _selection.SetSectionId(savedRow.Id);
             await LoadEvaluationsForSection(savedRow.Code, savedRow.Id);
             RestoreEvaluationSelection(savedEvalId);
         }
@@ -187,7 +193,7 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier
             if (!string.IsNullOrEmpty(sel))
             {
                 var row = _sections.FirstOrDefault(s => s.Code == sel);
-                StudentSection.SetSectionId(row?.Id);
+                _selection.SetSectionId(row?.Id);
                 await LoadEvaluationsForSection(sel, row?.Id);
             }
         }
@@ -315,7 +321,7 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier
         dlg.ShowDialog();
         var sel = dlg.SelectedSection;
         SectionCombo.SelectedItem = sel;
-        StudentSection.Set(sel);
+        _selection.SetSectionText(sel);
     }
 
     // ===================== Eventos UI =====================
@@ -329,9 +335,9 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier
         // heartbeat/blocklist no manden una seccion vieja mezclada con
         // curso nuevo durante la ventana hasta que el alumno elija.
         SectionCombo.SelectedIndex = -1;
-        StudentSection.Set("");
-        StudentSection.SetSectionId(null);
-        StudentSection.SetEvaluationId(null);
+        _selection.SetSectionText("");
+        _selection.SetSectionId(null);
+        _selection.SetEvaluationId(null);
         EvaluationCombo.Items.Clear();
         TipoCombo.Items.Clear();
         UpdateRepoPreview();
@@ -342,7 +348,7 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier
     {
         if (_initializing || SectionCombo.SelectedItem == null) return;
         var code = (string)SectionCombo.SelectedItem;
-        StudentSection.Set(code);
+        _selection.SetSectionText(code);
         // Resolver la seccion por code DENTRO del curso seleccionado (no
         // globalmente) para no matchear otra seccion con el mismo code en
         // otro curso.
@@ -350,9 +356,9 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier
         var row = _sections.FirstOrDefault(s => s.Code == code
             && (selectedCourseId == null || s.CourseId == selectedCourseId));
         row ??= _sections.FirstOrDefault(s => s.Code == code);
-        StudentSection.SetSectionId(row?.Id);
+        _selection.SetSectionId(row?.Id);
         // Al cambiar de seccion se resetea la evaluacion (pertenece a otra seccion)
-        StudentSection.SetEvaluationId(null);
+        _selection.SetEvaluationId(null);
         EvaluationCombo.Items.Clear();
         TipoCombo.Items.Clear();
         await LoadEvaluationsForSection(code, row?.Id);
@@ -367,7 +373,7 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier
         if (EvaluationCombo.SelectedItem is not Evaluation ev) return;
         // Id=0 => evaluacion sintetizada de fallback (Config.EvaluationTypes);
         // no hay id real que persistir.
-        StudentSection.SetEvaluationId(ev.Id > 0 ? ev.Id : null);
+        _selection.SetEvaluationId(ev.Id > 0 ? ev.Id : null);
         SyncTipoCombo(ev.Title);
         UpdatePdfButton();
     }
@@ -375,7 +381,7 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier
     // PDF de enunciado: visible solo si la evaluacion seleccionada tiene uno.
     private string? CurrentEvalPdfPath()
     {
-        if (StudentSection.GetEvaluationId() is not { } eid) return null;
+        if (_selection.EvaluationId is not { } eid) return null;
         return _currentEvaluations.FirstOrDefault(e => e.Id == eid)?.ExamPdfPath;
     }
 
@@ -412,8 +418,8 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier
 
         if (locked?.Assignment.EvaluationId is { } evalId)
         {
-            if (StudentSection.GetEvaluationId() != evalId)
-                StudentSection.SetEvaluationId(evalId);
+            if (_selection.EvaluationId != evalId)
+                _selection.SetEvaluationId(evalId);
 
             for (int i = 0; i < EvaluationCombo.Items.Count; i++)
                 if (EvaluationCombo.Items[i] is Evaluation ev && ev.Id == evalId
@@ -619,9 +625,9 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier
         EvaluationCombo.Items.Clear();
         TipoCombo.Items.Clear();
 
-        StudentSection.Set("");
-        StudentSection.SetSectionId(null);
-        StudentSection.SetEvaluationId(null);
+        _selection.SetSectionText("");
+        _selection.SetSectionId(null);
+        _selection.SetEvaluationId(null);
 
         // No dejar el enunciado descargado tras cerrar sesion / limpiar.
         ExamPdfService.DeleteAllDownloaded();
@@ -890,7 +896,7 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier
                         ? $"https://github.com/{repoFullName}"
                         : $"https://github.com/{me}/{repoName}";
                     await _sb.RecordAcceptanceAsync(me, match.Id, match.Title,
-                        StudentSection.Get(), repoName, repoUrl, StudentSection.GetEvaluationId());
+                        _selection.SectionText, repoName, repoUrl, _selection.EvaluationId);
                 }
             }
         }
@@ -931,7 +937,7 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier
         var folder = CarpetaBox.Text;
         if (!string.IsNullOrEmpty(folder) && Directory.Exists(folder)) OpenFolder(folder);
         MessageBox.Show($"Repositorio creado correctamente.\n\nURL: {url}\n\nProximo paso: 'Subir Archivos'.", "Repositorio creado", MessageBoxButton.OK, MessageBoxImage.Information);
-        await _sb.ReportStudentActivityAsync("create_repo", _user!.Login, _user.Email, Environment.MachineName, StudentSection.Get(), repo, url, StudentSection.GetSectionId());
+        await _sb.ReportStudentActivityAsync("create_repo", _user!.Login, _user.Email, Environment.MachineName, _selection.SectionText, repo, url, _selection.SectionId);
         UpdateButtonStates();
     }
 
@@ -976,7 +982,7 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier
 
         CarpetaBox.Text = target;
         OpenPythonIdle(target);
-        await _sb.ReportStudentActivityAsync("clone", _user!.Login, _user.Email, Environment.MachineName, StudentSection.Get(), repo, $"https://github.com/{owner}/{name}", StudentSection.GetSectionId());
+        await _sb.ReportStudentActivityAsync("clone", _user!.Login, _user.Email, Environment.MachineName, _selection.SectionText, repo, $"https://github.com/{owner}/{name}", _selection.SectionId);
         await RecordAcceptanceIfClassroomRepoAsync(name, $"https://github.com/{owner}/{name}");
         MessageBox.Show($"Repo clonado en:\n{target}\n\nSe abrio IDLE de Python.\n\nEdita, guarda (Ctrl+S), y luego 'Subir Archivos'.", "Listo", MessageBoxButton.OK, MessageBoxImage.Information);
         Status("Edita en IDLE y luego Subir Archivos.");
@@ -1009,7 +1015,7 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier
 
         Log($"OK Subida completada: {res.Url}");
         try { Clipboard.SetText(res.Url!); } catch { }
-        await _sb.ReportStudentActivityAsync("upload", _user!.Login, _user.Email, Environment.MachineName, StudentSection.Get(), repo, res.Url, StudentSection.GetSectionId());
+        await _sb.ReportStudentActivityAsync("upload", _user!.Login, _user.Email, Environment.MachineName, _selection.SectionText, repo, res.Url, _selection.SectionId);
         // Captura el enlace como ENTREGA formal en el panel (el alumno no tiene
         // que apretar "Entregar repo" aparte). Best-effort, no bloquea.
         await RecordSubmissionIfClassroomRepoAsync(name, res.Url!);
@@ -1079,7 +1085,7 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier
     private async Task RefreshEnrollmentAsync()
     {
         var me = _user?.Login;
-        var sectionId = StudentSection.GetSectionId();
+        var sectionId = _selection.SectionId;
         if (string.IsNullOrEmpty(me) || sectionId is not { } sid)
         {
             // Sin datos para consultar: no hay confirmacion. No es "no
@@ -1099,7 +1105,7 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier
     /// </summary>
     private bool RosterMatchConfirmed()
     {
-        var sectionId = StudentSection.GetSectionId();
+        var sectionId = _selection.SectionId;
         return _enrollment is { Confirmed: true, Found: true }
             && sectionId is { } sid
             && _enrollment.SectionId == sid;
@@ -1107,7 +1113,7 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier
 
     private List<Assignment> FilterBySection(List<Assignment> all)
     {
-        var sec = StudentSection.Get().Trim().ToUpperInvariant();
+        var sec = _selection.SectionText.Trim().ToUpperInvariant();
         return all.Where(a =>
         {
             var s = (a.Section ?? "").Trim().ToUpperInvariant();
@@ -1127,7 +1133,7 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier
     private async Task<List<Assignment>> GetSectionAssignmentsAsync()
     {
         var all = FilterBySection(await _sb.GetActiveAssignmentsAsync(null));
-        var evalId = StudentSection.GetEvaluationId();
+        var evalId = _selection.EvaluationId;
         if (evalId is { } id)
         {
             var matched = all.Where(a => a.EvaluationId == id).ToList();
@@ -1143,7 +1149,7 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier
     /// </summary>
     private string? CurrentEvaluationOrg()
     {
-        var evalId = StudentSection.GetEvaluationId();
+        var evalId = _selection.EvaluationId;
         if (evalId is not { } id) return null;
         return _currentEvaluations.FirstOrDefault(e => e.Id == id)?.Org;
     }
@@ -1422,7 +1428,7 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier
     private string? EnrollmentSoftNote()
     {
         // Sin sesion o seccion no intentamos confirmar: sin nota.
-        if (string.IsNullOrEmpty(_user?.Login) || StudentSection.GetSectionId() is null)
+        if (string.IsNullOrEmpty(_user?.Login) || _selection.SectionId is null)
             return null;
 
         if (_enrollment is null)
@@ -1468,7 +1474,7 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier
         {
             if (string.Equals(ClassroomRepoNaming.ExpectedClassroomRepo(a.Title, me), repoName, StringComparison.OrdinalIgnoreCase))
             {
-                await _sb.RecordAcceptanceAsync(me, a.Id, a.Title, StudentSection.Get(), repoName, repoUrl, StudentSection.GetEvaluationId());
+                await _sb.RecordAcceptanceAsync(me, a.Id, a.Title, _selection.SectionText, repoName, repoUrl, _selection.EvaluationId);
                 break;
             }
         }
@@ -1521,7 +1527,7 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier
         {
             var repoName = status.RepoName ?? ClassroomRepoNaming.ExpectedClassroomRepo(a.Title, me);
             var repoUrl = status.RepoUrl ?? $"https://github.com/{me}/{repoName}";
-            await _sb.RecordAcceptanceAsync(me, a.Id, a.Title, StudentSection.Get(), repoName, repoUrl, StudentSection.GetEvaluationId());
+            await _sb.RecordAcceptanceAsync(me, a.Id, a.Title, _selection.SectionText, repoName, repoUrl, _selection.EvaluationId);
         }
         if (!string.IsNullOrEmpty(a.ClassroomUrl))
             OpenUrl(a.ClassroomUrl, onClosed: () => _ = RefreshReposAfterAcceptAsync());
@@ -1660,7 +1666,7 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier
             {
                 await _sb.ReportStudentActivityAsync(
                     "ai_endpoint_contacted", _user.Login, _user.Email, Environment.MachineName,
-                    StudentSection.Get(), f.Host, f.Detail, StudentSection.GetSectionId());
+                    _selection.SectionText, f.Host, f.Detail, _selection.SectionId);
             }
             catch (Exception ex) { Log($"[NetProbe] reporte fallo: {ex.Message}"); }
         }
@@ -1707,7 +1713,7 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier
     {
         // section_id (multi-evaluacion) es preferido; cae a section TEXT si es
         // null (forward-compat con clientes viejos).
-        _blocklist = await _sb.GetBlocklistAsync(StudentSection.Get(), StudentSection.GetSectionId());
+        _blocklist = await _sb.GetBlocklistAsync(_selection.SectionText, _selection.SectionId);
     }
 
     // Override de pantalla por PC, en sincrono (para los checkStillLocked de las
@@ -1745,7 +1751,7 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier
         // apertura ya SIEMBRA el cache (lo hace GetEffectiveControlAsync), asi el
         // primer poll de liberacion -aunque su fetch falle- retiene el lock
         // recien aplicado en vez de soltarlo.
-        var cfg = await _sb.GetEffectiveControlAsync(StudentSection.GetEvaluationId());
+        var cfg = await _sb.GetEffectiveControlAsync(_selection.EvaluationId);
         if (cfg == null) return;
 
         // Override por PC (desbloqueo por nombre de equipo, sin depender del
@@ -1779,7 +1785,7 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier
         // La pantalla roja remota SOLO debe saltar en modo evaluacion: el control
         // global force_lockdown no debe bloquear a un alumno que no esta rindiendo.
         // Sin evaluation_id activo (no acepto/selecciono evaluacion) NO se bloquea.
-        bool inExam = StudentSection.GetEvaluationId() is { } examEvalId && examEvalId > 0;
+        bool inExam = _selection.EvaluationId is { } examEvalId && examEvalId > 0;
         if (cfg.ForceLockdown && inExam && !screenUnblocked && !_remoteLockdownActive)
         {
             _remoteLockdownActive = true;
@@ -1820,7 +1826,7 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier
             await _sb.ReportProcessAlertAsync(
                 user,
                 Environment.MachineName,
-                StudentSection.Get(),
+                _selection.SectionText,
                 "copilot-reactivation",
                 "Intento de reactivar Copilot editando settings.json");
         }
@@ -1884,7 +1890,7 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier
         catch { }
 
         bool reported = await _sb.ReportSelfLockAsync(
-            pc, me, StudentSection.Get(), filesNames.FirstOrDefault() ?? reasonOrRepo);
+            pc, me, _selection.SectionText, filesNames.FirstOrDefault() ?? reasonOrRepo);
 
         _ = SendHeartbeatAsync();
         CheatWindow alert = reported
@@ -1912,7 +1918,7 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier
             var key = $"{p.Name}:{p.Pid}";
             current.Add(key);
             if (!_lastProcSet.Contains(key) && ProcessMonitor.IsSuspicious(p.Name, _blocklist))
-                await _sb.ReportProcessAlertAsync(_user.Login, Environment.MachineName, StudentSection.Get(), p.Name, p.Title);
+                await _sb.ReportProcessAlertAsync(_user.Login, Environment.MachineName, _selection.SectionText, p.Name, p.Title);
         }
         _lastProcSet.Clear();
         foreach (var k in current) _lastProcSet.Add(k);
@@ -1923,8 +1929,8 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier
         // de online_clients NO cambia en este slice (sigue pc_name+github_username);
         // el aislamiento de re-rendiciones por evaluacion es PR5.
         await _sb.SendHeartbeatAsync(Environment.MachineName, _user.Login, _user.Email,
-            StudentSection.Get(), procs, internetState, lockdownState,
-            StudentSection.GetEvaluationId(), UpdateService.CurrentVersion());
+            _selection.SectionText, procs, internetState, lockdownState,
+            _selection.EvaluationId, UpdateService.CurrentVersion());
     }
 
     // ===================== Helpers =====================
@@ -2008,7 +2014,7 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier
         {
             GithubUsername = _user?.Login ?? "",
             PcName = Environment.MachineName,
-            Section = StudentSection.Get()
+            Section = _selection.SectionText
         };
         var win = new WebBrowserWindow(url, "Navegador", ctx, OnForbiddenNavigation) { Owner = this };
         if (onClosed != null) win.Closed += (_, _) => onClosed();
