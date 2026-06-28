@@ -28,13 +28,18 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier
     // (ENT-6 step 5).
     private readonly ISelectionStore _selection;
 
-    // Colaboradores extraidos del polling admin (ENT-7 extraction #2). Dependen
-    // solo de _sb (ya inyectado) y, en el caso del heartbeat, de este MainWindow
+    // Colaboradores extraidos del polling admin (ENT-7 extractions #2 y #3).
+    // Dependen solo de _sb (ya inyectado) y, los que loguean, de este MainWindow
     // como ILogSink; por eso se CONSTRUYEN en el constructor en vez de inyectarse
-    // desde el composition root. HeartbeatReporter es duenio del prior-set de
-    // procesos (antes _lastProcSet vivia aca).
+    // desde el composition root. Cada uno es duenio del estado que antes vivia
+    // aca: HeartbeatReporter el prior-set de procesos (_lastProcSet);
+    // NetworkProbeReporter el throttle/dedup de la sonda (_lastNetProbeUtc/
+    // _reportedAiHits); RemoteUpdateWatcher el arranque y el one-shot del update
+    // (_processStartUtc/_lastUpdateRequestProcessed).
     private readonly HeartbeatReporter _heartbeat;
     private readonly BlocklistRefresher _blocklistRefresher;
+    private readonly NetworkProbeReporter _networkProbe;
+    private readonly RemoteUpdateWatcher _remoteUpdate;
 
     // Estado
     private GitHubUser? _user;
@@ -92,8 +97,12 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier
 
         // Colaboradores del polling admin: _sb ya esta asignado y este MainWindow
         // ya es un ILogSink valido, asi que se pueden construir aqui (no tocan UI).
+        // RemoteUpdateWatcher captura aqui el arranque (UTC) y lee _gh.Token de
+        // forma diferida (en el instante del disparo), igual que el original.
         _heartbeat = new HeartbeatReporter(_sb, this);
         _blocklistRefresher = new BlocklistRefresher(_sb);
+        _networkProbe = new NetworkProbeReporter(_sb, this);
+        _remoteUpdate = new RemoteUpdateWatcher(_sb, this, () => _gh.Token);
 
         InitializeComponent();
 
@@ -1591,68 +1600,30 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier
         await CheckNetworkProbeAsync();
     }
 
-    // Sonda de red (deteccion de contacto a Copilot). Throttle + dedup para no
-    // spamear ni pesar: corre cada 30s y reporta cada (host+source) a lo sumo
-    // una vez cada 5 min. Es EVIDENCIA para revision, no veredicto.
-    private DateTime _lastNetProbeUtc = DateTime.MinValue;
-    private readonly Dictionary<string, DateTime> _reportedAiHits = new();
-
+    // Sonda de red (deteccion de contacto a Copilot): delegada al
+    // NetworkProbeReporter (ENT-7 extraction #3), duenio del throttle de 30s y la
+    // dedup de 5 min por host+source (antes _lastNetProbeUtc/_reportedAiHits vivian
+    // aca). Es EVIDENCIA para revision, no veredicto. El guard de sesion
+    // (_user == null) queda aca: sin sesion no se corre la sonda ni se toca el
+    // throttle, igual que el original. now = DateTime.UtcNow se pasa una sola vez
+    // por tick (el gating es determinista en el core).
     private async Task CheckNetworkProbeAsync()
     {
         if (_user == null) return;
-        if ((DateTime.UtcNow - _lastNetProbeUtc).TotalSeconds < 30) return;
-        _lastNetProbeUtc = DateTime.UtcNow;
-
-        List<NetworkProbeService.Finding> findings;
-        try { findings = await Task.Run(() => NetworkProbeService.Probe()); }
-        catch (Exception ex) { Log($"[NetProbe] fallo: {ex.Message}"); return; }
-
-        foreach (var f in findings)
-        {
-            var key = $"{f.Host}|{f.Source}";
-            if (_reportedAiHits.TryGetValue(key, out var last)
-                && (DateTime.UtcNow - last).TotalMinutes < 5) continue;
-            _reportedAiHits[key] = DateTime.UtcNow;
-            Log($"[NetProbe] contacto Copilot: {f.Host} ({f.Detail})");
-            try
-            {
-                await _sb.ReportStudentActivityAsync(
-                    "ai_endpoint_contacted", _user.Login, _user.Email, Environment.MachineName,
-                    _selection.SectionText, f.Host, f.Detail, _selection.SectionId);
-            }
-            catch (Exception ex) { Log($"[NetProbe] reporte fallo: {ex.Message}"); }
-        }
+        await _networkProbe.CheckAsync(
+            _user.Login, _user.Email, Environment.MachineName,
+            _selection.SectionText, _selection.SectionId, DateTime.UtcNow);
     }
-
-    // Arranque del cliente (UTC) y ultimo update_requested_at ya procesado.
-    private readonly DateTime _processStartUtc = DateTime.UtcNow;
-    private string? _lastUpdateRequestProcessed;
 
     /// <summary>
-    /// Update DISPARADO POR EL PROFE desde el panel (NO automatico). El profe
-    /// setea control.update_requested_at = NOW(); el cliente actualiza UNA vez
-    /// si ese timestamp es POSTERIOR a su arranque. Asi no le pega a la API de
-    /// GitHub en cada tick (solo cuando el profe lo pide) ni relanza el update
-    /// en cada arranque por un request viejo. La lectura de control ya se hace
+    /// Update DISPARADO POR EL PROFE desde el panel (NO automatico): delegado al
+    /// RemoteUpdateWatcher (ENT-7 extraction #3), duenio del arranque del cliente
+    /// (_processStartUtc) y del one-shot dedup (_lastUpdateRequestProcessed), antes
+    /// aca. El watcher lee el control, decide (request POSTERIOR al arranque y no
+    /// procesado) y dispara el update UNA vez. La lectura de control ya se hace
     /// cada tick (Supabase, barato); GitHub solo se toca al disparar.
     /// </summary>
-    private async Task CheckUpdateRequestAsync()
-    {
-        var ctl = await _sb.GetControlAsync();
-        var raw = ctl?.UpdateRequestedAt;
-        if (string.IsNullOrEmpty(raw)) return;
-        if (raw == _lastUpdateRequestProcessed) return; // ya procesado
-        if (!DateTimeOffset.TryParse(raw, out var reqDto)) return;
-        if (reqDto.UtcDateTime <= _processStartUtc)
-        {
-            // Request anterior a este arranque: marcar como visto, no actualizar.
-            _lastUpdateRequestProcessed = raw;
-            return;
-        }
-        _lastUpdateRequestProcessed = raw;
-        Log("[update] el profesor pidio actualizar. Buscando version nueva...");
-        await UpdateService.CheckAndApplyAsync(msg => Log(msg), _gh.Token); // reinicia si hay update
-    }
+    private Task CheckUpdateRequestAsync() => _remoteUpdate.CheckAsync();
 
     /// <summary>
     /// Refresca el blocklist efectivo de la seccion del alumno. Si el fetch
