@@ -19,14 +19,14 @@ namespace EntregaEvaluacion.Windows;
 /// </summary>
 public partial class MainWindow : Window, ILogSink, IUserNotifier
 {
-    private readonly IGitHubService _gh = new GitHubService();
-    private readonly ISupabaseClient _sb = new SupabaseClient();
+    private readonly IGitHubService _gh;
+    private readonly ISupabaseClient _sb;
 
     // Seleccion del alumno (seccion + evaluacion) detras de ISelectionStore, en
-    // reemplazo de la clase estatica global StudentSection. La construccion sigue
-    // inline (igual que _gh/_sb); la inyeccion via composition root es un paso
-    // posterior (ENT-6 step 5).
-    private readonly ISelectionStore _selection = new SelectionStore(new RegistrySelectionPersistence());
+    // reemplazo de la clase estatica global StudentSection. Se inyecta por el
+    // constructor desde el composition root (App.StartShell), igual que _gh/_sb
+    // (ENT-6 step 5).
+    private readonly ISelectionStore _selection;
 
     // Estado
     private GitHubUser? _user;
@@ -73,8 +73,16 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier
     // El handler que el boton primario debe disparar segun el estado actual.
     private Func<Task>? _primaryAction;
 
-    public MainWindow()
+    public MainWindow(IGitHubService gh, ISupabaseClient sb, ISelectionStore selection)
     {
+        // Las dependencias se asignan ANTES de InitializeComponent y de cualquier
+        // otro codigo del cuerpo del constructor que pudiera usarlas: en C# los
+        // inicializadores de campo ya corrieron, asi que estos campos solo quedan
+        // definidos una vez que el composition root los entrega aqui.
+        _gh = gh;
+        _sb = sb;
+        _selection = selection;
+
         InitializeComponent();
 
         // Los combos se poblan asincronicamente en InitAsync (fetch BD + fallback

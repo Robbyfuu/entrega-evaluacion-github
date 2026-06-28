@@ -1,5 +1,6 @@
 using System.Threading;
 using System.Windows;
+using EntregaEvaluacion.Core;
 using EntregaEvaluacion.Services;
 using EntregaEvaluacion.Windows;
 
@@ -84,7 +85,14 @@ public partial class App : Application
         }
         catch { }
 
-        var main = new MainWindow();
+        // Composition root: se arma el grafo de dependencias de la ventana
+        // principal y se inyecta por constructor (ENT-6 step 5). Este SupabaseClient
+        // es una instancia distinta de la usada arriba para el CheatWindow de
+        // lockdown persistente; colapsarlas es ENT-7.
+        var gh = new GitHubService();
+        var selection = new SelectionStore(new RegistrySelectionPersistence());
+        var mainSb = new SupabaseClient();
+        var main = new MainWindow(gh, mainSb, selection);
         MainWindow = main;
         // A partir de aca, cerrar la ventana principal cierra la app.
         ShutdownMode = ShutdownMode.OnMainWindowClose;
