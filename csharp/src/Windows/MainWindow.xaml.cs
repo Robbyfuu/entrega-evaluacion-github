@@ -17,7 +17,7 @@ namespace EntregaEvaluacion.Windows;
 /// Classroom, y polling admin (config, heartbeat, lockdown dirigido/remoto).
 /// Solo cambia la capa UI (WPF + WPF-UI, layout fluido en lugar de coords).
 /// </summary>
-public partial class MainWindow : Window
+public partial class MainWindow : Window, ILogSink, IUserNotifier
 {
     private readonly GitHubService _gh = new();
     private readonly SupabaseClient _sb = new();
@@ -1928,7 +1928,7 @@ public partial class MainWindow : Window
     }
 
     // ===================== Helpers =====================
-    private void Log(string msg)
+    public void Log(string msg)
     {
         if (!Dispatcher.CheckAccess()) { Dispatcher.Invoke(() => Log(msg)); return; }
 
@@ -1945,14 +1945,14 @@ public partial class MainWindow : Window
         if (kind != null) ShowToast(msg, kind.Value);
     }
 
-    private void Status(string msg)
+    public void Status(string msg)
     {
         if (!Dispatcher.CheckAccess()) { Dispatcher.Invoke(() => Status(msg)); return; }
         StatusText.Text = msg;
     }
 
     // ===================== Toast =====================
-    private void ShowToast(string msg, ToastKind kind)
+    public void ShowToast(string msg, ToastKind kind)
     {
         if (!Dispatcher.CheckAccess()) { Dispatcher.Invoke(() => ShowToast(msg, kind)); return; }
 
