@@ -87,8 +87,10 @@ public interface ISupabaseClient
     // Reporta que este PC+usuario quedo bloqueado por una trampa local.
     Task<bool> ReportSelfLockAsync(
         string pcName, string githubUsername, string? section, string? reason);
-    // Predicado de force_lockdown EFECTIVO de la evaluacion actual.
-    Task<bool> IsForceLockdownAsync();
+    // Predicado de force_lockdown EFECTIVO de la evaluacion indicada (override
+    // por evaluacion ?? global). El llamador provee el evaluation_id; el cliente
+    // ya no lo lee de un estado global.
+    Task<bool> IsForceLockdownAsync(long? evaluationId);
 
     // ===== Reportes (INSERT directo / RPC) =====
     // Reporta un evento de copia detectado.

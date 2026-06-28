@@ -744,9 +744,9 @@ public class SupabaseClient : ISupabaseClient
     /// parpadeo de red NUNCA libera a un alumno bloqueado en medio del examen.
     /// Solo el primer arranque sin estado previo cae al default global (false).
     /// </summary>
-    public async Task<bool> IsForceLockdownAsync()
+    public async Task<bool> IsForceLockdownAsync(long? evaluationId)
     {
-        var ctl = await GetEffectiveControlAsync(StudentSection.GetEvaluationId());
+        var ctl = await GetEffectiveControlAsync(evaluationId);
         // ctl no-null: el resolver ya sembro _lastKnownLock con ctl.ForceLockdown.
         // ctl null (ambos fetch fallaron): fail-safe CERRADO reteniendo el cache.
         return ctl?.ForceLockdown ?? _lastKnownLock ?? false;

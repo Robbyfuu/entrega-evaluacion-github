@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Windows.Media;
 using System.Windows.Threading;
+using EntregaEvaluacion.Core;
 using EntregaEvaluacion.Models;
 using EntregaEvaluacion.Services;
 
@@ -14,6 +15,7 @@ namespace EntregaEvaluacion.Windows;
 public partial class LoginWindow : Window
 {
     private readonly IGitHubService _gh;
+    private readonly ISelectionStore _selection;
     private DispatcherTimer? _pollTimer;
     private string _deviceCode = "";
     private DateTime _expiresAt;
@@ -23,10 +25,11 @@ public partial class LoginWindow : Window
     // este en vuelo a la vez.
     private bool _isPolling;
 
-    public LoginWindow(IGitHubService gh)
+    public LoginWindow(IGitHubService gh, ISelectionStore selection)
     {
         InitializeComponent();
         _gh = gh;
+        _selection = selection;
         Loaded += async (_, _) => await StartFlowAsync();
     }
 
@@ -180,7 +183,7 @@ public partial class LoginWindow : Window
         {
             GithubUsername = "(login)",
             PcName = Environment.MachineName,
-            Section = StudentSection.Get()
+            Section = _selection.SectionText
         };
         var win = new WebBrowserWindow(_verifyUri, "Iniciar sesion en GitHub", ctx, OnForbiddenNavigation) { Owner = this };
         win.Show();

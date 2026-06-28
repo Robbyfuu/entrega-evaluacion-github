@@ -567,7 +567,7 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier
     private async Task DoLoginAsync()
     {
         Log("-> Iniciando sesion con codigo...");
-        var dlg = new LoginWindow(_gh) { Owner = this };
+        var dlg = new LoginWindow(_gh, _selection) { Owner = this };
         if (dlg.ShowDialog() == true)
         {
             await UpdateSessionPanel();
@@ -1730,7 +1730,7 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier
     // Lockdown REMOTO (force-only).
     private bool StillLockedByForce()
         => !ScreenUnblockedSync()
-            && Task.Run(() => _sb.IsForceLockdownAsync()).GetAwaiter().GetResult();
+            && Task.Run(() => _sb.IsForceLockdownAsync(_selection.EvaluationId)).GetAwaiter().GetResult();
 
     // Lockdown DIRIGIDO (pc+usuario) o force. pc varia: Environment.MachineName
     // en el dirigido remoto, el pc real en la trampa local.
@@ -1738,7 +1738,7 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier
         => !ScreenUnblockedSync()
             && Task.Run(() =>
                 _sb.IsTargetedLockedAsync(pc, me).GetAwaiter().GetResult()
-                || _sb.IsForceLockdownAsync().GetAwaiter().GetResult()).GetAwaiter().GetResult();
+                || _sb.IsForceLockdownAsync(_selection.EvaluationId).GetAwaiter().GetResult()).GetAwaiter().GetResult();
 
     private async Task CheckAdminConfigAsync()
     {
