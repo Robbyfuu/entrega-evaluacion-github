@@ -1,5 +1,7 @@
+-- ⚠️ FASE 2: EXIGE identidad verificada. RECHAZA clientes sin JWT (anon crudo).
+-- NO CORRER hasta: (1) 0 clientes <2.7.20 activos (ENT-23) y (2) fuera de ventana de examen.
 -- ============================================================
---  Migracion: identidad-verificada en heartbeat (sec-backend-05)
+--  Migracion: identidad-verificada en heartbeat (sec-backend-05) -- FASE 2
 --
 --  Problema (MEDIUM): la RPC heartbeat acepta identidad arbitraria via
 --  p_github_username auto-asertado -> spoofing/flooding de presencia
@@ -11,17 +13,22 @@
 --  devuelve el claim github_username verificado del JWT (o NULL para el
 --  cliente viejo). Definido en csharp/migration-jwt-identity.sql.
 --
---  FASE 1 (esta migracion, compat): si el JWT trae un username verificado
---  y NO coincide con el afirmado, rechazo silencioso (no-op). Claim NULL
---  (cliente viejo, sin el claim en el JWT) -> se permite, comportamiento
---  identico al de hoy (backward-compat).
+--  FASE 2 (esta migracion, breaking): se EXIGE el claim github_username
+--  verificado. Claim presente y DISTINTO del afirmado -> rechazo silencioso
+--  (no-op). Claim NULL/ausente (cliente sin enrolar, sin el claim en el JWT)
+--  -> RECHAZADO. Solo un cliente con identidad verificada registra presencia,
+--  y unicamente a su propio nombre.
 --
---  FASE 2 (futuro, flip a exigir claim): una vez que todos los clientes
---  emitan el claim github_username, endurecer el guard para EXIGIR el
---  claim, p.ej.:
---      IF v_jwt_user IS NULL OR v_jwt_user = '' THEN RETURN; END IF;
---      IF v_jwt_user IS DISTINCT FROM p_github_username THEN RETURN; END IF;
---  (es decir, dejar de aceptar el claim NULL como pase libre).
+--  ADVERTENCIA: rompe a clientes viejos sin JWT; no aplicar hasta que no
+--  queden clientes <2.7.20 activos (ENT-23) y fuera de ventana de examen.
+--
+--  ROLLBACK A FASE 1 (backward-compat) si hay que revertir: restaurar el
+--  guard que PERMITE el claim NULL:
+--      v_jwt_user := public.jwt_github_username();
+--      IF v_jwt_user IS NOT NULL AND v_jwt_user <> ''
+--         AND v_jwt_user IS DISTINCT FROM p_github_username THEN
+--        RETURN;
+--      END IF;
 --
 --  Idempotente. Correr en Supabase SQL Editor.
 -- ============================================================
@@ -51,12 +58,12 @@ AS $$
 DECLARE
   v_jwt_user TEXT;
 BEGIN
-  -- Guard de identidad-verificada (FASE 1): si el JWT trae un username
-  -- verificado y NO coincide con el afirmado, rechazo silencioso. Claim
-  -- NULL (cliente viejo) -> se permite (backward-compat).
+  -- Guard de identidad-verificada (FASE 2): se EXIGE el claim verificado.
+  -- Claim presente y DISTINTO del afirmado -> rechazo silencioso. Claim
+  -- NULL/ausente (cliente sin enrolar) -> RECHAZADO (ya no es backward-compat).
   v_jwt_user := public.jwt_github_username();
-  IF v_jwt_user IS NOT NULL AND v_jwt_user <> ''
-     AND v_jwt_user IS DISTINCT FROM p_github_username THEN
+  IF v_jwt_user IS NULL OR v_jwt_user = ''
+     OR v_jwt_user IS DISTINCT FROM p_github_username THEN
     RETURN;
   END IF;
 
