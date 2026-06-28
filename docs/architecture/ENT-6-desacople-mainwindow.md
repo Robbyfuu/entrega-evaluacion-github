@@ -35,11 +35,11 @@ Los 4 flags **no son verdad**: son espejos de fuentes externas (registry, `setti
 
 ### D2 — `ISelectionStore`
 
-- **Alcance**: **sólo selección**. `CourseId`, `SectionId`, `SectionText`, `EvaluationId`, `CurrentEvaluation?`; intención `SetCourse/SetSection/SetEvaluation/Clear`; evento `SelectionChanged`. La **identidad** (`_user`/`_enrollment`) NO entra ahora → ENT-7 como `ExamContext`.
+- **Alcance** (refinado en implementación, forzado por el código): el store envuelve **exactamente** lo que persistía `StudentSection` — `SectionText` (string), `SectionId` (long?), `EvaluationId` (long?). `CourseId`/`CurrentEvaluation` quedan FUERA: son estado in-memory de UI de MainWindow, no globales transversales. Superficie: lecturas `SectionText/SectionId/EvaluationId`; setters granulares `SetSectionText/SetSectionId/SetEvaluationId`; `Clear()`; evento `SelectionChanged`. La **identidad** (`_user`/`_enrollment`) NO entra ahora → ENT-7 como `ExamContext`.
 - **Mutabilidad**: dueño único **mutable** + evento. No snapshots inmutables — la cascada de combos WPF y las guardas `_initializing`/`_syncingTipo` leen in-place; un swap inmutable pelearía contra ese patrón sin beneficio (MVVM real es ENT-8).
-- **Persistencia**: se **mantiene el backing HKCU**. (1) Sobrevive al auto-relaunch del lockdown. (2) Migrar el formato de storage a mitad de examen arriesga perder selecciones en vuelo al auto-actualizar. Se arregla lo que importa: envolver HKCU detrás del store y **matar los `catch` vacíos** (`principles-08`, hoy ocultan fallos).
+- **Persistencia**: se **mantiene el backing HKCU**. (1) Sobrevive al auto-relaunch del lockdown. (2) Migrar el formato de storage a mitad de examen arriesga perder selecciones en vuelo al auto-actualizar. Se arregla lo que importa: envolver HKCU detrás del store y **matar los `catch` vacíos** (`principles-08`, hoy ocultan fallos). **Implementación**: el store vive en `Core` (testeable, cross-platform) y escribe a través de un puerto `ISelectionPersistence`; el adapter `RegistrySelectionPersistence` (proyecto WPF) toca las MISMAS keys HKCU que `StudentSection` (`Software\EntregaEvaluacion`: `Section`/`SectionId`/`EvaluationId`) y loguea fallos vía `Debug.WriteLine` en vez de tragarlos. El puerto es la costura de testeo (los tests usan un fake en memoria).
 - **Desacople**: independiente del `exam-session.json` dormido. Converger sobre `ExamSession` es ENT-8.
-- **Wiring**: el composition root construye la instancia única e inyecta el store en `MainWindow` y en la costura de `_sb`, de modo que la capa de datos reciba `evaluationId` **explícito** y deje de leer `StudentSection.GetEvaluationId()` (cierra `principles-07`/`DIP-3`). `StudentSection` queda como adapter interno de persistencia detrás del store, o se absorbe y se borra.
+- **Wiring**: el composition root construye las instancias e inyecta el store en `MainWindow` y en `LoginWindow`. `SupabaseClient.IsForceLockdownAsync` recibe `evaluationId` por **parámetro** (ya no lee `StudentSection`), cerrando `principles-07`/`DIP-3`. `StudentSection` tenía DOS lectores externos — `SupabaseClient.IsForceLockdownAsync` y `LoginWindow.OpenEmbedded_Click` (descubierto durante la implementación) — ambos cerrados en el paso 4 y la clase **eliminada**.
 
 ### D3 — Interfaces `_gh`/`_sb`: espejo transicional (Opción B)
 
@@ -99,13 +99,34 @@ Cualquier paso debe mantener intactos:
 
 ## 5. Estado de ejecución
 
-| Paso | Estado | Evidencia |
+Todos los pasos implementados en la rama `feat/ent6-log-notifier-seams` (desde `main` `6f89859`). Build + **69 tests verde** en cada paso; cada paso con review adversarial de contexto fresco.
+
+| Paso | Estado | Commit |
 |---|---|---|
 | Sub-paso: `LogDetailWindow` → archivo propio | ✅ landed | PR #33 (`6f89859`) |
-| 1 — `ILogSink` / `IUserNotifier` | ✅ **hecho** | rama `feat/ent6-log-notifier-seams` (ver abajo) |
-| 2 — interfaces espejo `_gh`/`_sb` | ⬜ pendiente | |
-| 3 — `ISelectionStore` | ⬜ pendiente | |
-| 4 — cerrar reach-in data-layer | ⬜ pendiente | |
-| 5 — composition root | ⬜ pendiente | |
+| 1 — `ILogSink` / `IUserNotifier` | ✅ hecho | `7c7a9ff` (+ doc `29988c7`) |
+| 2 — interfaces espejo `IGitHubService`/`ISupabaseClient` | ✅ hecho | `981afd1` |
+| 3 — `ISelectionStore` (TDD) | ✅ hecho | `98501e4` |
+| 4 — cerrar reach-ins + eliminar `StudentSection` | ✅ hecho | `ab9bca5` |
+| 5 — composition root | ✅ hecho | `d5dc0a4` |
 
-**Paso 1 (hecho)** — `csharp/src/Services/ILogSink.cs` y `IUserNotifier.cs` (namespace `EntregaEvaluacion.Services`, mismo patrón que `IExamSessionService`). `MainWindow` declara `: Window, ILogSink, IUserNotifier`; `Log`/`Status`/`ShowToast` pasan de `private` a `public` con cuerpos byte-idénticos (el marshalling `Dispatcher.CheckAccess()` se preserva). `ShowToast(string, ToastKind)` referencia `EntregaEvaluacion.Core.ToastKind` (no se movió). Sin inyección aún (eso es el paso 5). `dotnet build` verde (0 warnings / 0 errors). Diff total en `MainWindow`: 4 líneas.
+**Hallazgo cerrado (MEDIUM transitorio)**: el paso 3 introdujo brevemente un *split de fuente de lectura del lockdown* — la apertura (`CheckAdminConfigAsync`) leía `_selection.EvaluationId` (in-memory) mientras la liberación (`SupabaseClient.IsForceLockdownAsync`) seguía leyendo `StudentSection.GetEvaluationId()` (HKCU). El paso 4 lo cerró: ambas rutas usan el valor del store. Review adversarial confirmó que `_selection.EvaluationId` no puede ser null cuando el viejo HKCU devolvía valor (la dirección peligrosa, la que liberaría a un alumno bloqueado).
+
+---
+
+## 6. Gate del paso 5 — smoke manual del lockdown (PENDIENTE, lo corre el humano)
+
+El paso 5 cambió el arranque (composition root). **Antes de mergear la rama**, validar en una máquina Windows real:
+
+1. **Arranque normal**: la app abre, login GitHub funciona, los combos curso/sección/evaluación pueblan y la selección persiste tras reiniciar la app.
+2. **Bloqueo de internet**: con control efectivo activo, internet se bloquea; al finalizar el examen se **libera**.
+3. **Pantalla roja remota**: el profe dispara lockdown remoto → aparece; libera por PC → desaparece.
+4. **Trap local**: reactivar Copilot en `settings.json` → pantalla roja + reporte.
+5. **Lockdown persistente**: con marker de sesión anterior, al arrancar la pantalla roja aparece ANTES del MainWindow (usa su propia instancia de `SupabaseClient`, no colapsada — D4).
+6. **Salida**: password del profe (PBKDF2) libera; cierre con evaluación activa bloqueado por `OnClosing`.
+
+Todo verde → mergear. La rama **no debe liberarse a alumnos sin este smoke**.
+
+---
+
+> **Pendiente ENT-7** (no en esta fase): colapsar las dos instancias de `SupabaseClient` (ahora ambas visibles en `App.StartShell`: la temprana del CheatWindow y `mainSb`); extraer servicios casi-puros (AssignmentStatusCalculator, HeartbeatReporter, …); `DIP-1` (servicios estáticos → instancia); `SRP-2` (partir `ISupabaseClient` en repos por agregado); identidad `ExamContext`.
