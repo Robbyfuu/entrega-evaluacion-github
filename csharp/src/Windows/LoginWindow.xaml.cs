@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Windows.Media;
 using System.Windows.Threading;
+using EntregaEvaluacion.Core;
 using EntregaEvaluacion.Models;
 using EntregaEvaluacion.Services;
 
@@ -13,7 +14,8 @@ namespace EntregaEvaluacion.Windows;
 /// </summary>
 public partial class LoginWindow : Window
 {
-    private readonly GitHubService _gh;
+    private readonly IGitHubService _gh;
+    private readonly ISelectionStore _selection;
     private DispatcherTimer? _pollTimer;
     private string _deviceCode = "";
     private DateTime _expiresAt;
@@ -23,10 +25,11 @@ public partial class LoginWindow : Window
     // este en vuelo a la vez.
     private bool _isPolling;
 
-    public LoginWindow(GitHubService gh)
+    public LoginWindow(IGitHubService gh, ISelectionStore selection)
     {
         InitializeComponent();
         _gh = gh;
+        _selection = selection;
         Loaded += async (_, _) => await StartFlowAsync();
     }
 
@@ -112,7 +115,7 @@ public partial class LoginWindow : Window
                 StatusText.Foreground = Brushes.Red;
                 Progress.IsIndeterminate = false;
             }
-            catch (GitHubService.SlowDownException ex)
+            catch (SlowDownException ex)
             {
                 // GitHub pidio ir mas lento (rfc 8628). Aumentamos el intervalo del
                 // timer en AddSeconds y seguimos reintentando, sin cortar.
@@ -180,7 +183,7 @@ public partial class LoginWindow : Window
         {
             GithubUsername = "(login)",
             PcName = Environment.MachineName,
-            Section = StudentSection.Get()
+            Section = _selection.SectionText
         };
         var win = new WebBrowserWindow(_verifyUri, "Iniciar sesion en GitHub", ctx, OnForbiddenNavigation) { Owner = this };
         win.Show();
