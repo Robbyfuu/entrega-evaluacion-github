@@ -92,19 +92,9 @@ CREATE TABLE IF NOT EXISTS public.process_alerts (
 CREATE INDEX IF NOT EXISTS idx_alerts_detected
   ON public.process_alerts (detected_at DESC);
 
--- Procesos sospechosos editables por seccion (blocklist)
--- section IS NULL = regla GLOBAL; section = 'X' = extra de la seccion X.
--- process_name se guarda NORMALIZADO (lowercase, sin .exe, trim).
-CREATE TABLE IF NOT EXISTS public.suspicious_processes (
-  id BIGSERIAL PRIMARY KEY,
-  process_name TEXT NOT NULL,
-  section TEXT,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-CREATE UNIQUE INDEX IF NOT EXISTS ux_susproc_name_section
-  ON public.suspicious_processes (process_name, COALESCE(section, ''));
-CREATE INDEX IF NOT EXISTS idx_susproc_section
-  ON public.suspicious_processes (section);
+-- suspicious_processes (blocklist editable por seccion): tabla, RLS, seed y
+-- realtime viven SOLO en migration-blocklist.sql (owner canonico). No se
+-- redefinen aca para mantener una unica fuente de verdad (ver ENT-5).
 
 -- Lockdown dirigido por PC
 CREATE TABLE IF NOT EXISTS public.targeted_lockdowns (
@@ -128,7 +118,7 @@ ALTER TABLE public.assignments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.online_clients ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.process_alerts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.targeted_lockdowns ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.suspicious_processes ENABLE ROW LEVEL SECURITY;
+-- suspicious_processes: RLS habilitado en migration-blocklist.sql (owner).
 
 -- ============================================================
 --  3. POLICIES
@@ -192,13 +182,8 @@ DROP POLICY IF EXISTS "auth_read_alerts" ON public.process_alerts;
 CREATE POLICY "auth_read_alerts" ON public.process_alerts
   FOR SELECT TO authenticated USING (true);
 
--- suspicious_processes: anon + authenticated leen; solo authenticated escribe
-DROP POLICY IF EXISTS "anon_read_susproc" ON public.suspicious_processes;
-CREATE POLICY "anon_read_susproc" ON public.suspicious_processes
-  FOR SELECT TO anon, authenticated USING (true);
-DROP POLICY IF EXISTS "auth_all_susproc" ON public.suspicious_processes;
-CREATE POLICY "auth_all_susproc" ON public.suspicious_processes
-  FOR ALL TO authenticated USING (true) WITH CHECK (true);
+-- suspicious_processes: policies (anon_read_susproc / auth_all_susproc) viven
+-- en migration-blocklist.sql (owner canonico).
 
 -- targeted_lockdowns: anon lee (cliente chequea el suyo), authenticated CRUD
 DROP POLICY IF EXISTS "anon_read_targeted" ON public.targeted_lockdowns;
@@ -301,36 +286,11 @@ GRANT EXECUTE ON FUNCTION public.report_process_alert(TEXT,TEXT,TEXT,TEXT,TEXT,B
   TO anon, authenticated;
 
 -- ============================================================
---  4b. SEED blocklist global (section = NULL) + realtime
+--  4b. SEED blocklist + realtime de suspicious_processes
 -- ============================================================
--- Reglas globales heredadas por todas las secciones. Copiado de
--- Config.SuspiciousProcesses (ya normalizado). Idempotente.
-INSERT INTO public.suspicious_processes (process_name, section)
-SELECT name, NULL
-FROM unnest(ARRAY[
-  'chrome','msedge','firefox','opera','brave','iexplore','vivaldi','tor',
-  'whatsapp','discord','telegram','slack','teams','skype',
-  'notion','obsidian','evernote','onenote','winword','excel',
-  'code','pycharm','pycharm64','sublime_text','notepad','notepad++','devenv',
-  'anydesk','teamviewer','rustdesk','msrdc',
-  'chatgpt','claude','copilot'
-]) AS name
-ON CONFLICT (process_name, COALESCE(section, '')) DO NOTHING;
-
--- Realtime: agregar suspicious_processes a la publicacion (guardado).
-DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_publication_tables
-    WHERE pubname = 'supabase_realtime'
-      AND schemaname = 'public'
-      AND tablename = 'suspicious_processes'
-  ) THEN
-    EXECUTE 'ALTER PUBLICATION supabase_realtime ADD TABLE public.suspicious_processes';
-  END IF;
-EXCEPTION
-  WHEN duplicate_object THEN NULL;
-END $$;
+-- El seed global (section = NULL) y el alta de suspicious_processes a la
+-- publicacion supabase_realtime viven en migration-blocklist.sql (owner
+-- canonico). No se duplican aca (ver ENT-5).
 
 -- ============================================================
 --  5. TRIGGER updated_at en control
@@ -357,5 +317,4 @@ UNION ALL SELECT 'online_clients', COUNT(*) FROM public.online_clients
 UNION ALL SELECT 'targeted_lockdowns', COUNT(*) FROM public.targeted_lockdowns
 UNION ALL SELECT 'process_alerts', COUNT(*) FROM public.process_alerts
 UNION ALL SELECT 'cheat_events', COUNT(*) FROM public.cheat_events
-UNION ALL SELECT 'student_activity', COUNT(*) FROM public.student_activity
-UNION ALL SELECT 'suspicious_processes', COUNT(*) FROM public.suspicious_processes;
+UNION ALL SELECT 'student_activity', COUNT(*) FROM public.student_activity;

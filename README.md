@@ -164,13 +164,14 @@ Detalle de diseño y modelo de amenaza:
 
 1. Crear un proyecto en Supabase.
 2. Correr las migraciones en el **SQL Editor**, en orden de dependencia. Todas son
-   idempotentes. La base (`csharp/setup-supabase.sql` + browser + acceptances +
-   multi-evaluation + submissions + realtime) está bundleada en
-   `supabase-all-in-one.sql`; las migraciones de features posteriores
-   (`migration-blocklist`, `-allowed-urls`, `-evaluation-control`,
-   `-version-visibility`, `-self-lock`, `-enrollments`, `-enrollments-view`,
-   `-exam-mode`, `-exam-pdf`) se corren aparte. La lista canónica y ordenada está
-   en `admin-next/README.md`.
+   idempotentes. El bundle `csharp/supabase-all-in-one.sql` es **GENERADO** desde el
+   manifiesto `csharp/migrations.order` (`sh csharp/build-all-in-one.sh`) y **no debe
+   editarse a mano**; corrido completo es seguro porque deja el endurecimiento de
+   identidad **FASE 2 (JWT)** al final. La lista canónica y ordenada —incluidas las 4
+   migraciones de FASE 2— está en `admin-next/README.md` y en `csharp/migrations.order`.
+   ⚠️ Correr una migración PRE-FASE-2 standalone (rls-identity-hardening /
+   version-visibility / self-lock / setup-supabase) **después** de FASE 2 revierte el
+   endurecimiento: re-correr las 4 migraciones de FASE 2 al terminar.
 3. Crear al menos una cuenta docente en Supabase Auth.
 
 ### Panel (Vercel)
