@@ -12,7 +12,10 @@ const nextConfig: NextConfig = {
   // Avoids hydration issues with extensions and keeps URLs clean on static hosts.
   trailingSlash: true,
   // Pin the workspace root so Next does not infer it from unrelated lockfiles
-  // elsewhere on the machine.
+  // elsewhere on the machine. Next 16 requires outputFileTracingRoot and
+  // turbopack.root to be the SAME value, so both are pinned to projectRoot
+  // (otherwise Next infers outputFileTracingRoot from a parent lockfile and warns).
+  outputFileTracingRoot: projectRoot,
   turbopack: { root: projectRoot },
 };
 
