@@ -28,6 +28,24 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier
     // (ENT-6 step 5).
     private readonly ISelectionStore _selection;
 
+    // Colaboradores extraidos del polling admin (ENT-7 extractions #2 y #3).
+    // Dependen solo de _sb (ya inyectado) y, los que loguean, de este MainWindow
+    // como ILogSink; por eso se CONSTRUYEN en el constructor en vez de inyectarse
+    // desde el composition root. Cada uno es duenio del estado que antes vivia
+    // aca: HeartbeatReporter el prior-set de procesos (_lastProcSet);
+    // NetworkProbeReporter el throttle/dedup de la sonda (_lastNetProbeUtc/
+    // _reportedAiHits); RemoteUpdateWatcher el arranque y el one-shot del update
+    // (_processStartUtc/_lastUpdateRequestProcessed).
+    private readonly HeartbeatReporter _heartbeat;
+    private readonly BlocklistRefresher _blocklistRefresher;
+    private readonly NetworkProbeReporter _networkProbe;
+    private readonly RemoteUpdateWatcher _remoteUpdate;
+
+    // Colaborador de I/O del PDF de enunciado (ENT-7 extraction #4). No tiene
+    // dependencias (envuelve llamadas estaticas a ExamPdfService), asi que se
+    // inicializa inline en vez de construirse en el constructor como los de arriba.
+    private readonly PdfViewer _pdfViewer = new();
+
     // Estado
     private GitHubUser? _user;
     private bool _internetBlocked;
@@ -35,7 +53,6 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier
     private bool _remoteLockdownActive;
     private bool _targetedLockdownActive;
     private string _lastAdminMessage = "";
-    private readonly HashSet<string> _lastProcSet = new();
 
     // Blocklist efectivo (global union seccion) cacheado desde la tabla
     // suspicious_processes. Se refresca en cada AdminTick. null = fallback a
@@ -82,6 +99,15 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier
         _gh = gh;
         _sb = sb;
         _selection = selection;
+
+        // Colaboradores del polling admin: _sb ya esta asignado y este MainWindow
+        // ya es un ILogSink valido, asi que se pueden construir aqui (no tocan UI).
+        // RemoteUpdateWatcher captura aqui el arranque (UTC) y lee _gh.Token de
+        // forma diferida (en el instante del disparo), igual que el original.
+        _heartbeat = new HeartbeatReporter(_sb, this);
+        _blocklistRefresher = new BlocklistRefresher(_sb);
+        _networkProbe = new NetworkProbeReporter(_sb, this);
+        _remoteUpdate = new RemoteUpdateWatcher(_sb, this, () => _gh.Token);
 
         InitializeComponent();
 
@@ -404,9 +430,9 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier
         var path = CurrentEvalPdfPath();
         if (string.IsNullOrWhiteSpace(path)) return;
         ViewPdfButton.IsEnabled = false;
-        var local = await ExamPdfService.DownloadAndOpenAsync(path);
+        var ok = await _pdfViewer.TryOpenAsync(path);
         ViewPdfButton.IsEnabled = true;
-        if (local == null)
+        if (!ok)
             ShowToast("No se pudo abrir el enunciado. Reintenta.", ToastKind.Error);
     }
 
@@ -691,12 +717,13 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier
     }
 
     /// <summary>
-    /// Boton primario unico y contextual. Decide texto, color, handler y
-    /// estado segun el estado actual. Reemplaza los antiguos botones
-    /// "1. Crear" / "2. Subir". No cambia la logica de negocio: solo
-    /// reconecta a los handlers existentes (CrearRepoAsync, SubirArchivosAsync).
+    /// Lee el estado real de la UI (sesion, carpeta, modo, datos de repo) y delega
+    /// la decision al core <see cref="PrimaryActionResolver"/>. Unica fuente de
+    /// lectura del estado para el boton primario y el paso activo, asi ambos no
+    /// pueden divergir. Sin logica de negocio aqui: solo proyecta los controles a
+    /// los 4 booleans puros que el resolver consume.
     /// </summary>
-    private void UpdatePrimaryAction()
+    private PrimaryActionResolution ResolvePrimaryAction()
     {
         var hasAuth = _gh.IsAuthenticated;
         var hasFolder = !string.IsNullOrEmpty(CarpetaBox.Text) && Directory.Exists(CarpetaBox.Text);
@@ -704,57 +731,85 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier
         var hasRepoData = existente ? ReposCombo.SelectedItem != null
             : (!string.IsNullOrEmpty(NombreBox.Text.Trim()) && !string.IsNullOrEmpty((TipoCombo.SelectedItem as string ?? "").Trim()));
 
-        // 1) Sin sesion.
-        if (!hasAuth)
-        {
-            PrimaryButton.Content = "Inicia sesion primero";
-            PrimaryButton.Appearance = Wpf.Ui.Controls.ControlAppearance.Secondary;
-            PrimaryButton.IsEnabled = false;
-            _primaryAction = null;
-            return;
-        }
+        return PrimaryActionResolver.Resolve(hasAuth, hasFolder, existente, hasRepoData);
+    }
 
-        // 3) Carpeta lista + repo (creado o clonado) -> Subir.
-        if (hasFolder && hasRepoData)
-        {
-            PrimaryButton.Content = "Subir evaluacion";
-            PrimaryButton.Appearance = Wpf.Ui.Controls.ControlAppearance.Success;
-            PrimaryButton.IsEnabled = true;
-            _primaryAction = SubirArchivosAsync;
-            return;
-        }
+    /// <summary>
+    /// Boton primario unico y contextual. Resuelve el estado en el core y aplica el
+    /// <see cref="PrimaryActionKind"/> a la UI/handler. No cambia la logica de
+    /// negocio: solo reconecta a los handlers existentes (CrearRepoAsync,
+    /// SubirArchivosAsync).
+    /// </summary>
+    private void UpdatePrimaryAction() => ApplyPrimaryAction(ResolvePrimaryAction().Kind);
 
-        // 2) Datos completos -> Crear / Clonar.
-        if (hasRepoData)
+    /// <summary>
+    /// Traduce el <see cref="PrimaryActionKind"/> resuelto en el core al texto,
+    /// apariencia, estado habilitado y handler del boton primario. Todo el wiring de
+    /// UI/handler vive aqui (la vista), no en el core.
+    /// </summary>
+    private void ApplyPrimaryAction(PrimaryActionKind kind)
+    {
+        switch (kind)
         {
-            PrimaryButton.Content = existente ? "Clonar repositorio" : "Crear repositorio";
-            PrimaryButton.Appearance = Wpf.Ui.Controls.ControlAppearance.Primary;
-            PrimaryButton.IsEnabled = true;
-            _primaryAction = CrearRepoAsync;
-            return;
-        }
+            // 1) Sin sesion.
+            case PrimaryActionKind.LoginRequired:
+                PrimaryButton.Content = "Inicia sesion primero";
+                PrimaryButton.Appearance = Wpf.Ui.Controls.ControlAppearance.Secondary;
+                PrimaryButton.IsEnabled = false;
+                _primaryAction = null;
+                break;
 
-        // Sesion iniciada pero faltan datos del repo.
-        PrimaryButton.Content = existente ? "Selecciona un repositorio" : "Completa los datos";
-        PrimaryButton.Appearance = Wpf.Ui.Controls.ControlAppearance.Secondary;
-        PrimaryButton.IsEnabled = false;
-        _primaryAction = null;
+            // 3) Carpeta lista + repo (creado o clonado) -> Subir.
+            case PrimaryActionKind.Submit:
+                PrimaryButton.Content = "Subir evaluacion";
+                PrimaryButton.Appearance = Wpf.Ui.Controls.ControlAppearance.Success;
+                PrimaryButton.IsEnabled = true;
+                _primaryAction = SubirArchivosAsync;
+                break;
+
+            // 2) Datos completos, modo nuevo -> Crear.
+            case PrimaryActionKind.CreateRepo:
+                PrimaryButton.Content = "Crear repositorio";
+                PrimaryButton.Appearance = Wpf.Ui.Controls.ControlAppearance.Primary;
+                PrimaryButton.IsEnabled = true;
+                _primaryAction = CrearRepoAsync;
+                break;
+
+            // 2) Datos completos, modo existente -> Clonar (mismo handler que Crear).
+            case PrimaryActionKind.CloneRepo:
+                PrimaryButton.Content = "Clonar repositorio";
+                PrimaryButton.Appearance = Wpf.Ui.Controls.ControlAppearance.Primary;
+                PrimaryButton.IsEnabled = true;
+                _primaryAction = CrearRepoAsync;
+                break;
+
+            // Sesion iniciada pero falta elegir repositorio (modo existente).
+            case PrimaryActionKind.SelectRepo:
+                PrimaryButton.Content = "Selecciona un repositorio";
+                PrimaryButton.Appearance = Wpf.Ui.Controls.ControlAppearance.Secondary;
+                PrimaryButton.IsEnabled = false;
+                _primaryAction = null;
+                break;
+
+            // Sesion iniciada pero faltan nombre/tipo (modo nuevo).
+            case PrimaryActionKind.CompleteData:
+                PrimaryButton.Content = "Completa los datos";
+                PrimaryButton.Appearance = Wpf.Ui.Controls.ControlAppearance.Secondary;
+                PrimaryButton.IsEnabled = false;
+                _primaryAction = null;
+                break;
+        }
     }
 
     /// <summary>
     /// Resalta el paso del sidebar que refleja el estado real del alumno:
     /// sin sesion = paso 1; con sesion sin repo+carpeta listos = paso 2;
-    /// repo + carpeta listos = paso 3.
+    /// repo + carpeta listos = paso 3. El paso lo decide el core; aqui solo se
+    /// aplica al UI.
     /// </summary>
     private void UpdateActiveStep()
     {
-        var hasAuth = _gh.IsAuthenticated;
-        var hasFolder = !string.IsNullOrEmpty(CarpetaBox.Text) && Directory.Exists(CarpetaBox.Text);
-        var existente = ModoExistente.IsChecked == true;
-        var hasRepoData = existente ? ReposCombo.SelectedItem != null
-            : (!string.IsNullOrEmpty(NombreBox.Text.Trim()) && !string.IsNullOrEmpty((TipoCombo.SelectedItem as string ?? "").Trim()));
-
-        int active = !hasAuth ? 1 : (hasFolder && hasRepoData ? 3 : 2);
+        var active = ResolvePrimaryAction().ActiveStep;
 
         SetStepActive(Step1Border, Step1Dot, Step1Num, Step1Title, active == 1, active > 1);
         SetStepActive(Step2Border, Step2Dot, Step2Num, Step2Title, active == 2, active > 2);
@@ -1163,11 +1218,12 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier
     }
 
     /// <summary>
-    /// Determina, para cada assignment de la seccion, su estado segun las 5
-    /// senales: OWNED (repo esperado existe), ACCEPTED_DB (assignment_acceptances),
-    /// SUBMITTED (assignment_submissions), INVITED (repository_invitations) y
-    /// EXPECTED (la propia lista asg). Las invitaciones se asocian por PREFIJO
-    /// de slug ({slug}-) con desempate por inviter-org vs Evaluation.Org/Assignment.Org.
+    /// Orquesta el estado de cada tarea de la seccion: hace los fetches de I/O
+    /// (repos, aceptaciones, entregas) y delega el algebra PURA de las 5 senales
+    /// (OWNED / ACCEPTED_DB / SUBMITTED / INVITED / EXPECTED) + la asociacion de
+    /// invitaciones (longest-prefix) a EntregaEvaluacion.Core
+    /// AssignmentStatusCalculator. Los resultados puros se mapean de vuelta al
+    /// view-model WPF AssignmentStatus para el banner y el dialogo.
     ///
     /// El parametro invitations puede ser null (no se pudo consultar la API de
     /// invitaciones): en ese caso InvitationPending queda en false y el caller
@@ -1182,154 +1238,95 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier
         List<RepoInvitation>? invitations,
         List<RepoInvitation> unassociatedInvitations)
     {
-        var result = new List<AssignmentStatus>();
+        // Sin tareas esperadas, no hace falta NINGUN fetch (repos/aceptaciones/
+        // entregas): toda invitacion viva queda sin asociar. Restaura el
+        // short-circuit previo a ENT-7 para no pegarle a GitHub/Supabase en una
+        // seccion sin assignments (paridad exacta de I/O).
         if (asg.Count == 0)
         {
-            // Sin tareas esperadas, toda invitacion viva queda sin asociar.
             if (invitations != null) unassociatedInvitations.AddRange(invitations);
-            return result;
+            return new List<AssignmentStatus>();
         }
 
         // Sin sesion no podemos cruzar contra repos; usamos solo acceptances
         // si hubiera username, pero sin user todo queda pendiente.
         var me = _user?.Login;
 
+        // ===== I/O: insumos del calculo (lo unico que NO es puro) =====
+
         // Repos del alumno (para detectar el repo esperado de cada tarea).
-        var repoNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var reposByName = new Dictionary<string, GitHubRepo>(StringComparer.OrdinalIgnoreCase);
+        var repos = new List<RepoInput>();
         if (!string.IsNullOrEmpty(me) && _gh.IsAuthenticated)
-        {
             foreach (var r in await _gh.ListReposAsync())
-            {
-                repoNames.Add(r.Name);
-                reposByName[r.Name] = r;
-            }
-        }
+                repos.Add(new RepoInput(r.Name, r.Owner?.Login));
 
         // Aceptaciones registradas en BD.
-        var acceptedIds = new HashSet<long>();
+        var acceptedIds = new List<long>();
         if (!string.IsNullOrEmpty(me))
             foreach (var a in await _sb.GetAcceptancesAsync(me))
                 acceptedIds.Add(a.AssignmentId);
 
         // Entregas formales registradas en BD.
-        var submittedIds = new HashSet<long>();
-        var submissionsByAssignment = new Dictionary<long, Submission>();
+        var submissions = new List<SubmissionInput>();
         if (!string.IsNullOrEmpty(me))
             foreach (var s in await _sb.GetSubmissionsAsync(me))
-            {
-                submittedIds.Add(s.AssignmentId);
-                submissionsByAssignment[s.AssignmentId] = s;
-            }
+                submissions.Add(new SubmissionInput(s.AssignmentId, s.RepoUrl, s.SubmittedAt));
 
-        // Invitaciones vivas pendientes de consumir. Se van quitando de este set
-        // a medida que se asocian a una tarea, para luego reportar las sobrantes
-        // como "sin asociar". null = no se pudo consultar (no es lista vacia).
-        var remainingInvites = invitations != null
-            ? new List<RepoInvitation>(invitations)
-            : new List<RepoInvitation>();
-
-        foreach (var a in asg)
+        // Proyeccion de las invitaciones a la entrada pura, preservando null (no
+        // se pudo consultar) vs lista vacia. invById permite reconstruir luego
+        // unassociatedInvitations con los RepoInvitation originales.
+        List<InvitationInput>? invInputs = null;
+        var invById = new Dictionary<long, RepoInvitation>();
+        if (invitations != null)
         {
-            string? repoName = null;
-            string? repoUrl = null;
-            bool hasRepo = false;
-
-            if (!string.IsNullOrEmpty(me))
+            invInputs = new List<InvitationInput>(invitations.Count);
+            foreach (var inv in invitations)
             {
-                var expected = ClassroomRepoNaming.ExpectedClassroomRepo(a.Title, me);
-                if (repoNames.Contains(expected))
-                {
-                    hasRepo = true;
-                    repoName = expected;
-                    var owner = reposByName.TryGetValue(expected, out var r) && r.Owner != null
-                        ? r.Owner.Login : me;
-                    repoUrl = $"https://github.com/{owner}/{expected}";
-                }
+                invInputs.Add(new InvitationInput(inv.Id, inv.Repository?.Name ?? "", inv.Inviter?.Login));
+                invById[inv.Id] = inv;
             }
+        }
 
-            var accepted = hasRepo || acceptedIds.Contains(a.Id);
-            var submitted = submittedIds.Contains(a.Id);
-            submissionsByAssignment.TryGetValue(a.Id, out var sub);
+        // ===== Calculo PURO: 5 senales -> estados + asociacion de invitaciones =====
+        // RosterMatchConfirmed()/CurrentEvaluationOrg() se evaluan una sola vez
+        // (son estables durante el calculo) y se pasan como datos al core.
+        var calc = AssignmentStatusCalculator.Compute(
+            asg.Select(a => new AssignmentInput(a.Id, a.Title, a.Section, a.Org)).ToList(),
+            repos,
+            acceptedIds,
+            submissions,
+            invInputs,
+            me,
+            RosterMatchConfirmed(),
+            CurrentEvaluationOrg());
 
-            // Endurecimiento de EXPECTED por roster (solo con match confirmado):
-            // una tarea EXPECTED-only (no la posee, no la acepto, no la entrego)
-            // de seccion GLOBAL/vacia se omite, porque con matricula confirmada
-            // conocemos la seccion exacta del alumno y no necesitamos la pista
-            // global. CRITICO: las tareas que el alumno posee/acepto/entrego
-            // (hasRepo || accepted || submitted) SIEMPRE pasan, sin importar su
-            // seccion ni el roster -> una entrega pendiente real (pendienteEntregar)
-            // NUNCA se suprime. Sin match confirmado, nada se omite (default).
-            // Esto solo filtra que filas EXPECTED entran a result ANTES del
-            // bucketing de 5 senales: no toca filas OWNED/ACCEPTED/SUBMITTED ni
-            // INVITED, asi que el algebra de 3 buckets disjuntos se preserva.
-            if (RosterMatchConfirmed()
-                && !hasRepo && !accepted && !submitted
-                && string.IsNullOrEmpty(a.Section))
-            {
-                continue;
-            }
+        // ===== Mapeo de vuelta al view-model WPF (mismo orden que asg) =====
+        var byId = new Dictionary<long, Assignment>();
+        foreach (var a in asg) byId[a.Id] = a;
 
-            // INVITED: la asociacion invitacion<->tarea se resuelve mas abajo en
-            // un paso aparte (longest-prefix-wins), porque procesar las tareas en
-            // el orden de asg permitiria que un slug corto ("tarea-") robe la
-            // invitacion de uno mas especifico ("tarea-extra-"). Aqui solo se
-            // arma el AssignmentStatus; InvitationId/InvitationPending se rellenan
-            // luego con el match determinista.
+        var result = new List<AssignmentStatus>(calc.Statuses.Count);
+        foreach (var s in calc.Statuses)
+        {
             result.Add(new AssignmentStatus
             {
-                Assignment = a,
-                Accepted = accepted,
-                RepoName = repoName,
-                RepoUrl = repoUrl,
-                Submitted = submitted,
-                SubmittedRepoUrl = sub?.RepoUrl,
-                SubmittedAt = sub?.SubmittedAt
+                Assignment = byId[s.AssignmentId],
+                Accepted = s.Accepted,
+                RepoName = s.RepoName,
+                RepoUrl = s.RepoUrl,
+                Submitted = s.Submitted,
+                SubmittedRepoUrl = s.SubmittedRepoUrl,
+                SubmittedAt = s.SubmittedAt,
+                InvitationId = s.InvitationId,
+                InvitationPending = s.InvitationPending
             });
         }
 
-        // Asociacion determinista invitacion -> tarea con LONGEST-PREFIX-WINS:
-        // se procesan las invitaciones contra las tareas ordenadas por prefijo
-        // descendente (mas especifico primero), de modo que "tarea-extra-"
-        // reclame "tarea-extra-login" antes de que "tarea-" lo capture. Cada
-        // invitacion se asigna a lo sumo a una tarea; el orden de salida (result)
-        // se mantiene en el orden original de asg.
-        foreach (var inv in remainingInvites.ToList())
-        {
-            var match = MatchAssignmentForRepo(result, inv);
-            if (match == null) continue;
-            match.InvitationId = inv.Id;
-            match.InvitationPending = true;
-            remainingInvites.Remove(inv);
-        }
+        // Invitaciones vivas sin asociar: reconstruir los RepoInvitation originales.
+        foreach (var u in calc.Unassociated)
+            if (invById.TryGetValue(u.Id, out var inv))
+                unassociatedInvitations.Add(inv);
 
-        // Invitaciones vivas que no matchearon ninguna tarea esperada.
-        unassociatedInvitations.AddRange(remainingInvites);
         return result;
-    }
-
-    /// <summary>
-    /// Resuelve, para una invitacion de repo, la tarea (AssignmentStatus) a la
-    /// que pertenece usando LONGEST-PREFIX-WINS. Solo considera tareas aun sin
-    /// invitacion asociada (InvitationPending=false) y delega el algoritmo de
-    /// matching al core compartido ClassroomRepoMatcher.PickByLongestPrefix para
-    /// que el banner y AcceptInvitationsAsync usen EXACTAMENTE la misma logica.
-    /// </summary>
-    private AssignmentStatus? MatchAssignmentForRepo(
-        List<AssignmentStatus> statuses, RepoInvitation inv)
-    {
-        var repoName = inv.Repository?.Name ?? "";
-        if (repoName.Length == 0) return null;
-
-        // Solo tareas que aun no tienen invitacion: asi cada invitacion se
-        // asigna a lo sumo a una tarea (matching bipartito).
-        var unclaimed = statuses.Where(s => !s.InvitationPending).ToList();
-        var match = ClassroomRepoMatcher.PickByLongestPrefix(
-            unclaimed.Select(s => s.Assignment),
-            repoName, inv.Inviter?.Login, CurrentEvaluationOrg(),
-            a => a.Title, a => a.Org);
-        if (match == null) return null;
-        return unclaimed.FirstOrDefault(s => ReferenceEquals(s.Assignment, match));
     }
 
     private async Task UpdateAssignmentsBanner()
@@ -1373,18 +1370,18 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier
         //   pendienteAceptar  = EXPECTED ∩ INVITED − OWNED − ACCEPTED_DB
         //   esperandoInvite   = EXPECTED − INVITED − OWNED − ACCEPTED_DB − SUBMITTED
         //   pendienteEntregar = (OWNED ∨ ACCEPTED_DB) ∧ ¬SUBMITTED
-        var pendienteAceptar = statuses.Count(s =>
-            s.InvitationPending && !s.Accepted);
-        var esperandoInvite = statuses.Count(s =>
-            !s.InvitationPending && !s.Accepted && !s.Submitted);
-        var pendienteEntregar = statuses.Count(s =>
-            s.Accepted && !s.Submitted);
+        // El algebra vive en EntregaEvaluacion.Core AssignmentStatusCalculator.ToBuckets.
+        var buckets = AssignmentStatusCalculator.ToBuckets(
+            statuses.Select(s => (s.InvitationPending, s.Accepted, s.Submitted)));
+        var pendienteAceptar = buckets.PendienteAceptar;
+        var esperandoInvite = buckets.EsperandoInvite;
+        var pendienteEntregar = buckets.PendienteEntregar;
 
         // Pendientes accionables: equivalente exacto, en el algebra de 5 senales,
         // del antiguo `pending = !Accepted && !Submitted` de roster-client. Manda
         // la visibilidad del link "Aceptar tareas" (que abre el dialogo). Las
         // invitaciones sin asociar son SOLO informativas y no cuentan aqui.
-        var pendingActionable = pendienteAceptar + esperandoInvite + pendienteEntregar;
+        var pendingActionable = buckets.PendingActionable;
 
         var partes = new List<string>();
         // Conteo primario del banner: pendienteAceptar.
@@ -1647,68 +1644,30 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier
         await CheckNetworkProbeAsync();
     }
 
-    // Sonda de red (deteccion de contacto a Copilot). Throttle + dedup para no
-    // spamear ni pesar: corre cada 30s y reporta cada (host+source) a lo sumo
-    // una vez cada 5 min. Es EVIDENCIA para revision, no veredicto.
-    private DateTime _lastNetProbeUtc = DateTime.MinValue;
-    private readonly Dictionary<string, DateTime> _reportedAiHits = new();
-
+    // Sonda de red (deteccion de contacto a Copilot): delegada al
+    // NetworkProbeReporter (ENT-7 extraction #3), duenio del throttle de 30s y la
+    // dedup de 5 min por host+source (antes _lastNetProbeUtc/_reportedAiHits vivian
+    // aca). Es EVIDENCIA para revision, no veredicto. El guard de sesion
+    // (_user == null) queda aca: sin sesion no se corre la sonda ni se toca el
+    // throttle, igual que el original. now = DateTime.UtcNow se pasa una sola vez
+    // por tick (el gating es determinista en el core).
     private async Task CheckNetworkProbeAsync()
     {
         if (_user == null) return;
-        if ((DateTime.UtcNow - _lastNetProbeUtc).TotalSeconds < 30) return;
-        _lastNetProbeUtc = DateTime.UtcNow;
-
-        List<NetworkProbeService.Finding> findings;
-        try { findings = await Task.Run(() => NetworkProbeService.Probe()); }
-        catch (Exception ex) { Log($"[NetProbe] fallo: {ex.Message}"); return; }
-
-        foreach (var f in findings)
-        {
-            var key = $"{f.Host}|{f.Source}";
-            if (_reportedAiHits.TryGetValue(key, out var last)
-                && (DateTime.UtcNow - last).TotalMinutes < 5) continue;
-            _reportedAiHits[key] = DateTime.UtcNow;
-            Log($"[NetProbe] contacto Copilot: {f.Host} ({f.Detail})");
-            try
-            {
-                await _sb.ReportStudentActivityAsync(
-                    "ai_endpoint_contacted", _user.Login, _user.Email, Environment.MachineName,
-                    _selection.SectionText, f.Host, f.Detail, _selection.SectionId);
-            }
-            catch (Exception ex) { Log($"[NetProbe] reporte fallo: {ex.Message}"); }
-        }
+        await _networkProbe.CheckAsync(
+            _user.Login, _user.Email, Environment.MachineName,
+            _selection.SectionText, _selection.SectionId, DateTime.UtcNow);
     }
-
-    // Arranque del cliente (UTC) y ultimo update_requested_at ya procesado.
-    private readonly DateTime _processStartUtc = DateTime.UtcNow;
-    private string? _lastUpdateRequestProcessed;
 
     /// <summary>
-    /// Update DISPARADO POR EL PROFE desde el panel (NO automatico). El profe
-    /// setea control.update_requested_at = NOW(); el cliente actualiza UNA vez
-    /// si ese timestamp es POSTERIOR a su arranque. Asi no le pega a la API de
-    /// GitHub en cada tick (solo cuando el profe lo pide) ni relanza el update
-    /// en cada arranque por un request viejo. La lectura de control ya se hace
+    /// Update DISPARADO POR EL PROFE desde el panel (NO automatico): delegado al
+    /// RemoteUpdateWatcher (ENT-7 extraction #3), duenio del arranque del cliente
+    /// (_processStartUtc) y del one-shot dedup (_lastUpdateRequestProcessed), antes
+    /// aca. El watcher lee el control, decide (request POSTERIOR al arranque y no
+    /// procesado) y dispara el update UNA vez. La lectura de control ya se hace
     /// cada tick (Supabase, barato); GitHub solo se toca al disparar.
     /// </summary>
-    private async Task CheckUpdateRequestAsync()
-    {
-        var ctl = await _sb.GetControlAsync();
-        var raw = ctl?.UpdateRequestedAt;
-        if (string.IsNullOrEmpty(raw)) return;
-        if (raw == _lastUpdateRequestProcessed) return; // ya procesado
-        if (!DateTimeOffset.TryParse(raw, out var reqDto)) return;
-        if (reqDto.UtcDateTime <= _processStartUtc)
-        {
-            // Request anterior a este arranque: marcar como visto, no actualizar.
-            _lastUpdateRequestProcessed = raw;
-            return;
-        }
-        _lastUpdateRequestProcessed = raw;
-        Log("[update] el profesor pidio actualizar. Buscando version nueva...");
-        await UpdateService.CheckAndApplyAsync(msg => Log(msg), _gh.Token); // reinicia si hay update
-    }
+    private Task CheckUpdateRequestAsync() => _remoteUpdate.CheckAsync();
 
     /// <summary>
     /// Refresca el blocklist efectivo de la seccion del alumno. Si el fetch
@@ -1719,9 +1678,11 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier
     /// </summary>
     private async Task RefreshBlocklistAsync()
     {
-        // section_id (multi-evaluacion) es preferido; cae a section TEXT si es
-        // null (forward-compat con clientes viejos).
-        _blocklist = await _sb.GetBlocklistAsync(_selection.SectionText, _selection.SectionId);
+        // Delega el fetch al BlocklistRefresher (section_id preferido, cae a
+        // section TEXT). null preservado = fallback a Config. El resultado se
+        // guarda en _blocklist, que SendHeartbeatAsync pasa al armado de procesos.
+        _blocklist = await _blocklistRefresher.RefreshAsync(
+            _selection.SectionText, _selection.SectionId);
     }
 
     // Override de pantalla por PC, en sincrono (para los checkStillLocked de las
@@ -1919,25 +1880,20 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier
         // sus global usings, asi que apuntamos al DTO propio sin ambiguedad.
         List<EntregaEvaluacion.Models.ProcessInfo> procs = ProcessMonitor.GetOpenWindows();
 
-        // Detectar nuevos sospechosos
-        var current = new HashSet<string>();
-        foreach (EntregaEvaluacion.Models.ProcessInfo p in procs)
-        {
-            var key = $"{p.Name}:{p.Pid}";
-            current.Add(key);
-            if (!_lastProcSet.Contains(key) && ProcessMonitor.IsSuspicious(p.Name, _blocklist))
-                await _sb.ReportProcessAlertAsync(_user.Login, Environment.MachineName, _selection.SectionText, p.Name, p.Title);
-        }
-        _lastProcSet.Clear();
-        foreach (var k in current) _lastProcSet.Add(k);
-
+        // Estados derivados de los flags privados de lockdown de ESTE MainWindow
+        // (decision D1: los flags NO se mueven). Se pasan ya resueltos como strings
+        // al HeartbeatReporter, que nunca lee los flags.
         var internetState = InternetBlockService.IsBlocked() ? "blocked" : "free";
         var lockdownState = (_remoteLockdownActive || _targetedLockdownActive) ? "active" : "none";
-        // Atribuye la presencia a la evaluacion actual del alumno. El ON CONFLICT
-        // de online_clients NO cambia en este slice (sigue pc_name+github_username);
-        // el aislamiento de re-rendiciones por evaluacion es PR5.
-        await _sb.SendHeartbeatAsync(Environment.MachineName, _user.Login, _user.Email,
-            _selection.SectionText, procs, internetState, lockdownState,
+
+        // El HeartbeatReporter detecta procesos nuevos sospechosos (set-diff puro),
+        // alerta cada uno UNA vez y envia el heartbeat. Atribuye la presencia a la
+        // evaluacion actual del alumno. El ON CONFLICT de online_clients NO cambia
+        // en este slice (sigue pc_name+github_username); el aislamiento de
+        // re-rendiciones por evaluacion es PR5.
+        await _heartbeat.SendAsync(
+            Environment.MachineName, _user.Login, _user.Email, _selection.SectionText,
+            procs, _blocklist, internetState, lockdownState,
             _selection.EvaluationId, UpdateService.CurrentVersion());
     }
 
