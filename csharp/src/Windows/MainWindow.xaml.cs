@@ -50,6 +50,16 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier
     // la identidad _user).
     private readonly ExitGuard _exitGuard;
 
+    // Coordinador de la ruta de ENTREGA (ENT-8 slice B): saca de este code-behind
+    // la orquestacion del push (mensaje de commit + GitService via factory +
+    // Task.Run) y el registro best-effort de entregas/aceptaciones contra las
+    // tareas de Classroom. Se construye en el constructor porque depende de _gh/
+    // _sb/_selection (ya inyectados) y de este MainWindow como ILogSink/
+    // IUserNotifier; la UI (validacion XAML, MessageBox, portapapeles, prompts)
+    // se queda aca. Es duenio de GetSectionAssignmentsAsync/FilterBySection (antes
+    // aqui), que solo leen _selection + _sb.
+    private readonly SubmissionCoordinator _submission;
+
     // Colaborador de I/O del PDF de enunciado (ENT-7 extraction #4). No tiene
     // dependencias (envuelve llamadas estaticas a ExamPdfService), asi que se
     // inicializa inline en vez de construirse en el constructor como los de arriba.
@@ -135,6 +145,14 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier
                 Application.Current.Shutdown();
             },
             () => _user);
+
+        // Coordinador de entrega: _gh/_sb/_selection ya asignados y este MainWindow
+        // ya es un ILogSink/IUserNotifier valido. La factory construye el GitService
+        // con (token, nombre, email) igual que el codigo inline previo; el push lee
+        // el token vigente de _gh dentro de PushAsync.
+        _submission = new SubmissionCoordinator(
+            _gh, _sb, _selection, this, this,
+            (token, name, email) => new GitService(token, name, email));
 
         InitializeComponent();
 
@@ -901,7 +919,7 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier
 
         if (count == 0)
         {
-            var asg = await GetSectionAssignmentsAsync();
+            var asg = await _submission.GetSectionAssignmentsAsync();
             if (asg.Count > 0)
                 Log($"Tienes {asg.Count} tarea(s) Classroom. Usa el banner para aceptarlas.");
             else
@@ -917,7 +935,7 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier
 
         // Tareas activas de la seccion para mapear invitacion -> assignment por
         // prefijo de slug y registrar la aceptacion en BD.
-        var asg = await GetSectionAssignmentsAsync();
+        var asg = await _submission.GetSectionAssignmentsAsync();
         var me = _user?.Login;
         var evalOrg = CurrentEvaluationOrg();
 
@@ -1036,7 +1054,7 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier
         CarpetaBox.Text = target;
         OpenPythonIdle(target);
         await _sb.ReportStudentActivityAsync("clone", _user!.Login, _user.Email, Environment.MachineName, _selection.SectionText, repo, $"https://github.com/{owner}/{name}", _selection.SectionId);
-        await RecordAcceptanceIfClassroomRepoAsync(name, $"https://github.com/{owner}/{name}");
+        await _submission.RecordAcceptanceIfClassroomRepoAsync(_user!.Login, name, $"https://github.com/{owner}/{name}");
         MessageBox.Show($"Repo clonado en:\n{target}\n\nSe abrio IDLE de Python.\n\nEdita, guarda (Ctrl+S), y luego 'Subir Archivos'.", "Listo", MessageBoxButton.OK, MessageBoxImage.Information);
         Status("Edita en IDLE y luego Subir Archivos.");
         UpdateButtonStates();
@@ -1058,20 +1076,19 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier
         var nombre = NombreBox.Text.Trim();
         if (string.IsNullOrEmpty(nombre)) nombre = _user!.Name ?? _user.Login;
         var tipo = (TipoCombo.SelectedItem as string ?? "").Trim();
-        var msg = string.IsNullOrEmpty(tipo) ? $"Entrega de evaluacion - {nombre}" : $"Entrega de evaluacion - {nombre} ({tipo})";
 
-        Status($"Subiendo a {repo}...");
-        Log($"-> Subiendo {folder} a {owner}/{name}");
-        var git = new GitService(_gh.Token!, nombre, _user!.Email ?? "");
-        var res = await Task.Run(() => git.CommitAndPush(folder, owner, name, msg));
-        if (!res.Ok) { Log($"Fallo push: {res.Error}"); Status("Error en push."); return; }
+        // Push en hilo de fondo (Task.Run dentro del coordinador). El armado del
+        // mensaje de commit, la construccion del GitService y el diagnostico
+        // (Status/Log) viven ahora en PushAsync; aca solo se decide segun el
+        // resultado. El resultado + URL llegan ANTES de cualquier limpieza.
+        var res = await _submission.PushAsync(folder, owner, name, repo, nombre, _user!.Email ?? "", tipo);
+        if (!res.Ok) return;
 
-        Log($"OK Subida completada: {res.Url}");
-        try { Clipboard.SetText(res.Url!); } catch { }
-        await _sb.ReportStudentActivityAsync("upload", _user!.Login, _user.Email, Environment.MachineName, _selection.SectionText, repo, res.Url, _selection.SectionId);
+        try { Clipboard.SetText(res.RepoUrl!); } catch { }
+        await _sb.ReportStudentActivityAsync("upload", _user!.Login, _user.Email, Environment.MachineName, _selection.SectionText, repo, res.RepoUrl, _selection.SectionId);
         // Captura el enlace como ENTREGA formal en el panel (el alumno no tiene
         // que apretar "Entregar repo" aparte). Best-effort, no bloquea.
-        await RecordSubmissionIfClassroomRepoAsync(name, res.Url!);
+        await _submission.RecordSubmissionIfClassroomRepoAsync(_user!.Login, name, res.RepoUrl!);
 
         // Termino la evaluacion: borrar el enunciado descargado (no debe quedar
         // registro local que se pueda divulgar).
@@ -1081,7 +1098,7 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier
         // (Config.EvaluationTypes en fallback). Ya no mapeamos via switch: el
         // titulo es la etiqueta real que el alumno ve en el AVA.
         var tipoLabel = !string.IsNullOrEmpty(tipo) ? tipo : "la evaluacion correspondiente";
-        MessageBox.Show($"Entrega subida correctamente.\n\nURL (copiada al portapapeles):\n{res.Url}\n\nProximo paso:\n1. Abre el AVA\n2. Ve a {tipoLabel}\n3. Pega el enlace (Ctrl+V)\n4. Envia", "Listo - Entrega en el AVA", MessageBoxButton.OK, MessageBoxImage.Information);
+        MessageBox.Show($"Entrega subida correctamente.\n\nURL (copiada al portapapeles):\n{res.RepoUrl}\n\nProximo paso:\n1. Abre el AVA\n2. Ve a {tipoLabel}\n3. Pega el enlace (Ctrl+V)\n4. Envia", "Listo - Entrega en el AVA", MessageBoxButton.OK, MessageBoxImage.Information);
 
         var del = MessageBox.Show(
             "Ya terminaste la evaluacion?\n\nSi presionas SI:\n" +
@@ -1162,37 +1179,6 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier
         return _enrollment is { Confirmed: true, Found: true }
             && sectionId is { } sid
             && _enrollment.SectionId == sid;
-    }
-
-    private List<Assignment> FilterBySection(List<Assignment> all)
-    {
-        var sec = _selection.SectionText.Trim().ToUpperInvariant();
-        return all.Where(a =>
-        {
-            var s = (a.Section ?? "").Trim().ToUpperInvariant();
-            return string.IsNullOrEmpty(s) || (!string.IsNullOrEmpty(sec) && s == sec);
-        }).ToList();
-    }
-
-    /// <summary>
-    /// Tareas activas que el alumno DEBE ver. ROBUSTO al evaluation_id: trae
-    /// todas las activas, filtra por SECCION, y si la evaluacion seleccionada
-    /// tiene tareas las prioriza; si NO (link huerfano porque se recreo la
-    /// evaluacion), cae a las de la seccion. Antes el filtro exigia
-    /// evaluation_id exacto en el servidor: al recrear una evaluacion, la tarea
-    /// quedaba huerfana y "desaparecia" (o quedaba pegada la vieja). Ahora la
-    /// evaluacion es una preferencia, no un gate.
-    /// </summary>
-    private async Task<List<Assignment>> GetSectionAssignmentsAsync()
-    {
-        var all = FilterBySection(await _sb.GetActiveAssignmentsAsync(null));
-        var evalId = _selection.EvaluationId;
-        if (evalId is { } id)
-        {
-            var matched = all.Where(a => a.EvaluationId == id).ToList();
-            if (matched.Count > 0) return matched;
-        }
-        return all;
     }
 
     /// <summary>
@@ -1326,7 +1312,7 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier
         // consulta via RosterMatchConfirmed). Es aditivo y nunca bloquea.
         await RefreshEnrollmentAsync();
 
-        var asg = await GetSectionAssignmentsAsync();
+        var asg = await _submission.GetSectionAssignmentsAsync();
 
         // Las invitaciones son verdad VIVA y se consultan SIEMPRE (no detras del
         // gate de "0 repos"): un alumno que ya posee >=1 repo igual puede tener
@@ -1441,7 +1427,7 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier
 
     private async Task ShowAssignmentsDialog()
     {
-        var asg = await GetSectionAssignmentsAsync();
+        var asg = await _submission.GetSectionAssignmentsAsync();
         if (asg.Count == 0) { MessageBox.Show("No hay tareas activas.", "Sin tareas", MessageBoxButton.OK, MessageBoxImage.Information); return; }
 
         // Consultar invitaciones para mostrar el estado "Invitacion pendiente"
@@ -1453,57 +1439,6 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier
         dlg.ShowDialog();
         // Al cerrar, refrescar el banner por si el alumno acepto o entrego algo.
         await UpdateAssignmentsBanner();
-    }
-
-    /// <summary>
-    /// Si el repo clonado corresponde a una tarea activa de Classroom de la
-    /// seccion del alumno ({slug}-{username}), registra la aceptacion en BD.
-    /// Asi queda registro aunque el alumno clone directo sin pasar por el banner.
-    /// </summary>
-    private async Task RecordAcceptanceIfClassroomRepoAsync(string repoName, string repoUrl)
-    {
-        var me = _user?.Login;
-        if (string.IsNullOrEmpty(me)) return;
-        var asg = await GetSectionAssignmentsAsync();
-        foreach (var a in asg)
-        {
-            if (string.Equals(ClassroomRepoNaming.ExpectedClassroomRepo(a.Title, me), repoName, StringComparison.OrdinalIgnoreCase))
-            {
-                await _sb.RecordAcceptanceAsync(me, a.Id, a.Title, _selection.SectionText, repoName, repoUrl, _selection.EvaluationId);
-                break;
-            }
-        }
-    }
-
-    /// <summary>
-    /// Tras subir al repo, registra la ENTREGA (assignment_submissions) capturando
-    /// el enlace, para que el profe la vea en el panel ("entrego" + URL) sin que el
-    /// alumno tenga que apretar "Entregar repo" aparte. Mapea el repo a la tarea por
-    /// nombre esperado; si no hay match exacto pero hay UNA sola tarea activa para la
-    /// evaluacion, usa esa (los slugs de Classroom no siempre coinciden con
-    /// Sanitize(titulo)). No bloquea la subida: cualquier fallo se ignora.
-    /// </summary>
-    private async Task RecordSubmissionIfClassroomRepoAsync(string repoName, string repoUrl)
-    {
-        var me = _user?.Login;
-        if (string.IsNullOrEmpty(me)) return;
-        try
-        {
-            var asg = await GetSectionAssignmentsAsync();
-            if (asg.Count == 0) return;
-            foreach (var a in asg)
-            {
-                if (string.Equals(ClassroomRepoNaming.ExpectedClassroomRepo(a.Title, me), repoName, StringComparison.OrdinalIgnoreCase))
-                {
-                    await _sb.RecordSubmissionAsync(a.Id, me, repoUrl);
-                    return;
-                }
-            }
-            // Fallback: una sola tarea activa => atribuir la entrega a esa.
-            if (asg.Count == 1)
-                await _sb.RecordSubmissionAsync(asg[0].Id, me, repoUrl);
-        }
-        catch { }
     }
 
     /// <summary>
@@ -1551,7 +1486,7 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier
         var input = SimpleInputDialog("URL del repositorio a entregar:", "Entregar repositorio", prefill);
         if (string.IsNullOrWhiteSpace(input)) return;
 
-        await _sb.RecordSubmissionAsync(status.Assignment.Id, me, input.Trim());
+        await _submission.RecordSubmissionAsync(status.Assignment.Id, me, input.Trim());
         Log($"Entrega registrada: {status.Title} -> {input.Trim()}");
         MessageBox.Show("Entrega registrada correctamente.", "Entregado", MessageBoxButton.OK, MessageBoxImage.Information);
     }
