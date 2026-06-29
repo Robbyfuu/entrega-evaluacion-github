@@ -42,7 +42,7 @@
     <!-- Velopack: auto-update framework (instalador + delta updates) -->
     <PackageReference Include="Velopack" Version="0.0.1053" />
     <!-- WPF-UI: controles Fluent (look Windows 11) -->
-    <PackageReference Include="WPF-UI" Version="3.0.5" />
+    <PackageReference Include="WPF-UI" Version="4.3.0" />
     <!-- WebView2: navegador embebido (Edge/Chromium) para login y Classroom.
          El runtime viene en Win10/11; este paquete es solo la referencia de
          ensamblado y restaura en cualquier OS. -->
