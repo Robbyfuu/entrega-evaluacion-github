@@ -40,7 +40,7 @@
     <!-- DPAPI para cifrar el token en disco (per-user) -->
     <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="10.0.9" />
     <!-- Velopack: auto-update framework (instalador + delta updates) -->
-    <PackageReference Include="Velopack" Version="0.0.1053" />
+    <PackageReference Include="Velopack" Version="1.2.0" />
     <!-- WPF-UI: controles Fluent (look Windows 11) -->
     <PackageReference Include="WPF-UI" Version="4.3.0" />
     <!-- WebView2: navegador embebido (Edge/Chromium) para login y Classroom.
