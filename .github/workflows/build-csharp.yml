@@ -43,7 +43,7 @@ jobs:
 
       - name: Install Velopack CLI
         run: |
-          dotnet tool install -g vpk
+          dotnet tool install -g vpk --version 1.2.0
           echo "$HOME/.dotnet/tools" >> "$GITHUB_PATH"
 
       - name: Download previous releases (for delta updates)

@@ -25,7 +25,7 @@ public static class UpdateService
     public static void HandleStartup(string[] args)
     {
         VelopackApp.Build()
-            .WithFirstRun(_ => { /* primer arranque tras instalar */ })
+            .OnFirstRun((v) => { /* primer arranque tras instalar */ })
             .Run();
     }
 
@@ -70,7 +70,7 @@ public static class UpdateService
             try { DaemonService.Unregister(); } catch { }
 
             IsApplying = true; // permite que OnClosing no bloquee el reinicio del update
-            _mgr.ApplyUpdatesAndRestart(info);
+            _mgr.ApplyUpdatesAndRestart(info.TargetFullRelease);
             return true;
         }
         catch (Exception ex)
