@@ -228,10 +228,10 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier, IRedScreenHos
         var savedCode = _selection.SectionText;
         var savedSectionId = _selection.SectionId;
         var savedEvalId = _selection.EvaluationId;
-        var savedRow = savedSectionId.HasValue
-            ? _sections.FirstOrDefault(s => s.Id == savedSectionId.Value)
-            : null;
-        savedRow ??= _sections.FirstOrDefault(s => s.Code == savedCode);
+        // Decision pura (SectionId-first, Code-fallback) en el core; la vista solo
+        // consume la fila resuelta para seleccionar curso/seccion abajo.
+        var savedRow = SelectionCascadeResolver.ResolveSavedSection(
+            savedCode, savedSectionId, _sections, s => s.Id, s => s.Code);
 
         if (savedRow != null)
         {
@@ -298,13 +298,11 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier, IRedScreenHos
     private void PopulateSectionCombo(long? courseId)
     {
         SectionCombo.Items.Clear();
-        if (_sections.Count == 0)
-        {
-            foreach (var s in Config.Sections) SectionCombo.Items.Add(s);
-            return;
-        }
-        var filtered = courseId is { } cid ? _sections.Where(s => s.CourseId == cid) : _sections;
-        foreach (var s in filtered) SectionCombo.Items.Add(s.Code);
+        // El core decide los codigos (filtra por curso, o cae a Config.Sections
+        // cuando no hay secciones fetcheadas); la vista solo los agrega al combo.
+        var codes = SelectionCascadeResolver.ResolveSectionCodes(
+            courseId, _sections, Config.Sections, s => s.CourseId, s => s.Code);
+        foreach (var code in codes) SectionCombo.Items.Add(code);
     }
 
     /// <summary>
@@ -324,18 +322,14 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier, IRedScreenHos
         EvaluationCombo.DisplayMemberPath = "Title";
         _currentEvaluations = sectionId is { } sid ? await _sb.GetEvaluationsAsync(sid) : new();
 
-        if (_currentEvaluations.Count > 0)
-        {
-            foreach (var ev in _currentEvaluations) EvaluationCombo.Items.Add(ev);
-        }
-        else if (sectionId == null)
-        {
-            // Modo legacy: no hay section_id real, cae a Config.EvaluationTypes.
-            foreach (var t in Config.EvaluationTypes)
-                EvaluationCombo.Items.Add(new Evaluation { Id = 0, Title = t, Active = true });
-        }
-        // Si sectionId != null pero _currentEvaluations esta vacio, el combo
-        // queda vacio (el profe no activo evaluaciones para esta seccion).
+        // El core decide QUE mostrar (fetcheadas tal cual; sintesis Id=0 SOLO con
+        // sectionId==null; vacio cuando la BD viva no trae ninguna). La vista
+        // construye los items de fallback (asi Core no referencia Evaluation) y los
+        // agrega. _currentEvaluations queda con lo FETCHEADO, no con lo sintetizado.
+        var toShow = SelectionCascadeResolver.ResolveEvaluationsToShow(
+            sectionId, _currentEvaluations, Config.EvaluationTypes,
+            t => new Evaluation { Id = 0, Title = t, Active = true });
+        foreach (var ev in toShow) EvaluationCombo.Items.Add(ev);
     }
 
     /// <summary>Restaura la evaluacion guardada (por Id) y espeja su titulo en TipoCombo.</summary>
@@ -472,11 +466,13 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier, IRedScreenHos
     /// </summary>
     private void ApplyEvaluationLock(List<AssignmentStatus> statuses)
     {
-        var locked = statuses.FirstOrDefault(s =>
-            s.Accepted && !s.Submitted
-            && s.Assignment.EvaluationId is { } id && id > 0);
+        // El core resuelve CUAL evaluacion bloquear (Accepted && !Submitted &&
+        // EvaluationId>0); la vista aplica el lock (SelectedIndex con el guard
+        // != i, deshabilitar combos, tooltip) o lo libera.
+        var lockedEvalId = SelectionCascadeResolver.ResolveLockedEvaluationId(
+            statuses, s => s.Accepted, s => s.Submitted, s => s.Assignment.EvaluationId);
 
-        if (locked?.Assignment.EvaluationId is { } evalId)
+        if (lockedEvalId is { } evalId)
         {
             if (_selection.EvaluationId != evalId)
                 _selection.SetEvaluationId(evalId);
