@@ -1,8 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useId, useRef, useState } from "react";
-import type { RealtimePostgresChangesPayload } from "@supabase/supabase-js";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { subscribeTable } from "@/lib/realtimeManager";
 
 type Order = { column: string; ascending?: boolean };
 
@@ -30,14 +30,6 @@ export function useRealtimeTable<T extends Record<string, unknown>>(
   options: UseRealtimeTableOptions<T>
 ): UseRealtimeTableResult<T> {
   const { table, order, limit, getId, onInsert, realtime = true } = options;
-
-  // ID unico por instancia del hook: los canales de Supabase se indexan por
-  // topic, asi que varios consumidores de la misma tabla (p. ej. useCourses
-  // montado por useSectionLookup + EvaluationsSection + SectionsSection a la
-  // vez) compartirian "rt-{table}" y el segundo .on() correria despues del
-  // subscribe() del primero ("cannot add postgres_changes callbacks after
-  // subscribe()"). Un topic por instancia evita la colision.
-  const instanceId = useId();
 
   const [rows, setRows] = useState<T[]>([]);
   const [loading, setLoading] = useState(true);
@@ -77,54 +69,46 @@ export function useRealtimeTable<T extends Record<string, unknown>>(
   useEffect(() => {
     if (!realtime) return;
 
-    const channel = supabase
-      .channel(`rt-${table}-${instanceId}`)
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table },
-        (payload: RealtimePostgresChangesPayload<T>) => {
-          setRows((prev) => {
-            const idOf = getIdRef.current;
-            const ord = orderRef.current;
-            const lim = limitRef.current;
+    // One shared channel per table via realtimeManager. The manager fans the
+    // raw payload out to every consumer of `table`; the patch-in-place logic
+    // below runs per consumer and is unchanged from the per-instance version.
+    const unsubscribe = subscribeTable(table, (payload) => {
+      setRows((prev) => {
+        const idOf = getIdRef.current;
+        const ord = orderRef.current;
+        const lim = limitRef.current;
 
-            if (payload.eventType === "DELETE") {
-              const oldRow = payload.old as T;
-              return prev.filter((r) => idOf(r) !== idOf(oldRow));
-            }
+        if (payload.eventType === "DELETE") {
+          const oldRow = payload.old as T;
+          return prev.filter((r) => idOf(r) !== idOf(oldRow));
+        }
 
-            const next = payload.new as T;
-            const without = prev.filter((r) => idOf(r) !== idOf(next));
-            let merged = [next, ...without];
+        const next = payload.new as T;
+        const without = prev.filter((r) => idOf(r) !== idOf(next));
+        let merged = [next, ...without];
 
-            // Re-sort to keep the table consistent with the initial query order.
-            if (ord) {
-              const col = ord.column;
-              const asc = ord.ascending ?? false;
-              merged = merged.slice().sort((a, b) => {
-                const av = a[col] as unknown as string;
-                const bv = b[col] as unknown as string;
-                if (av === bv) return 0;
-                const cmp = av < bv ? -1 : 1;
-                return asc ? cmp : -cmp;
-              });
-            }
-            if (lim) merged = merged.slice(0, lim);
-
-            if (payload.eventType === "INSERT") onInsertRef.current?.(next);
-            return merged;
+        // Re-sort to keep the table consistent with the initial query order.
+        if (ord) {
+          const col = ord.column;
+          const asc = ord.ascending ?? false;
+          merged = merged.slice().sort((a, b) => {
+            const av = a[col] as unknown as string;
+            const bv = b[col] as unknown as string;
+            if (av === bv) return 0;
+            const cmp = av < bv ? -1 : 1;
+            return asc ? cmp : -cmp;
           });
         }
-      )
-      .subscribe();
+        if (lim) merged = merged.slice(0, lim);
+
+        if (payload.eventType === "INSERT") onInsertRef.current?.(next);
+        return merged;
+      });
+    });
 
     return () => {
-      void supabase.removeChannel(channel);
+      unsubscribe();
     };
-    // instanceId es estable por montaje (useId), no se incluye en deps: agregarlo
-    // cambiaria el tamano del array entre el modulo viejo y el nuevo en Fast
-    // Refresh ("dependency array changed size"). El topic sigue siendo unico.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [table, realtime]);
 
   return { rows, loading, error, refresh };
