@@ -51,6 +51,16 @@ public sealed class RegistrySelectionPersistence : ISelectionPersistence
         try
         {
             using var key = Registry.CurrentUser.CreateSubKey(RegPath);
+            if (key is null)
+            {
+                // CreateSubKey puede devolver null (segun docs, p. ej. sin permiso
+                // de escritura en HKCU). Sin esta guarda, los SetValue/DeleteValue
+                // siguientes lanzarian NullReferenceException FUERA del catch de
+                // abajo (que solo cubre Security/Unauthorized/IO), rompiendo la
+                // degradacion con gracia. Logueamos y salimos (igual que el catch).
+                Debug.WriteLine($"[RegistrySelectionPersistence] No se pudo persistir {RegPath}: CreateSubKey devolvio null.");
+                return;
+            }
 
             // Section TEXT siempre se escribe (espeja StudentSection.Set).
             key.SetValue(RegNameSection, snapshot.SectionText);

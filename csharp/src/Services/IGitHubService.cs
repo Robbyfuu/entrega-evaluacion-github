@@ -7,9 +7,10 @@ namespace EntregaEvaluacion.Services;
 /// autenticacion via device flow OAuth + llamadas a la API REST de GitHub.
 /// Interfaz transitoria (sin inyeccion todavia) para que los consumidores
 /// dependan de la abstraccion en lugar de la clase concreta. La construccion
-/// sigue siendo new GitHubService(). Los miembros estaticos y el tipo anidado
-/// SlowDownException NO forman parte del contrato (siguen accesibles por el
-/// nombre concreto).
+/// sigue siendo new GitHubService(). Los miembros estaticos NO forman parte del
+/// contrato. La excepcion SlowDownException es ahora un tipo top-level del
+/// namespace EntregaEvaluacion.Services (ya no anidada en la clase concreta),
+/// asi el caller la captura sin depender de GitHubService.
 /// </summary>
 public interface IGitHubService
 {
@@ -26,6 +27,9 @@ public interface IGitHubService
     // Solicita un device code a GitHub para iniciar el flow.
     Task<DeviceCodeResponse?> RequestDeviceCodeAsync();
     // Poll del token: devuelve token si autorizado, null si pendiente, lanza si fatal.
+    // Puede lanzar SlowDownException ("slow_down" de GitHub): el caller debe
+    // aumentar el intervalo del poll (rfc 8628). Tambien TimeoutException /
+    // UnauthorizedAccessException (fatales) y errores transitorios de red/JSON.
     Task<string?> PollAccessTokenAsync(string deviceCode);
 
     // ===== API =====

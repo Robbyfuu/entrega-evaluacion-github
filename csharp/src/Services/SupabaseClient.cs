@@ -26,13 +26,26 @@ public class SupabaseClient : ISupabaseClient
     // soltar a un alumno bloqueado por un parpadeo de red. Solo el primer arranque
     // sin estado previo (cache vacio) cae al default global (false). Asi un corte
     // de red transitorio NUNCA puede liberar a un alumno en medio del examen.
+    //
+    // El cache se KEYEA por evaluationId: _lastKnownLockEvaluationId guarda la
+    // evaluacion para la que se resolvio _lastKnownLock. Asi un valor cacheado
+    // para la evaluacion A NUNCA responde por la evaluacion B (un false de A no
+    // puede liberar a una B bloqueada cuyo fetch falla). En el read, el cache solo
+    // aplica si su key coincide con la evaluationId consultada; si no, se trata
+    // como desconocido y cae al default documentado (false). Para la MISMA
+    // evaluacion (caso operativo normal) el comportamiento es identico al anterior.
     private bool? _lastKnownLock;
+    private long? _lastKnownLockEvaluationId;
 
     // Mismo fail-safe CERRADO para el lockdown DIRIGIDO (targeted_lockdowns).
     // null = nunca se resolvio. Distingue "query OK, sin fila activa" (=> false,
     // siembra cache) de "fetch fallido" (=> retener cache). Un blip de red en un
-    // lock dirigido NUNCA libera al alumno.
+    // lock dirigido NUNCA libera al alumno. Mismo keyeo que _lastKnownLock pero
+    // por (pcName, githubUsername): el cache solo responde por el mismo PC+usuario
+    // para el que se resolvio; si no coincide, cae al default (false). Para el
+    // mismo cliente (caso normal) la key siempre coincide => identico al anterior.
     private bool? _lastKnownTargeted;
+    private (string Pc, string User)? _lastKnownTargetedKey;
 
     // ===== Identidad verificada (JWT de enroll-identity) =====
     // El alumno arranca usando el anon key crudo como Bearer (comportamiento
@@ -311,7 +324,7 @@ public class SupabaseClient : ISupabaseClient
         {
             // Sin evaluacion elegida => control global tal cual (o null si fallo).
             var g0 = await GetControlAsync();
-            if (g0 != null) _lastKnownLock = g0.ForceLockdown;
+            if (g0 != null) CacheEffectiveLock(evaluationId, g0.ForceLockdown);
             return g0;
         }
 
@@ -325,7 +338,7 @@ public class SupabaseClient : ISupabaseClient
             // desplegada o tuvo un blip. Solo si el global TAMBIEN falla
             // devolvemos null (degradar CERRADO; el caller retiene su cache).
             var gFallback = await GetControlAsync();
-            if (gFallback != null) _lastKnownLock = gFallback.ForceLockdown;
+            if (gFallback != null) CacheEffectiveLock(evalId, gFallback.ForceLockdown);
             return gFallback;
         }
 
@@ -335,7 +348,7 @@ public class SupabaseClient : ISupabaseClient
         // => el caller degrada CERRADO reteniendo el ultimo conocido).
         if (ovr == null)
         {
-            if (global != null) _lastKnownLock = global.ForceLockdown;
+            if (global != null) CacheEffectiveLock(evalId, global.ForceLockdown);
             return global;
         }
 
@@ -354,8 +367,18 @@ public class SupabaseClient : ISupabaseClient
             UpdatedAt = ovr.UpdatedAt ?? global?.UpdatedAt,
             UpdatedBy = ovr.UpdatedBy ?? global?.UpdatedBy
         };
-        _lastKnownLock = effective.ForceLockdown;
+        CacheEffectiveLock(evalId, effective.ForceLockdown);
         return effective;
+    }
+
+    // Siembra el cache fail-safe del force_lockdown KEYEADO por la evaluacion para
+    // la que se resolvio. Mantiene valor y key sincronizados (ver _lastKnownLock):
+    // el read solo usa el cache cuando su key coincide con la evaluationId
+    // consultada, evitando que el valor de una evaluacion responda por otra.
+    private void CacheEffectiveLock(long? evaluationId, bool forceLockdown)
+    {
+        _lastKnownLock = forceLockdown;
+        _lastKnownLockEvaluationId = evaluationId;
     }
 
     // ===== Multi-evaluacion: cursos, secciones, evaluaciones =====
@@ -668,6 +691,7 @@ public class SupabaseClient : ISupabaseClient
     /// </summary>
     public async Task<bool> IsTargetedLockedAsync(string pcName, string githubUsername)
     {
+        var key = (pcName, githubUsername);
         try
         {
             var pc = Uri.EscapeDataString(pcName);
@@ -677,15 +701,20 @@ public class SupabaseClient : ISupabaseClient
             var arr = JsonSerializer.Deserialize<TargetedLockdown[]>(json, JsonOpts);
             var locked = arr is { Length: > 0 };
             // Query exitosa: este es el estado REAL (haya o no fila). Sembramos el
-            // cache; una liberacion genuina (sin fila activa) si debe liberar.
+            // cache KEYEADO por (pcName, githubUsername); una liberacion genuina
+            // (sin fila activa) si debe liberar.
             _lastKnownTargeted = locked;
+            _lastKnownTargetedKey = key;
             return locked;
         }
         catch
         {
-            // Fetch fallido: degradar CERRADO reteniendo el ultimo conocido. Solo
-            // el primer arranque sin estado previo cae a false.
-            return _lastKnownTargeted ?? false;
+            // Fetch fallido: degradar CERRADO reteniendo el ultimo conocido, pero
+            // SOLO si fue resuelto para este MISMO (pcName, githubUsername). Si el
+            // cache pertenece a otro PC/usuario (o nunca se resolvio este), cae al
+            // default (false). Para el mismo cliente (caso normal) la key siempre
+            // coincide => identico al comportamiento anterior (_lastKnownTargeted ?? false).
+            return _lastKnownTargetedKey == key ? (_lastKnownTargeted ?? false) : false;
         }
     }
 
@@ -747,9 +776,16 @@ public class SupabaseClient : ISupabaseClient
     public async Task<bool> IsForceLockdownAsync(long? evaluationId)
     {
         var ctl = await GetEffectiveControlAsync(evaluationId);
-        // ctl no-null: el resolver ya sembro _lastKnownLock con ctl.ForceLockdown.
-        // ctl null (ambos fetch fallaron): fail-safe CERRADO reteniendo el cache.
-        return ctl?.ForceLockdown ?? _lastKnownLock ?? false;
+        // ctl no-null: el resolver ya sembro el cache keyeado con ctl.ForceLockdown.
+        if (ctl != null) return ctl.ForceLockdown;
+        // ctl null (ambos fetch fallaron): fail-safe CERRADO reteniendo el cache,
+        // pero SOLO si fue resuelto para ESTA evaluacion. Si el cache pertenece a
+        // otra evaluacion (o nunca se resolvio esta), se trata como desconocido y
+        // cae al default documentado (false): el valor de otra evaluacion no puede
+        // responder por esta. Para la MISMA evaluacion (caso normal) es identico al
+        // comportamiento anterior (_lastKnownLock ?? false).
+        if (_lastKnownLockEvaluationId == evaluationId) return _lastKnownLock ?? false;
+        return false;
     }
 
     // ===== Reportes (INSERT directo, RLS anon insert) =====

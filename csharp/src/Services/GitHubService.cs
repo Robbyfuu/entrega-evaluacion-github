@@ -72,17 +72,9 @@ public class GitHubService : IGitHubService
     /// </summary>
     private HttpClient Http => InternetBlockService.IsBlocked() ? _httpDirect : _httpViaProxy;
 
-    /// <summary>
-    /// Lanzada cuando GitHub responde "slow_down" en el device flow. El caller
-    /// (LoginWindow) debe aumentar el intervalo del timer en AddSeconds segun
-    /// la spec de OAuth 2.0 device flow (rfc 8628 sec 3.5).
-    /// </summary>
-    public class SlowDownException : Exception
-    {
-        public int AddSeconds { get; }
-        public SlowDownException(int add) : base($"GitHub pidio ir mas lento (+{add}s)")
-            => AddSeconds = add;
-    }
+    // SlowDownException (lanzada ante "slow_down" de GitHub) es un tipo top-level
+    // del namespace EntregaEvaluacion.Services (ver SlowDownException.cs), ya no
+    // anidado, para que el seam IGitHubService sea consumible sin la clase concreta.
 
     public bool IsAuthenticated => !string.IsNullOrEmpty(_token);
     public string? Token => _token;

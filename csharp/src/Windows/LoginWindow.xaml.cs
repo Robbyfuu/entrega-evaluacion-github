@@ -115,7 +115,7 @@ public partial class LoginWindow : Window
                 StatusText.Foreground = Brushes.Red;
                 Progress.IsIndeterminate = false;
             }
-            catch (GitHubService.SlowDownException ex)
+            catch (SlowDownException ex)
             {
                 // GitHub pidio ir mas lento (rfc 8628). Aumentamos el intervalo del
                 // timer en AddSeconds y seguimos reintentando, sin cortar.
