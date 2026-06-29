@@ -1,0 +1,57 @@
+# migrations.order — single source of truth for the Supabase bootstrap bundle.
+#
+# build-all-in-one.sh reads this file top-to-bottom and concatenates each
+# migration into csharp/supabase-all-in-one.sql. Paths are relative to the
+# REPO ROOT. Lines starting with '#' and blank lines are ignored.
+#
+# This lists ONLY the schema/RLS/RPC/SEED provisioning migrations, in
+# dependency order. One-off data backfills/fixes are intentionally EXCLUDED
+# (migration-backfill-*.sql, fix-*.sql) — they are not part of bootstrap.
+#
+# ORDER IS LOAD-BEARING (last-write-wins). For every object that exists in
+# more than one migration, the LAST occurrence must be the canonical /
+# FASE-2-hardened form, so each superseded signature must be DROPped before
+# the canonical CREATE. Key constraints encoded below:
+#
+#   * setup-supabase.sql first (base tables / RLS / RPCs).
+#   * migration-blocklist.sql is the SOLE owner of suspicious_processes
+#     (table + RLS + seed + realtime) after ENT-5 single-sourcing. It must
+#     run BEFORE migration-multi-evaluation.sql, which does
+#     `ALTER TABLE suspicious_processes ADD COLUMN section_id` + a trigger.
+#   * migration-version-visibility.sql DROPs the 8-arg heartbeat and creates
+#     the 9-arg form; it MUST precede migration-heartbeat-identity.sql
+#     (which CREATE OR REPLACEs the same 9-arg signature with the JWT guard).
+#   * migration-blocklist.sql MUST precede migration-jwt-identity.sql.
+#   * The 4 FASE-2 hardening migrations run LAST, in this exact order:
+#       rls-identity-hardening -> jwt-identity -> heartbeat-identity
+#       -> targeted-read-scope
+#     migration-jwt-identity.sql defines the jwt_github_username() helper that
+#     heartbeat-identity and targeted-read-scope depend on, so it must come
+#     before both.
+
+# --- Base ---
+csharp/setup-supabase.sql
+csharp/migration-blocklist.sql
+csharp/migration-browser.sql
+csharp/migration-acceptances.sql
+csharp/migration-multi-evaluation.sql
+csharp/migration-submissions.sql
+admin-next/migration-realtime.sql
+
+# --- Features ---
+csharp/migration-allowed-urls.sql
+csharp/migration-evaluation-control.sql
+csharp/migration-version-visibility.sql
+csharp/migration-self-lock.sql
+csharp/migration-enrollments.sql
+csharp/migration-enrollments-view.sql
+csharp/migration-exam-mode.sql
+csharp/migration-exam-pdf.sql
+csharp/migration-exam-pdf-scope.sql
+csharp/migration-pc-overrides.sql
+
+# --- FASE 2 hardening (MUST be last; order matters) ---
+csharp/migration-rls-identity-hardening.sql
+csharp/migration-jwt-identity.sql
+csharp/migration-heartbeat-identity.sql
+csharp/migration-targeted-read-scope.sql
