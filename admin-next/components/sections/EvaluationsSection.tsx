@@ -22,6 +22,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { safeHref } from "@/lib/url";
+import { fmt } from "@/lib/format";
 import {
   Select,
   SelectContent,
@@ -38,6 +39,21 @@ import {
   TableRow,
 } from "@/components/ui/table";
 
+// `<input type="datetime-local">` produce/consume hora LOCAL de pared SIN
+// offset (ej "2026-07-01T14:30"), pero la DB guarda UTC absoluto (timestamptz).
+// Este helper toma el ISO UTC de la DB y arma el valor datetime-local en hora
+// LOCAL del navegador. OJO: NO se puede cortar el string ISO (mostraría UTC,
+// corrido por el offset); hay que leer los componentes LOCALES del Date.
+function toDatetimeLocalValue(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return (
+    `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}` +
+    `T${pad(d.getHours())}:${pad(d.getMinutes())}`
+  );
+}
+
 // Evaluaciones = el ÚNICO lugar para la evaluación Y su tarea de Classroom.
 // Antes estaban partidas en "Evaluaciones" + "Tareas Classroom" y se
 // desincronizaban (eval sin tarea, tarea apuntando a eval muerta). Ahora la
@@ -52,6 +68,8 @@ export function EvaluationsSection() {
   const [url, setUrl] = useState("");
   const [org, setOrg] = useState("");
   const [examMode, setExamMode] = useState<string>("Off");
+  // datetime-local en hora LOCAL de pared ("YYYY-MM-DDTHH:mm"). "" => sin término.
+  const [endsAt, setEndsAt] = useState("");
   const [editingId, setEditingId] = useState<number | null>(null);
   const [detailEval, setDetailEval] = useState<EvaluationRow | null>(null);
   const pdfInputRef = useRef<HTMLInputElement>(null);
@@ -76,6 +94,7 @@ export function EvaluationsSection() {
     setOrg("");
     setSectionId("");
     setExamMode("Off");
+    setEndsAt("");
   }
 
   function startEdit(e: EvaluationRow) {
@@ -85,6 +104,8 @@ export function EvaluationsSection() {
     setUrl(e.classroom_url ?? "");
     setOrg(e.org ?? "");
     setExamMode(e.exam_mode ?? "Off");
+    // UTC (DB) -> hora LOCAL para el input; null/"" => campo vacío.
+    setEndsAt(e.ends_at ? toDatetimeLocalValue(e.ends_at) : "");
   }
 
   // Mantiene sincronizada la `assignment` (lo que lee el cliente) con la
@@ -138,12 +159,15 @@ export function EvaluationsSection() {
     const sectionCode = sectionMap.get(sid)?.code ?? "";
     const classroomUrl = url.trim();
     const orgValue = org.trim();
+    // Hora LOCAL del input -> UTC absoluto para la DB. new Date("YYYY-MM-DDTHH:mm")
+    // parsea como hora LOCAL y .toISOString() emite UTC. "" => null (sin término).
+    const endsAtIso = endsAt ? new Date(endsAt).toISOString() : null;
 
     if (editingId != null) {
       // EDITAR evaluación existente (incluye añadir/cambiar el link de Classroom).
       const { data, error: err } = await supabase
         .from("evaluations")
-        .update({ section_id: sid, title: t, classroom_url: classroomUrl || null, org: orgValue || null, exam_mode: examMode })
+        .update({ section_id: sid, title: t, classroom_url: classroomUrl || null, org: orgValue || null, exam_mode: examMode, ends_at: endsAtIso })
         .eq("id", editingId)
         .select();
       if (err) { toast.error("Error: " + err.message); return; }
@@ -159,7 +183,7 @@ export function EvaluationsSection() {
     // CREAR (inactiva). Se activa con el botón Activar.
     const { data, error: err } = await supabase
       .from("evaluations")
-      .insert({ section_id: sid, title: t, classroom_url: classroomUrl || null, org: orgValue || null, exam_mode: examMode, active: false })
+      .insert({ section_id: sid, title: t, classroom_url: classroomUrl || null, org: orgValue || null, exam_mode: examMode, ends_at: endsAtIso, active: false })
       .select();
     if (err) { toast.error("Error: " + err.message); return; }
     if (!data || data.length === 0) { toast.error("No se pudo agregar (¿sesión expirada?)."); return; }
@@ -300,6 +324,15 @@ export function EvaluationsSection() {
               </SelectContent>
             </Select>
           </div>
+          <div className="grid w-[210px] gap-1.5">
+            <Label htmlFor="evalEndsAt">Hora de término (opcional)</Label>
+            <Input
+              type="datetime-local"
+              id="evalEndsAt"
+              value={endsAt}
+              onChange={(e) => setEndsAt(e.target.value)}
+            />
+          </div>
           <div className="grid flex-1 gap-1.5">
             <Label htmlFor="evalUrl">Link de Classroom</Label>
             <Input
@@ -384,12 +417,13 @@ export function EvaluationsSection() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="w-[20%] text-xs font-medium uppercase tracking-wide text-muted-foreground">Título</TableHead>
-                <TableHead className="w-[16%] text-xs font-medium uppercase tracking-wide text-muted-foreground">Sección</TableHead>
-                <TableHead className="w-[26%] text-xs font-medium uppercase tracking-wide text-muted-foreground">Link Classroom</TableHead>
-                <TableHead className="w-[10%] text-xs font-medium uppercase tracking-wide text-muted-foreground">Modo</TableHead>
+                <TableHead className="w-[18%] text-xs font-medium uppercase tracking-wide text-muted-foreground">Título</TableHead>
+                <TableHead className="w-[14%] text-xs font-medium uppercase tracking-wide text-muted-foreground">Sección</TableHead>
+                <TableHead className="w-[22%] text-xs font-medium uppercase tracking-wide text-muted-foreground">Link Classroom</TableHead>
+                <TableHead className="w-[8%] text-xs font-medium uppercase tracking-wide text-muted-foreground">Modo</TableHead>
+                <TableHead className="w-[12%] text-xs font-medium uppercase tracking-wide text-muted-foreground">Término</TableHead>
                 <TableHead className="w-[10%] text-xs font-medium uppercase tracking-wide text-muted-foreground">Estado</TableHead>
-                <TableHead className="w-[18%] text-right text-xs font-medium uppercase tracking-wide text-muted-foreground">Acciones</TableHead>
+                <TableHead className="w-[16%] text-right text-xs font-medium uppercase tracking-wide text-muted-foreground">Acciones</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -400,19 +434,20 @@ export function EvaluationsSection() {
                     <TableCell><Skeleton className="h-5 w-20 rounded-md" /></TableCell>
                     <TableCell><Skeleton className="h-4 w-44" /></TableCell>
                     <TableCell><Skeleton className="h-5 w-16 rounded-md" /></TableCell>
+                    <TableCell><Skeleton className="h-4 w-24" /></TableCell>
                     <TableCell><Skeleton className="h-5 w-16 rounded-full" /></TableCell>
                     <TableCell className="text-right"><Skeleton className="ml-auto h-8 w-24" /></TableCell>
                   </TableRow>
                 ))
               ) : error ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center text-destructive">
+                  <TableCell colSpan={7} className="text-center text-destructive">
                     Error: {error}
                   </TableCell>
                 </TableRow>
               ) : rows.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="py-10">
+                  <TableCell colSpan={7} className="py-10">
                     <div className="flex flex-col items-center gap-2 text-center text-muted-foreground">
                       <ClipboardList className="size-8 text-muted-foreground/40" />
                       <p className="text-sm">Sin evaluaciones configuradas.</p>
@@ -476,6 +511,13 @@ export function EvaluationsSection() {
                             </span>
                           );
                         })()}
+                      </TableCell>
+                      <TableCell>
+                        {e.ends_at ? (
+                          <span className="text-xs text-foreground">{fmt(e.ends_at)}</span>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        )}
                       </TableCell>
                       <TableCell>
                         <span
