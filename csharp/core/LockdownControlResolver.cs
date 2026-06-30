@@ -20,11 +20,11 @@ public enum BlockAction
 /// No incluye el mensaje del profesor: ese es un concern aparte que vive en la
 /// vista (dedup + MessageBox).
 /// </summary>
-public readonly record struct LockdownControlInputs(bool InternetBlock, bool ForceLockdown);
+public readonly record struct LockdownControlInputs(bool InternetBlock, bool ForceLockdown, bool CopilotBlock = false);
 
 /// <summary>
-/// Decision resuelta: la transicion de internet, la de copilot (mismo toggle que
-/// internet) y si corresponde mostrar la pantalla roja remota.
+/// Decision resuelta: la transicion de internet, la de copilot (aditiva: internet
+/// efectivo O copilot_block) y si corresponde mostrar la pantalla roja remota.
 /// </summary>
 public readonly record struct LockdownControlDecision(
     BlockAction Internet,
@@ -75,9 +75,12 @@ public static class LockdownControlResolver
         bool screenUnblocked = unblockScreen ?? false;
 
         var internet = Edge(desired: effInternet, current: internetBlocked);
-        // Copilot amarrado al MISMO toggle que internet (effInternet), igual que el
-        // original; no hay un effCopilot separado.
-        var copilot = Edge(desired: effInternet, current: copilotBlocked);
+        // Copilot ADITIVO: se bloquea cuando el internet efectivo O el flag
+        // copilot_block estan activos (no exclusivo). Preserva el modo examen
+        // (Copilot esclavo de internet) y agrega el switch standalone del panel.
+        // El override por PC unblock_internet NO suelta copilot_block (es
+        // independiente): solo afecta effInternet.
+        var copilot = Edge(desired: effInternet || cfg.CopilotBlock, current: copilotBlocked);
 
         bool showRed = cfg.ForceLockdown && inExam && !screenUnblocked && !remoteLockdownActive;
 

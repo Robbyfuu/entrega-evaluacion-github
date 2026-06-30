@@ -17,9 +17,10 @@ namespace EntregaEvaluacion.Tests;
 ///   if (effInternet &amp;&amp; !_copilotBlocked) Block(copilot); else if (!effInternet &amp;&amp; _copilotBlocked) Unblock(copilot);
 ///   if (cfg.ForceLockdown &amp;&amp; inExam &amp;&amp; !screenUnblocked &amp;&amp; !_remoteLockdownActive) ShowRedScreen;
 ///
-/// Copilot va AMARRADO al mismo toggle que internet (effInternet); NO hay un
-/// "effCopilot" separado, asi que el resolver lo deriva de effInternet igual que
-/// el codigo. La decision es pura: sin WPF, sin I/O, sin reloj.
+/// Copilot es ADITIVO: se bloquea cuando effInternet O copilot_block (el flag
+/// standalone del panel, independiente de internet) estan activos. Los tests
+/// legacy usan CopilotBlock=false (default) => copilot==internet, igual que antes.
+/// La decision es pura: sin WPF, sin I/O, sin reloj.
 /// </summary>
 public class LockdownControlResolverTests
 {
@@ -116,6 +117,66 @@ public class LockdownControlResolverTests
 
         Assert.Equal(BlockAction.None, d.Internet);
         Assert.Equal(BlockAction.Block, d.Copilot);
+    }
+
+    // ===== copilot_block ADITIVO: independiente de internet_block =====
+    [Fact]
+    public void CopilotBlockOn_InternetOff_BlocksOnlyCopilot()
+    {
+        // copilot_block=true, internet_block=false => se bloquea Copilot, NO internet.
+        // El switch standalone del panel.
+        var d = Resolve(new LockdownControlInputs(InternetBlock: false, ForceLockdown: false, CopilotBlock: true),
+            null, null, inExam: false,
+            internetBlocked: false, copilotBlocked: false, remoteLockdownActive: false);
+
+        Assert.Equal(BlockAction.None, d.Internet);
+        Assert.Equal(BlockAction.Block, d.Copilot);
+    }
+
+    [Fact]
+    public void CopilotBlockOn_PlusInternetOn_BlocksBoth()
+    {
+        var d = Resolve(new LockdownControlInputs(InternetBlock: true, ForceLockdown: false, CopilotBlock: true),
+            null, null, inExam: false,
+            internetBlocked: false, copilotBlocked: false, remoteLockdownActive: false);
+
+        Assert.Equal(BlockAction.Block, d.Internet);
+        Assert.Equal(BlockAction.Block, d.Copilot);
+    }
+
+    [Fact]
+    public void CopilotBlockOff_InternetOff_NoCopilotBlock()
+    {
+        // Sin internet ni copilot_block => Copilot no se bloquea (preserva el viejo).
+        var d = Resolve(new LockdownControlInputs(InternetBlock: false, ForceLockdown: false, CopilotBlock: false),
+            null, null, inExam: false,
+            internetBlocked: false, copilotBlocked: false, remoteLockdownActive: false);
+
+        Assert.Equal(BlockAction.None, d.Copilot);
+    }
+
+    [Fact]
+    public void CopilotBlockOn_IndependentOfPcUnblockInternet()
+    {
+        // unblock_internet por PC suelta internet, pero copilot_block es
+        // INDEPENDIENTE => Copilot sigue bloqueado (None: ya estaba bloqueado).
+        var d = Resolve(new LockdownControlInputs(InternetBlock: true, ForceLockdown: false, CopilotBlock: true),
+            unblockInternet: true, unblockScreen: null, inExam: false,
+            internetBlocked: true, copilotBlocked: true, remoteLockdownActive: false);
+
+        Assert.Equal(BlockAction.Unblock, d.Internet);   // internet liberado por el PC
+        Assert.Equal(BlockAction.None, d.Copilot);       // copilot_block lo mantiene
+    }
+
+    [Fact]
+    public void CopilotBlockOff_InternetOff_ReleasesCopilotIfBlocked()
+    {
+        // Ni internet ni copilot_block, copilot estaba bloqueado => Unblock.
+        var d = Resolve(new LockdownControlInputs(InternetBlock: false, ForceLockdown: false, CopilotBlock: false),
+            null, null, inExam: false,
+            internetBlocked: false, copilotBlocked: true, remoteLockdownActive: false);
+
+        Assert.Equal(BlockAction.Unblock, d.Copilot);
     }
 
     // ===== Invariante 7: PC-override fail-safe =====

@@ -41,6 +41,7 @@ admin-next/migration-realtime.sql
 # --- Features ---
 csharp/migration-allowed-urls.sql
 csharp/migration-evaluation-control.sql
+csharp/migration-copilot-block.sql
 csharp/migration-version-visibility.sql
 csharp/migration-self-lock.sql
 csharp/migration-enrollments.sql

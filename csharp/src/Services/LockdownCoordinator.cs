@@ -153,7 +153,7 @@ public sealed class LockdownCoordinator
         bool inExam = _selection.EvaluationId is { } examEvalId && examEvalId > 0;
 
         var decision = LockdownControlResolver.Resolve(
-            new LockdownControlInputs(cfg.InternetBlock, cfg.ForceLockdown),
+            new LockdownControlInputs(cfg.InternetBlock, cfg.ForceLockdown, cfg.CopilotBlock),
             ovr?.UnblockInternet, ovr?.UnblockScreen, inExam,
             _internetBlocked, _copilotBlocked, _remoteLockdownActive);
 

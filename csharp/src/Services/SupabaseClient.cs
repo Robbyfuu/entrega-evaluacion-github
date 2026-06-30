@@ -363,6 +363,7 @@ public class SupabaseClient : ISupabaseClient
         {
             InternetBlock = ovr.InternetBlock ?? global?.InternetBlock ?? false,
             ForceLockdown = ovr.ForceLockdown ?? global?.ForceLockdown ?? false,
+            CopilotBlock = ovr.CopilotBlock ?? global?.CopilotBlock ?? false,
             Message = ovr.Message ?? global?.Message,
             UpdatedAt = ovr.UpdatedAt ?? global?.UpdatedAt,
             UpdatedBy = ovr.UpdatedBy ?? global?.UpdatedBy
