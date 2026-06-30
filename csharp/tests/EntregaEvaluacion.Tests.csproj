@@ -1,15 +1,14 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
+    <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>latest</LangVersion>
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
-    <!-- Permite ejecutar el testhost net8.0 sobre el runtime instalado (9.0)
-         cuando el runtime 8.0 no esta presente (mac/dev). En CI con .NET 8
-         instalado usa 8.0; RollForward solo actua si falta el runtime exacto. -->
+    <!-- testhost net10.0 sobre el runtime instalado. RollForward solo actua si
+         falta el runtime exacto (mac/dev sin el runtime net10 puntual). -->
     <RollForward>Major</RollForward>
   </PropertyGroup>
 
