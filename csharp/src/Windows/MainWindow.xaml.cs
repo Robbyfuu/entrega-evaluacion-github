@@ -126,6 +126,13 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier, IRedScreenHos
     // El handler que el boton primario debe disparar segun el estado actual.
     private Func<Task>? _primaryAction;
 
+    // Widget flotante del countdown (ENT-31 slice 4). Instancia unica perezosa: se
+    // crea la primera vez que aplica mostrarlo (minimizado + en evaluacion + sin
+    // lockdown) y se reutiliza con Show/Hide. NO se le setea Owner (un owned window
+    // se auto-oculta al minimizar el owner, justo cuando lo necesitamos visible),
+    // por eso hay que cerrarlo explicitamente al cerrar la app.
+    private WidgetWindow? _widget;
+
     public MainWindow(IGitHubService gh, ISupabaseClient sb, ISelectionStore selection)
     {
         // Las dependencias se asignan ANTES de InitializeComponent y de cualquier
@@ -190,6 +197,43 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier, IRedScreenHos
         // a Config.cs), igual que _blocklist. No poblamos aca para evitar datos
         // legacy antes de saber si la BD responde.
         Loaded += async (_, _) => await InitAsync();
+
+        // ENT-31 slice 4: el widget del countdown depende del estado de la ventana.
+        // StateChanged re-evalua su visibilidad (mostrar solo al minimizar, en
+        // evaluacion y sin lockdown). Closed lo cierra: sin Owner no se cierra solo
+        // y dejaria el proceso vivo (ShutdownMode = OnMainWindowClose).
+        StateChanged += (_, _) => UpdateWidgetVisibility();
+        Closed += (_, _) => { _widget?.Close(); _widget = null; };
+    }
+
+    /// <summary>
+    /// ENT-31 slice 4: muestra el widget flotante del countdown SOLO cuando la
+    /// ventana esta MINIMIZADA, hay una evaluacion en curso (EvaluationId &gt; 0) y
+    /// NO hay lockdown activo; en cualquier otro caso lo oculta. La pantalla roja
+    /// SIEMPRE gana: este gate nunca muestra el widget mientras IsLockdownActive, y
+    /// <see cref="IRedScreenHost.ShowBlocking"/> ademas lo oculta explicitamente
+    /// antes del modal y re-evalua al volver. Solo lee estado; no toca el lockdown.
+    /// </summary>
+    private void UpdateWidgetVisibility()
+    {
+        bool shouldShow =
+            WindowState == WindowState.Minimized &&
+            !_lockdown.IsLockdownActive &&
+            _selection.EvaluationId > 0;
+
+        if (!shouldShow)
+        {
+            _widget?.Hide();
+            return;
+        }
+
+        // Creacion perezosa: el restante sale SOLO de ExamTimerService (slice 3);
+        // el callback de restaurar es lo unico con que el widget toca esta ventana.
+        _widget ??= new WidgetWindow(
+            () => _examTimer.Remaining,
+            () => { WindowState = WindowState.Normal; Activate(); });
+        _widget.PositionTopRight();
+        _widget.Show();
     }
 
     // El programa NO se cierra durante la evaluacion: el alumno no puede salir
@@ -1699,6 +1743,12 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier, IRedScreenHos
     /// </summary>
     bool IRedScreenHost.ShowBlocking(RedScreenRequest req)
     {
+        // ENT-31 slice 4: la pantalla roja SIEMPRE gana. ShowDialog solo DESHABILITA
+        // las demas ventanas (no las oculta) y el Topmost del widget competiria en
+        // z-order, asi que lo ocultamos EXPLICITAMENTE antes del modal. Corre en el
+        // hilo de UI (igual que ShowBlocking), por lo que Hide() es seguro aqui.
+        _widget?.Hide();
+
         var alert = new CheatWindow(
             req.RepoName, req.FilesCount, req.FilesNames,
             isPersistent: req.IsPersistent,
@@ -1706,7 +1756,13 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier, IRedScreenHos
             checkStillLocked: req.CheckStillLocked,
             onHeartbeat: req.OnHeartbeat);
         if (req.SetOwner) alert.Owner = this;
-        return alert.ShowDialog() == true;
+        var result = alert.ShowDialog() == true;
+
+        // Tras cerrarse la pantalla roja, re-evaluar la visibilidad: el widget solo
+        // vuelve si seguimos minimizados, en evaluacion y sin lockdown (lo decide el
+        // gate). El retorno de ShowDialog se preserva EXACTO (igual que el original).
+        UpdateWidgetVisibility();
+        return result;
     }
 
     private async Task SendHeartbeatAsync()

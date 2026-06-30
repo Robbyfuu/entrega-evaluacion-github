@@ -36,4 +36,22 @@ public static class ExamCountdown
         var remaining = (endsAt - serverNowAtSync) - elapsedSinceSync;
         return remaining < TimeSpan.Zero ? TimeSpan.Zero : remaining;
     }
+
+    /// <summary>
+    /// Formatea un restante como "HH:MM:SS" con cero a la izquierda. Las HORAS son
+    /// el TOTAL (no el componente 0-23): una ventana de 100h se muestra "100:00:00",
+    /// no "04:00:00". Los segundos sub-segundo se truncan (piso), de modo que el
+    /// reloj cae a "00:00:00" recien al llegar a cero. Un restante negativo (no
+    /// deberia ocurrir: <see cref="Remaining"/> ya clampa) se trata como cero.
+    ///
+    /// PURO: solo da forma a un <see cref="TimeSpan"/> ya calculado; no hace
+    /// aritmetica de tiempo ni lee reloj alguno. El widget (slice 4) lo usa para
+    /// pintar sin replicar logica de tiempo.
+    /// </summary>
+    public static string Format(TimeSpan remaining)
+    {
+        if (remaining < TimeSpan.Zero) remaining = TimeSpan.Zero;
+        int totalHours = (int)remaining.TotalHours;
+        return $"{totalHours:D2}:{remaining.Minutes:D2}:{remaining.Seconds:D2}";
+    }
 }

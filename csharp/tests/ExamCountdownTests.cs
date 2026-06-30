@@ -88,4 +88,62 @@ public class ExamCountdownTests
             ServerNow, endsAt, TimeSpan.FromSeconds(30));
         Assert.Equal(TimeSpan.FromSeconds(60), remaining);
     }
+
+    // ===================== Format (HH:MM:SS) =====================
+    // El widget (slice 4) pinta SOLO con este formateador puro; no replica
+    // aritmetica de tiempo. Las horas son el TOTAL (no el componente 0-23).
+
+    [Fact]
+    public void Format_Zero_IsAllZeros()
+    {
+        Assert.Equal("00:00:00", ExamCountdown.Format(TimeSpan.Zero));
+    }
+
+    [Fact]
+    public void Format_SubMinute_PadsHoursAndMinutes()
+    {
+        Assert.Equal("00:00:45", ExamCountdown.Format(TimeSpan.FromSeconds(45)));
+    }
+
+    [Fact]
+    public void Format_Minutes_PadsHours()
+    {
+        Assert.Equal("00:05:00", ExamCountdown.Format(TimeSpan.FromMinutes(5)));
+    }
+
+    [Fact]
+    public void Format_HoursMinutesSeconds_ZeroPadsEachField()
+    {
+        var ts = new TimeSpan(1, 2, 3);
+        Assert.Equal("01:02:03", ExamCountdown.Format(ts));
+    }
+
+    [Fact]
+    public void Format_ExactlyOneHour_BoundaryRollsOver()
+    {
+        // 60 min exactos => "01:00:00" (la hora es total, no componente).
+        Assert.Equal("01:00:00", ExamCountdown.Format(TimeSpan.FromMinutes(60)));
+    }
+
+    [Fact]
+    public void Format_OverNinetyNineHours_UsesTotalHoursNotComponent()
+    {
+        // 100h no es "04:00:00" (componente 0-23): es el TOTAL de horas.
+        Assert.Equal("100:00:00", ExamCountdown.Format(TimeSpan.FromHours(100)));
+    }
+
+    [Fact]
+    public void Format_SubSecond_TruncatesTowardZero()
+    {
+        // 1m 30.7s => piso de segundos => "00:01:30" (no redondea hacia arriba).
+        var ts = TimeSpan.FromSeconds(90) + TimeSpan.FromMilliseconds(700);
+        Assert.Equal("00:01:30", ExamCountdown.Format(ts));
+    }
+
+    [Fact]
+    public void Format_Negative_ClampsToZero()
+    {
+        // Defensivo: Remaining ya clampa, pero un negativo crudo => "00:00:00".
+        Assert.Equal("00:00:00", ExamCountdown.Format(TimeSpan.FromSeconds(-5)));
+    }
 }
