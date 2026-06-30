@@ -74,7 +74,7 @@ public sealed class ExitGuard
     /// </summary>
     public bool HandleClosing(bool alreadyCancelled)
     {
-        if (ExitDecision.ShouldAllowClose(_allowExit, alreadyCancelled, _isUpdating()))
+        if (ShouldAllowClose(alreadyCancelled))
             return false;
 
         // Bloquear el cierre + avisar + registrar el intento.
@@ -90,6 +90,19 @@ public sealed class ExitGuard
         }
         return true;
     }
+
+    /// <summary>
+    /// Decision PURA (sin efectos) de si corresponde PERMITIR el cierre real: ya
+    /// se autorizo con clave (<c>_allowExit</c>), otro handler ya cancelo
+    /// (<paramref name="alreadyCancelled"/>) o hay un update aplicandose. Reusa
+    /// <see cref="ExitDecision.ShouldAllowClose"/> (la MISMA logica que evalua
+    /// <see cref="HandleClosing"/>). La consume MainWindow.OnClosing FUERA de
+    /// evaluacion para dejar pasar el cierre autorizado (bandeja "Salir" ->
+    /// HandleClosing -> Shutdown) y, si no, ocultar la ventana a la bandeja sin
+    /// disparar el toast ni el reporte del intento.
+    /// </summary>
+    public bool ShouldAllowClose(bool alreadyCancelled)
+        => ExitDecision.ShouldAllowClose(_allowExit, alreadyCancelled, _isUpdating());
 
     /// <summary>
     /// Reporta el intento de cierre al panel (queda en Actividad). Throttle de

@@ -5,6 +5,7 @@ using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Media;
 using System.Windows.Threading;
+using Hardcodet.Wpf.TaskbarNotification;
 using Microsoft.Win32;
 using EntregaEvaluacion.Core;
 using EntregaEvaluacion.Models;
@@ -133,6 +134,12 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier, IRedScreenHos
     // por eso hay que cerrarlo explicitamente al cerrar la app.
     private WidgetWindow? _widget;
 
+    // Icono de bandeja (NotifyIcon). La app arranca y vive OCULTA en la bandeja;
+    // este icono es el unico punto de re-entrada visible (doble clic / "Abrir") y
+    // la salida ("Salir", que SIEMPRE enruta por el ExitGuard, nunca un Shutdown
+    // directo). Vive lo que vive el proceso y se libera en Closed (cierre real).
+    private TaskbarIcon? _trayIcon;
+
     public MainWindow(IGitHubService gh, ISupabaseClient sb, ISelectionStore selection)
     {
         // Las dependencias se asignan ANTES de InitializeComponent y de cualquier
@@ -193,6 +200,9 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier, IRedScreenHos
 
         InitializeComponent();
 
+        // Icono de bandeja: la app vive oculta y se restaura/sale desde aqui.
+        BuildTrayIcon();
+
         // Los combos se poblan asincronicamente en InitAsync (fetch BD + fallback
         // a Config.cs), igual que _blocklist. No poblamos aca para evitar datos
         // legacy antes de saber si la BD responde.
@@ -200,10 +210,95 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier, IRedScreenHos
 
         // ENT-31 slice 4: el widget del countdown depende del estado de la ventana.
         // StateChanged re-evalua su visibilidad (mostrar solo al minimizar, en
-        // evaluacion y sin lockdown). Closed lo cierra: sin Owner no se cierra solo
-        // y dejaria el proceso vivo (ShutdownMode = OnMainWindowClose).
+        // evaluacion y sin lockdown). Closed (cierre real, con ShutdownMode =
+        // OnExplicitShutdown) cierra el widget (sin Owner no se cierra solo) y
+        // libera el icono de bandeja.
         StateChanged += (_, _) => UpdateWidgetVisibility();
-        Closed += (_, _) => { _widget?.Close(); _widget = null; };
+        Closed += (_, _) =>
+        {
+            _widget?.Close();
+            _widget = null;
+            _trayIcon?.Dispose();
+            _trayIcon = null;
+        };
+    }
+
+    /// <summary>
+    /// Arma el icono de la bandeja del sistema (Hardcodet TaskbarIcon, puro WPF).
+    /// La app corre OCULTA: este icono es el punto de re-entrada. Doble clic y
+    /// "Abrir" restauran via <see cref="RestoreFromTray"/>; "Salir" enruta SIEMPRE
+    /// por el ExitGuard (clave del profesor durante la evaluacion), NUNCA un
+    /// Shutdown directo. El icono se resuelve por pack URI; si falla, el icono
+    /// queda sin imagen pero el menu sigue operativo (best-effort).
+    /// </summary>
+    private void BuildTrayIcon()
+    {
+        var menu = new System.Windows.Controls.ContextMenu();
+
+        var openItem = new System.Windows.Controls.MenuItem { Header = "Abrir" };
+        openItem.Click += (_, _) => RestoreFromTray();
+
+        var exitItem = new System.Windows.Controls.MenuItem { Header = "Salir" };
+        exitItem.Click += (_, _) => RequestExit();
+
+        menu.Items.Add(openItem);
+        menu.Items.Add(exitItem);
+
+        try
+        {
+            _trayIcon = new TaskbarIcon
+            {
+                ToolTipText = "Entrega de Evaluacion a GitHub",
+                ContextMenu = menu,
+                Visibility = Visibility.Visible,
+            };
+
+            try
+            {
+                _trayIcon.IconSource = new System.Windows.Media.Imaging.BitmapImage(
+                    new Uri("pack://application:,,,/Resources/app.ico"));
+            }
+            catch { }
+
+            _trayIcon.TrayMouseDoubleClick += (_, _) => RestoreFromTray();
+        }
+        catch
+        {
+            // Si la bandeja no se puede crear, NO crashear el ctor: el daemon
+            // relanzaria en loop. La app sigue corriendo oculta y el re-ingreso
+            // por doble-lanzamiento (IPC -> RestoreFromTray) sigue funcionando.
+            _trayIcon = null;
+        }
+    }
+
+    /// <summary>
+    /// Restaura la ventana principal desde la bandeja (o desde minimizada) y la
+    /// trae al frente. Secuencia canonica usada por TODOS los puntos de
+    /// restauracion (doble clic e item "Abrir" de la bandeja, callback del widget
+    /// ENT-31 y la activacion cross-proceso del segundo lanzamiento).
+    /// </summary>
+    public void RestoreFromTray()
+    {
+        if (!IsVisible) Show();
+        if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
+        ShowInTaskbar = true;
+        Activate();
+        Topmost = true;
+        Topmost = false;
+        Focus();
+    }
+
+    /// <summary>
+    /// Salida solicitada desde la bandeja ("Salir"). Enruta SIEMPRE por el
+    /// ExitGuard: durante la evaluacion exige la clave del profesor; nunca cierra
+    /// con un Shutdown directo. Primero restaura la ventana para que el prompt de
+    /// clave (Owner=this) tenga un duenio visible y llegue al frente. Si no se
+    /// autoriza, no pasa nada (la app sigue viva en la bandeja).
+    /// </summary>
+    public void RequestExit()
+    {
+        RestoreFromTray();
+        _exitGuard.HandleClosing(alreadyCancelled: false);
     }
 
     /// <summary>
@@ -231,20 +326,39 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier, IRedScreenHos
         // el callback de restaurar es lo unico con que el widget toca esta ventana.
         _widget ??= new WidgetWindow(
             () => _examTimer.Remaining,
-            () => { WindowState = WindowState.Normal; Activate(); });
+            RestoreFromTray);
         _widget.PositionTopRight();
         _widget.Show();
     }
 
     // El programa NO se cierra durante la evaluacion: el alumno no puede salir
     // del control (y el daemon lo relanzaria igual). Solo se cierra con la clave
-    // del profesor. La logica (gate, toast, reporte con throttle, escape por clave
-    // y cierre autorizado) vive en _exitGuard; aqui queda solo el shim que honra
-    // primero base.OnClosing y traduce la decision a e.Cancel.
+    // del profesor (ruta autorizada del ExitGuard). Fuera de evaluacion la X
+    // OCULTA a la bandeja en vez de cerrar (el monitoreo sigue vivo: ShutdownMode
+    // = OnExplicitShutdown). "Durante la evaluacion" usa la MISMA condicion que el
+    // resto de la vista: hay una evaluacion en curso (_selection.EvaluationId > 0).
     protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
     {
         base.OnClosing(e);
-        if (_exitGuard.HandleClosing(e.Cancel)) e.Cancel = true;
+
+        // Durante la evaluacion: el cierre lo gobierna ENTERO el ExitGuard (gate,
+        // toast "no puedes cerrar", reporte del intento con throttle y escape por
+        // clave del profesor). Sin cambios respecto del comportamiento original.
+        if (_selection.EvaluationId > 0)
+        {
+            if (_exitGuard.HandleClosing(e.Cancel)) e.Cancel = true;
+            return;
+        }
+
+        // Fuera de evaluacion: un cierre REAL ya autorizado (bandeja "Salir" ->
+        // ExitGuard -> Shutdown, o un update aplicandose) debe pasar. Cualquier
+        // otro cierre (la X) se cancela y la ventana se oculta en la bandeja; la
+        // app sigue monitoreando en segundo plano. La unica salida real sigue
+        // siendo la ruta autorizada del ExitGuard.
+        if (_exitGuard.ShouldAllowClose(e.Cancel)) return;
+        e.Cancel = true;
+        Hide();
+        ShowInTaskbar = false;
     }
 
     // ===================== Init =====================
@@ -1755,7 +1869,13 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier, IRedScreenHos
             remoteSource: req.RemoteSource,
             checkStillLocked: req.CheckStillLocked,
             onHeartbeat: req.OnHeartbeat);
-        if (req.SetOwner) alert.Owner = this;
+        // La pantalla roja SIEMPRE debe llegar al frente, incluso con la app
+        // OCULTA en la bandeja. Un Owner oculto (no visible) puede impedir que el
+        // modal se active, asi que solo fijamos Owner cuando esta ventana esta
+        // visible; si esta en la bandeja, el CheatWindow va sin Owner y su
+        // Topmost+Activate (en CheatWindow_Loaded) lo lleva al frente igual. Nunca
+        // se debilita el bloqueo: solo se evita un Owner que lo dejaria atras.
+        if (req.SetOwner && IsVisible) alert.Owner = this;
         var result = alert.ShowDialog() == true;
 
         // Tras cerrarse la pantalla roja, re-evaluar la visibilidad: el widget solo

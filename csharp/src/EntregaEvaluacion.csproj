@@ -13,6 +13,7 @@
     <Company>DUOC UC - FPY1101</Company>
     <Product>Entrega de Evaluacion a GitHub</Product>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Resources\app.ico</ApplicationIcon>
     <!-- Velopack: NO usar PublishSingleFile. Velopack empaqueta el folder
          publish completo y maneja install + auto-update. -->
     <SelfContained>true</SelfContained>
@@ -35,6 +36,12 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Icono de la app: usado como icono del exe (ApplicationIcon) y, como
+         Resource, alcanzable por pack URI para el TaskbarIcon de la bandeja. -->
+    <Resource Include="Resources\app.ico" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- Git nativo: no requiere git CLI instalado -->
     <PackageReference Include="LibGit2Sharp" Version="0.31.0" />
     <!-- DPAPI para cifrar el token en disco (per-user) -->
@@ -43,6 +50,9 @@
     <PackageReference Include="Velopack" Version="1.2.0" />
     <!-- WPF-UI: controles Fluent (look Windows 11) -->
     <PackageReference Include="WPF-UI" Version="4.3.0" />
+    <!-- Tray icon (NotifyIcon) puro WPF: la app corre en bandeja y se restaura
+         desde ahi. Trae assets net6/net8-windows, TFM-compatibles con net10. -->
+    <PackageReference Include="Hardcodet.NotifyIcon.Wpf" Version="2.0.1" />
     <!-- WebView2: navegador embebido (Edge/Chromium) para login y Classroom.
          El runtime viene en Win10/11; este paquete es solo la referencia de
          ensamblado y restaura en cualquier OS. -->

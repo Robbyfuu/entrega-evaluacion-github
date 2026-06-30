@@ -27,7 +27,13 @@ public static class DaemonService
             // onlogon para arrancar al inicio, y un watchdog interno (timer) que
             // re-registra si lo borran. Para repeticion robusta usamos schtasks
             // con /sc minute /mo 3.
-            RunSchtasks($"/create /tn \"{TaskName}\" /tr \"\\\"{exe}\\\"\" /sc minute /mo 3 /f /rl limited");
+            //
+            // El relanzamiento pasa --watchdog: si ya hay una instancia viva, la
+            // segunda detecta el flag y sale SIN pedir restaurar la ventana (el
+            // relanzamiento cada 3 min jamas debe hacer aparecer la UI). Si no hay
+            // instancia viva, esta arranca normal (oculta en bandeja) e ignora el
+            // flag.
+            RunSchtasks($"/create /tn \"{TaskName}\" /tr \"\\\"{exe}\\\" --watchdog\" /sc minute /mo 3 /f /rl limited");
         }
         catch { }
     }

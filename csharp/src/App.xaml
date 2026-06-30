@@ -4,7 +4,9 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml">
     <!-- El ShutdownMode lo controla OnStartup en App.xaml.cs: OnExplicitShutdown
-         mientras se muestra el CheatWindow persistente, luego OnMainWindowClose. -->
+         durante TODA la vida del proceso. La app corre como demonio, oculta en la
+         bandeja del sistema; ocultar o cerrar la ventana NO mata el monitoreo. La
+         unica salida real es la ruta autorizada del ExitGuard (clave del profesor). -->
     <Application.Resources>
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
