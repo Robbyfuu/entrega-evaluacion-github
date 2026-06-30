@@ -77,6 +77,9 @@ public class Evaluation
     // Path del PDF de enunciado en Storage (bucket privado 'exam-pdfs'). NULL =>
     // sin PDF. El cliente lo descarga, lo abre y lo borra al terminar.
     [JsonPropertyName("exam_pdf_path")] public string? ExamPdfPath { get; set; }
+    // La evaluacion exige una entrega ADICIONAL en Blackboard (DUOC AVA): zip
+    // del proyecto + link del repo. NULL/false => entrega normal sin cambios.
+    [JsonPropertyName("requires_blackboard")] public bool RequiresBlackboard { get; set; }
 }
 
 public class Assignment

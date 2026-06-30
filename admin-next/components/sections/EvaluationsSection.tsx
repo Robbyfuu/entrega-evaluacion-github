@@ -21,6 +21,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { safeHref } from "@/lib/url";
 import { fmt } from "@/lib/format";
 import {
@@ -68,6 +69,9 @@ export function EvaluationsSection() {
   const [url, setUrl] = useState("");
   const [org, setOrg] = useState("");
   const [examMode, setExamMode] = useState<string>("Off");
+  // Entrega adicional en Blackboard (zip + link) para el examen final. false =>
+  // entrega normal. Solo las evaluaciones marcadas disparan ese flujo en el cliente.
+  const [requiresBlackboard, setRequiresBlackboard] = useState(false);
   // datetime-local en hora LOCAL de pared ("YYYY-MM-DDTHH:mm"). "" => sin término.
   const [endsAt, setEndsAt] = useState("");
   // Numero de la evaluacion (handle estable por seccion). El panel lo asigna
@@ -97,6 +101,7 @@ export function EvaluationsSection() {
     setOrg("");
     setSectionId("");
     setExamMode("Off");
+    setRequiresBlackboard(false);
     setEndsAt("");
     setNum("");
   }
@@ -108,6 +113,7 @@ export function EvaluationsSection() {
     setUrl(e.classroom_url ?? "");
     setOrg(e.org ?? "");
     setExamMode(e.exam_mode ?? "Off");
+    setRequiresBlackboard(e.requires_blackboard ?? false);
     // UTC (DB) -> hora LOCAL para el input; null/"" => campo vacío.
     setEndsAt(e.ends_at ? toDatetimeLocalValue(e.ends_at) : "");
     setNum(e.number != null ? String(e.number) : "");
@@ -179,7 +185,7 @@ export function EvaluationsSection() {
       // EDITAR evaluación existente (incluye añadir/cambiar el link de Classroom).
       const { data, error: err } = await supabase
         .from("evaluations")
-        .update({ section_id: sid, title: t, classroom_url: classroomUrl || null, org: orgValue || null, exam_mode: examMode, ends_at: endsAtIso, number: numVal })
+        .update({ section_id: sid, title: t, classroom_url: classroomUrl || null, org: orgValue || null, exam_mode: examMode, requires_blackboard: requiresBlackboard, ends_at: endsAtIso, number: numVal })
         .eq("id", editingId)
         .select();
       if (err) { toast.error("Error: " + err.message); return; }
@@ -195,7 +201,7 @@ export function EvaluationsSection() {
     // CREAR (inactiva). Se activa con el botón Activar.
     const { data, error: err } = await supabase
       .from("evaluations")
-      .insert({ section_id: sid, title: t, classroom_url: classroomUrl || null, org: orgValue || null, exam_mode: examMode, ends_at: endsAtIso, number: numVal, active: false })
+      .insert({ section_id: sid, title: t, classroom_url: classroomUrl || null, org: orgValue || null, exam_mode: examMode, requires_blackboard: requiresBlackboard, ends_at: endsAtIso, number: numVal, active: false })
       .select();
     if (err) { toast.error("Error: " + err.message); return; }
     if (!data || data.length === 0) { toast.error("No se pudo agregar (¿sesión expirada?)."); return; }
@@ -346,6 +352,19 @@ export function EvaluationsSection() {
                 ))}
               </SelectContent>
             </Select>
+          </div>
+          <div className="grid w-[200px] gap-1.5">
+            <Label htmlFor="evalBlackboard">Entrega en Blackboard</Label>
+            <div className="flex h-9 items-center gap-2">
+              <Switch
+                id="evalBlackboard"
+                checked={requiresBlackboard}
+                onCheckedChange={setRequiresBlackboard}
+              />
+              <span className="text-xs text-muted-foreground">
+                {requiresBlackboard ? "zip + link" : "Solo GitHub"}
+              </span>
+            </div>
           </div>
           <div className="grid w-[210px] gap-1.5">
             <Label htmlFor="evalEndsAt">Hora de término (opcional)</Label>

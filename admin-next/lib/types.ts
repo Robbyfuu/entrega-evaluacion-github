@@ -39,6 +39,9 @@ export interface EvaluationRow {
   // Hora absoluta de termino del examen (TIMESTAMPTZ en Postgres, ISO UTC).
   // NULL => sin cuenta regresiva. Propiedad fija por evaluacion.
   ends_at: string | null;
+  // La evaluacion exige una entrega ADICIONAL en Blackboard (DUOC AVA): zip del
+  // proyecto + link del repo. false (default) => entrega normal sin cambios.
+  requires_blackboard: boolean;
   created_at: string | null;
 }
 

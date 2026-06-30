@@ -1278,11 +1278,35 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier, IRedScreenHos
         // registro local que se pueda divulgar).
         ExamPdfService.DeleteAllDownloaded();
 
-        // tipo ahora es el titulo de la evaluacion (BD) o el tipo legacy
-        // (Config.EvaluationTypes en fallback). Ya no mapeamos via switch: el
-        // titulo es la etiqueta real que el alumno ve en el AVA.
-        var tipoLabel = !string.IsNullOrEmpty(tipo) ? tipo : "la evaluacion correspondiente";
-        MessageBox.Show($"Entrega subida correctamente.\n\nURL (copiada al portapapeles):\n{res.RepoUrl}\n\nProximo paso:\n1. Abre el AVA\n2. Ve a {tipoLabel}\n3. Pega el enlace (Ctrl+V)\n4. Envia", "Listo - Entrega en el AVA", MessageBoxButton.OK, MessageBoxImage.Information);
+        // Entrega adicional en Blackboard: SOLO si la evaluacion actual lo exige
+        // (requires_blackboard). Best-effort: cualquier fallo al leer el flag cae
+        // al flujo normal. La entrega a GitHub YA quedo registrada arriba, por lo
+        // que el flujo no-Blackboard queda EXACTAMENTE igual que antes.
+        bool requiresBlackboard = false;
+        try
+        {
+            if (_selection.SectionId is { } sbSectionId && _selection.EvaluationId is { } sbEvalId)
+            {
+                var evals = await _sb.GetEvaluationsAsync(sbSectionId, onlyActive: false);
+                requiresBlackboard = evals.FirstOrDefault(e => e.Id == sbEvalId)?.RequiresBlackboard ?? false;
+            }
+        }
+        catch (Exception ex) { Log($"No se pudo leer requires_blackboard: {ex.Message}"); }
+
+        if (requiresBlackboard)
+        {
+            // Flujo de entrega final con Blackboard: zip + carpeta + navegador +
+            // instrucciones. No rompe la entrega si algo falla (best-effort).
+            RunBlackboardSubmission(folder, nombre);
+        }
+        else
+        {
+            // tipo ahora es el titulo de la evaluacion (BD) o el tipo legacy
+            // (Config.EvaluationTypes en fallback). Ya no mapeamos via switch: el
+            // titulo es la etiqueta real que el alumno ve en el AVA.
+            var tipoLabel = !string.IsNullOrEmpty(tipo) ? tipo : "la evaluacion correspondiente";
+            MessageBox.Show($"Entrega subida correctamente.\n\nURL (copiada al portapapeles):\n{res.RepoUrl}\n\nProximo paso:\n1. Abre el AVA\n2. Ve a {tipoLabel}\n3. Pega el enlace (Ctrl+V)\n4. Envia", "Listo - Entrega en el AVA", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
 
         var del = MessageBox.Show(
             "Ya terminaste la evaluacion?\n\nSi presionas SI:\n" +
@@ -1296,6 +1320,85 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier, IRedScreenHos
             try { Directory.Delete(folder, true); CarpetaBox.Text = ""; Log("Carpeta local eliminada."); UpdateButtonStates(); } catch { }
             await FinishExamCleanupAsync();
         }
+    }
+
+    /// <summary>
+    /// Entrega adicional en Blackboard (DUOC AVA) para la evaluacion final que lo
+    /// exige (requires_blackboard). Arma un ZIP del proyecto en el ESCRITORIO (que
+    /// SOBREVIVE al borrado posterior de la carpeta del proyecto), abre el
+    /// escritorio para que el alumno vea el zip, abre Blackboard en el navegador
+    /// embebido (con drag-drop habilitado) y muestra las instrucciones. Todo es
+    /// best-effort: cualquier fallo se loguea y NO interrumpe la entrega (ya subida
+    /// a GitHub). NO se vuelve a tocar el portapapeles: el link del repo sigue ahi.
+    /// </summary>
+    private void RunBlackboardSubmission(string folder, string nombre)
+    {
+        // SEGURIDAD (anti-trampa): la ventana de Blackboard navega SIN allowlist y
+        // con --no-proxy-server, por lo que bypassaria el bloqueo de internet
+        // (proxy blackhole en HKCU). Por eso SOLO se abre cuando internet NO esta
+        // bloqueado (examen liberado por el profe). Abrirla con el examen activo
+        // convertiria el boton Entregar en un escape del lockdown. Con internet
+        // bloqueado: avisar y NO abrir nada (la entrega a GitHub ya quedo hecha).
+        if (InternetBlockService.IsBlocked() || _lockdown.IsLockdownActive)
+        {
+            MessageBox.Show(
+                "Entrega subida + link copiado (Ctrl+V).\n\n" +
+                "La entrega en Blackboard se hace cuando el profesor LIBERA internet " +
+                "al cerrar el examen (ahora esta bloqueado).\n\n" +
+                "Cuando el profe libere internet, volve a presionar Entregar para " +
+                "abrir Blackboard y subir el zip + el link.",
+                "Entrega en Blackboard (pendiente)", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        // Nombre de archivo seguro a partir del nombre/login del alumno.
+        var safeBase = !string.IsNullOrWhiteSpace(nombre) ? nombre : (_user?.Login ?? "alumno");
+        var safeName = new string(safeBase.Where(char.IsLetterOrDigit).ToArray());
+        if (string.IsNullOrEmpty(safeName)) safeName = "alumno";
+
+        var desktop = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
+
+        // 1. Crear el ZIP en el ESCRITORIO (sobrevive al borrado de la carpeta del
+        //    proyecto). Si ya existe, se reemplaza. Fallar aca NO rompe la entrega.
+        string? zipPath = Path.Combine(desktop, $"entrega-{safeName}.zip");
+        try
+        {
+            if (File.Exists(zipPath)) File.Delete(zipPath);
+            System.IO.Compression.ZipFile.CreateFromDirectory(folder, zipPath);
+            Log($"OK Zip de entrega creado: {zipPath}");
+        }
+        catch (Exception ex)
+        {
+            Log($"No se pudo crear el zip de entrega: {ex.Message}");
+            zipPath = null;
+        }
+
+        var zipName = zipPath != null ? Path.GetFileName(zipPath) : "entrega-XXX.zip";
+
+        // 2. Abrir la carpeta del zip (escritorio) para que el alumno lo arrastre.
+        try { OpenFolder(desktop); } catch (Exception ex) { Log($"No se pudo abrir la carpeta: {ex.Message}"); }
+
+        // 3. Abrir Blackboard en el navegador embebido (NO modal: el alumno tiene
+        //    que poder arrastrar el zip desde la carpeta a la ventana).
+        try
+        {
+            var bb = new BlackboardWindow("https://campusvirtual.duoc.cl/ultra/course",
+                zipPath != null ? zipName : null) { Owner = this };
+            bb.Show();
+        }
+        catch (Exception ex) { Log($"No se pudo abrir Blackboard: {ex.Message}"); }
+
+        // 4. Instrucciones claras (menciona el nombre real del zip).
+        MessageBox.Show(
+            "Entrega subida + link copiado (Ctrl+V).\n\n" +
+            "Ahora la ENTREGA EN BLACKBOARD:\n" +
+            "1. En la ventana de Blackboard, inicia sesion con tu cuenta DUOC.\n" +
+            "2. Ve a la tarea del examen final.\n" +
+            "3. Pega el enlace (Ctrl+V) en el campo de texto.\n" +
+            $"4. Arrastra el archivo {zipName} (en la carpeta que se abrio) al area de subida.\n" +
+            "5. Envia.\n\n" +
+            "(Necesitas internet: si esta bloqueado, avisa al profesor.)",
+            "Entrega en Blackboard (examen final)", MessageBoxButton.OK, MessageBoxImage.Information);
     }
 
     /// <summary>
