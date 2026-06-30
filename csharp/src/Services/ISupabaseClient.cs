@@ -71,6 +71,12 @@ public interface ISupabaseClient
     // Confirma la matricula del alumno contra el roster (RPC no-PII).
     Task<MyEnrollment?> GetMyEnrollmentAsync(string githubUsername, long sectionId);
 
+    // ===== Tiempo del examen (countdown anti-tamper) =====
+    // Hora autoritativa del servidor + fin del examen (RPC get_exam_time).
+    // null si no hay evaluacion, si la RPC no esta desplegada o ante cualquier
+    // error (degradar: sin countdown). El parseo a DateTimeOffset lo hace el caller.
+    Task<ExamTime?> GetExamTimeAsync(long? evaluationId);
+
     // ===== Heartbeat =====
     // Reporta presencia + estado del alumno (RPC).
     Task SendHeartbeatAsync(
