@@ -9,6 +9,9 @@
     MinWidth="860"
     MinHeight="620"
     WindowStartupLocation="CenterScreen"
+    Icon="pack://application:,,,/Resources/app.ico"
+    ShowInTaskbar="False"
+    ShowActivated="False"
     Background="{DynamicResource BgBrush}">
 
     <!-- ZIndex base: contenido en 0, toast en 100 -->

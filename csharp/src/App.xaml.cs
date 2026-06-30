@@ -10,15 +10,37 @@ namespace EntregaEvaluacion;
 /// Entry point WPF. Replica el orden de arranque del antiguo Program.cs dentro
 /// de OnStartup: Velopack HandleStartup primero, mutex single-instance, registro
 /// del demonio, reconciliacion del bloqueo de internet y chequeo de lockdown
-/// persistente, antes de abrir la ventana principal.
+/// persistente, antes de armar la ventana principal (que arranca OCULTA en la
+/// bandeja del sistema).
 ///
 /// App.xaml es ApplicationDefinition: WPF genera el Main (InitializeComponent +
 /// Run). Toda la coordinacion ocurre en OnStartup, que corre antes de mostrar
 /// cualquier ventana.
+///
+/// Activacion cross-proceso: ademas del mutex single-instance, un EventWaitHandle
+/// con nombre permite que un segundo lanzamiento REAL del usuario le pida a la
+/// instancia viva que se restaure desde la bandeja, sin abrir un proceso de mas.
+/// El watchdog (relanzamiento cada 3 min via Scheduled Task con --watchdog) NUNCA
+/// senaliza: jamas debe hacer aparecer la ventana.
 /// </summary>
 public partial class App : Application
 {
+    private const string MutexName = "EntregaEvaluacion_SingleInstance";
+    private const string ShowEventName = "EntregaEvaluacion_ShowRequest";
+
     private static Mutex? _mutex;
+
+    // Evento de activacion (AutoReset): la instancia viva lo espera; un segundo
+    // lanzamiento real lo Set para pedir restaurar la ventana desde la bandeja.
+    private static EventWaitHandle? _showEvent;
+
+    // Senal de parada limpia del waiter: se levanta y se Set el evento en OnExit.
+    private static volatile bool _stopWaiter;
+
+    // Referencia a la ventana principal para el waiter. Se asigna DESPUES de que
+    // StartShell la construye; el waiter la chequea por null (la senal puede
+    // llegar antes de que exista la ventana).
+    private static MainWindow? _shell;
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -28,27 +50,95 @@ public partial class App : Application
         // uninstall y sale del proceso si corresponde.
         try { UpdateService.HandleStartup(e.Args); } catch { }
 
-        // Single-instance: si ya corre (demonio re-lanzo), salir sin abrir UI.
-        _mutex = new Mutex(initiallyOwned: true, "EntregaEvaluacion_SingleInstance", out bool isNew);
+        // El watchdog (Scheduled Task cada 3 min) relanza el exe con --watchdog.
+        // Se usa para NO senalizar activacion cuando esta instancia sobra.
+        bool isWatchdog = e.Args.Contains("--watchdog");
+
+        // Single-instance: si ya corre, esta instancia sobra.
+        _mutex = new Mutex(initiallyOwned: true, MutexName, out bool isNew);
         if (!isNew)
         {
-            // Ya hay una instancia. Esta sobra (demonio la lanzo de mas).
+            // Ya hay una instancia viva.
+            if (!isWatchdog)
+            {
+                // Lanzamiento REAL del usuario (doble clic en el acceso directo):
+                // pedirle a la instancia viva que se restaure desde la bandeja.
+                try
+                {
+                    var ev = EventWaitHandle.OpenExisting(ShowEventName);
+                    ev.Set();
+                }
+                catch
+                {
+                    // La instancia viva puede no haber creado el evento todavia
+                    // (arrancando). Es best-effort: igual salimos.
+                }
+            }
+            // Watchdog: NO senaliza. El relanzamiento cada 3 min jamas debe hacer
+            // aparecer la ventana. Solo sale.
             Current.Shutdown();
+            return;
         }
-        else
+
+        // Primera instancia: crear el evento de activacion y arrancar el waiter
+        // ANTES del shell, asi un segundo lanzamiento durante el arranque ya lo
+        // encuentra (el waiter ignora la senal mientras _shell sea null).
+        _showEvent = new EventWaitHandle(false, EventResetMode.AutoReset, ShowEventName);
+        StartActivationWaiter();
+
+        StartShell();
+    }
+
+    /// <summary>
+    /// Hilo background que espera senales de activacion y restaura la ventana
+    /// desde la bandeja en el hilo de UI. Para limpio en OnExit (_stopWaiter +
+    /// Set del evento). No crashea si la senal llega antes de existir la ventana
+    /// (chequeo de null) ni si el dispatcher esta cerrandose (try/catch).
+    /// </summary>
+    private static void StartActivationWaiter()
+    {
+        var t = new Thread(() =>
         {
-            StartShell();
-        }
+            while (!_stopWaiter)
+            {
+                try
+                {
+                    var ev = _showEvent;
+                    if (ev == null) break;
+                    ev.WaitOne();
+                    if (_stopWaiter) break;
+
+                    var app = Current;
+                    var shell = _shell;
+                    if (app == null || shell == null) continue; // senal antes de la ventana
+                    app.Dispatcher.Invoke(() =>
+                    {
+                        try { shell.RestoreFromTray(); } catch { }
+                    });
+                }
+                catch
+                {
+                    // Dispatcher cerrandose u objeto liberado: salir si corresponde.
+                    if (_stopWaiter) break;
+                }
+            }
+        })
+        {
+            IsBackground = true,
+            Name = "ActivationWaiter",
+        };
+        t.Start();
     }
 
     /// <summary>
     /// Arranque real cuando esta es la unica instancia: demonio, internet,
-    /// lockdown persistente y la ventana principal.
+    /// lockdown persistente y la ventana principal (que queda OCULTA en bandeja).
     /// </summary>
     private void StartShell()
     {
-        // Controlamos el shutdown manualmente mientras mostramos el CheatWindow
-        // persistente como modal antes de abrir el MainWindow.
+        // El shutdown se controla manualmente durante toda la vida del proceso:
+        // ocultar la ventana en la bandeja NO debe matar el monitoreo. La unica
+        // salida real es la ruta autorizada del ExitGuard (clave del profesor).
         ShutdownMode = ShutdownMode.OnExplicitShutdown;
 
         // Aplicar el tema guardado (claro/oscuro) antes de mostrar ventanas.
@@ -60,7 +150,9 @@ public partial class App : Application
         // Reconciliar bloqueo de internet al iniciar (fail-safe)
         try { InternetBlockService.ReconcileOnStartup(); } catch { }
 
-        // Si hay lockdown persistente de sesion anterior, mostrarlo primero
+        // Si hay lockdown persistente de sesion anterior, mostrarlo primero. Este
+        // chequeo corre ANTES de armar la ventana (y su icono de bandeja): el
+        // bloqueo persistente debe ganar y bloquear antes de cualquier init de UI.
         try
         {
             if (LockdownService.HasPersistentMarker())
@@ -94,8 +186,29 @@ public partial class App : Application
         var mainSb = new SupabaseClient();
         var main = new MainWindow(gh, mainSb, selection);
         MainWindow = main;
-        // A partir de aca, cerrar la ventana principal cierra la app.
-        ShutdownMode = ShutdownMode.OnMainWindowClose;
+        _shell = main;
+
+        // Arranque OCULTO en bandeja: Show()+Hide() conecta la ventana a un
+        // PresentationSource para que dispare Loaded (y con el InitAsync: combos,
+        // identidad y el timer admin que sostiene el monitoreo) SIN dejarla
+        // visible ni en la barra de tareas (ShowInTaskbar/ShowActivated=False en
+        // el XAML evitan el flash y el robo de foco). Se restaura desde la bandeja
+        // (icono, doble clic, "Abrir") o por activacion cross-proceso.
         main.Show();
+        main.Hide();
+    }
+
+    /// <summary>
+    /// Cierre real del proceso: detener el waiter de activacion y liberar los
+    /// objetos de sincronizacion con nombre (mutex + evento).
+    /// </summary>
+    protected override void OnExit(ExitEventArgs e)
+    {
+        _stopWaiter = true;
+        try { _showEvent?.Set(); } catch { }
+        try { _showEvent?.Dispose(); } catch { }
+        try { _mutex?.ReleaseMutex(); } catch { }
+        try { _mutex?.Dispose(); } catch { }
+        base.OnExit(e);
     }
 }
