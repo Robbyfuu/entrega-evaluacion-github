@@ -50,6 +50,7 @@ export interface ControlRow {
   id: number;
   internet_block: boolean;
   force_lockdown: boolean;
+  copilot_block: boolean;
   message: string | null;
   updated_at: string | null;
   updated_by: string | null;
@@ -64,6 +65,7 @@ export interface EvaluationControlRow {
   evaluation_id: number;
   internet_block: boolean | null;
   force_lockdown: boolean | null;
+  copilot_block: boolean | null;
   message: string | null;
   updated_at: string | null;
   updated_by: string | null;

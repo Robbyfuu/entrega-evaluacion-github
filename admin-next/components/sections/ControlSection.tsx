@@ -34,12 +34,12 @@ interface ControlSectionProps {
   evalControlError: string | null;
   setEvaluationControl: (
     patch: Partial<
-      Pick<EvaluationControlRow, "internet_block" | "force_lockdown" | "message">
+      Pick<EvaluationControlRow, "internet_block" | "force_lockdown" | "copilot_block" | "message">
     >
   ) => Promise<{ ok: boolean; error?: string }>;
 }
 
-type Patch = Partial<Pick<ControlRow, "internet_block" | "force_lockdown" | "message">>;
+type Patch = Partial<Pick<ControlRow, "internet_block" | "force_lockdown" | "copilot_block" | "message">>;
 
 // Resolve a per-eval override field over the global control: override ?? global.
 // Mirrors the C# resolver (override ?? global control id=1) for display only.
@@ -158,6 +158,9 @@ export function ControlSection({
   const effLockdown = perEvalActive
     ? resolveBool(evalControl?.force_lockdown, control?.force_lockdown)
     : control?.force_lockdown ?? false;
+  const effCopilot = perEvalActive
+    ? resolveBool(evalControl?.copilot_block, control?.copilot_block)
+    : control?.copilot_block ?? false;
   const effMessage = perEvalActive
     ? resolveMessage(evalControl?.message, control?.message)
     : control?.message ?? "";
@@ -310,6 +313,21 @@ export function ControlSection({
                 checked={effInternet}
                 onCheckedChange={(checked) =>
                   applyControl({ internet_block: checked })
+                }
+              />
+            </div>
+            <div className="flex flex-1 items-center justify-between gap-3 rounded-lg border px-4 py-3">
+              <div className="flex flex-col gap-0.5">
+                <Label htmlFor="copilotToggle">Bloquear Copilot / IA</Label>
+                <span className="text-xs text-muted-foreground">
+                  {effCopilot ? "Copilot/IA bloqueado" : "Copilot/IA libre"}
+                </span>
+              </div>
+              <Switch
+                id="copilotToggle"
+                checked={effCopilot}
+                onCheckedChange={(checked) =>
+                  applyControl({ copilot_block: checked })
                 }
               />
             </div>

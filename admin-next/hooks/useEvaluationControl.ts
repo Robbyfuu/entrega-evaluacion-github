@@ -70,7 +70,7 @@ export function useEvaluationControl(evaluationId: number | null) {
   const setEvaluationControl = useCallback(
     async (
       patch: Partial<
-        Pick<EvaluationControlRow, "internet_block" | "force_lockdown" | "message">
+        Pick<EvaluationControlRow, "internet_block" | "force_lockdown" | "copilot_block" | "message">
       >
     ): Promise<{ ok: boolean; error?: string }> => {
       if (evaluationId == null) {

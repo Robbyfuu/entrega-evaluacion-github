@@ -15,6 +15,10 @@ public class ControlState
 {
     [JsonPropertyName("internet_block")] public bool InternetBlock { get; set; }
     [JsonPropertyName("force_lockdown")] public bool ForceLockdown { get; set; }
+    // Bloqueo de Copilot / IA INDEPENDIENTE de internet_block. Aditivo: el
+    // cliente bloquea Copilot cuando internet_block O copilot_block estan
+    // activos. DEFAULT false en la BD => sin regresion del modo examen.
+    [JsonPropertyName("copilot_block")] public bool CopilotBlock { get; set; }
     [JsonPropertyName("message")] public string? Message { get; set; }
     [JsonPropertyName("updated_at")] public string? UpdatedAt { get; set; }
     [JsonPropertyName("updated_by")] public string? UpdatedBy { get; set; }
@@ -35,6 +39,9 @@ public class EvaluationControl
     [JsonPropertyName("evaluation_id")] public long EvaluationId { get; set; }
     [JsonPropertyName("internet_block")] public bool? InternetBlock { get; set; }
     [JsonPropertyName("force_lockdown")] public bool? ForceLockdown { get; set; }
+    // Override por evaluacion del bloqueo de Copilot / IA. NULL = heredar el
+    // copilot_block del control global id=1.
+    [JsonPropertyName("copilot_block")] public bool? CopilotBlock { get; set; }
     [JsonPropertyName("message")] public string? Message { get; set; }
     [JsonPropertyName("updated_at")] public string? UpdatedAt { get; set; }
     [JsonPropertyName("updated_by")] public string? UpdatedBy { get; set; }
