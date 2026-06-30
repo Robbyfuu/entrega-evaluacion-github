@@ -244,21 +244,31 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier, IRedScreenHos
         menu.Items.Add(openItem);
         menu.Items.Add(exitItem);
 
-        _trayIcon = new TaskbarIcon
-        {
-            ToolTipText = "Entrega de Evaluacion a GitHub",
-            ContextMenu = menu,
-            Visibility = Visibility.Visible,
-        };
-
         try
         {
-            _trayIcon.IconSource = new System.Windows.Media.Imaging.BitmapImage(
-                new Uri("pack://application:,,,/Resources/app.ico"));
-        }
-        catch { }
+            _trayIcon = new TaskbarIcon
+            {
+                ToolTipText = "Entrega de Evaluacion a GitHub",
+                ContextMenu = menu,
+                Visibility = Visibility.Visible,
+            };
 
-        _trayIcon.TrayMouseDoubleClick += (_, _) => RestoreFromTray();
+            try
+            {
+                _trayIcon.IconSource = new System.Windows.Media.Imaging.BitmapImage(
+                    new Uri("pack://application:,,,/Resources/app.ico"));
+            }
+            catch { }
+
+            _trayIcon.TrayMouseDoubleClick += (_, _) => RestoreFromTray();
+        }
+        catch
+        {
+            // Si la bandeja no se puede crear, NO crashear el ctor: el daemon
+            // relanzaria en loop. La app sigue corriendo oculta y el re-ingreso
+            // por doble-lanzamiento (IPC -> RestoreFromTray) sigue funcionando.
+            _trayIcon = null;
+        }
     }
 
     /// <summary>
