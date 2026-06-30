@@ -1339,7 +1339,7 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier, IRedScreenHos
         // bloqueado (examen liberado por el profe). Abrirla con el examen activo
         // convertiria el boton Entregar en un escape del lockdown. Con internet
         // bloqueado: avisar y NO abrir nada (la entrega a GitHub ya quedo hecha).
-        if (InternetBlockService.IsBlocked())
+        if (InternetBlockService.IsBlocked() || _lockdown.IsLockdownActive)
         {
             MessageBox.Show(
                 "Entrega subida + link copiado (Ctrl+V).\n\n" +

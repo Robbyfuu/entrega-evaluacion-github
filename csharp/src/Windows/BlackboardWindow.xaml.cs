@@ -1,4 +1,6 @@
 using System.Windows;
+using System.Windows.Threading;
+using EntregaEvaluacion.Services;
 using Microsoft.Web.WebView2.Core;
 
 namespace EntregaEvaluacion.Windows;
@@ -27,6 +29,14 @@ public partial class BlackboardWindow : Window
 {
     private readonly string _url;
 
+    // ANTI-ESCAPE: esta ventana usa --no-proxy-server + sin whitelist, asi que es
+    // un navegador SIN restricciones. El gate de apertura (RunBlackboardSubmission)
+    // solo abre con internet liberado, pero si el examen RE-BLOQUEA internet
+    // mientras la ventana esta abierta, Block() NO mata el proceso msedgewebview2
+    // y --no-proxy-server ignora el proxy reaplicado => quedaria como navegador
+    // libre persistente. Este timer la cierra sola apenas IsBlocked() vuelva a true.
+    private readonly DispatcherTimer _internetGuard;
+
     public BlackboardWindow(string url, string? zipFileName = null)
     {
         InitializeComponent();
@@ -38,6 +48,19 @@ public partial class BlackboardWindow : Window
                 $"Inicia sesion con tu cuenta DUOC, abre la tarea del examen final, pega el enlace " +
                 $"(Ctrl+V) y ARRASTRA el archivo {zipFileName} (en la carpeta que se abrio) al area de subida.";
         }
+
+        _internetGuard = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
+        _internetGuard.Tick += (_, _) =>
+        {
+            if (InternetBlockService.IsBlocked())
+            {
+                _internetGuard.Stop();
+                try { Close(); } catch { }
+            }
+        };
+        Loaded += (_, _) => _internetGuard.Start();
+        Closed += (_, _) => _internetGuard.Stop();
+
         Loaded += async (_, _) => await InitAsync();
     }
 
