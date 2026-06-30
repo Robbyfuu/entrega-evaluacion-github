@@ -50,6 +50,7 @@ csharp/migration-exam-mode.sql
 csharp/migration-exam-pdf.sql
 csharp/migration-exam-pdf-scope.sql
 csharp/migration-exam-time.sql
+csharp/migration-blackboard-submission.sql
 csharp/migration-pc-overrides.sql
 
 # --- FASE 2 hardening (MUST be last; order matters) ---
