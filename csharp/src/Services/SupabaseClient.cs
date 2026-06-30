@@ -641,6 +641,41 @@ public class SupabaseClient : ISupabaseClient
         }
     }
 
+    // ===== Tiempo del examen (countdown anti-tamper, RPC SECURITY DEFINER) =====
+
+    /// <summary>
+    /// Trae la hora autoritativa del servidor (server_now) y el fin del examen
+    /// (ends_at) de la evaluacion indicada, via la RPC get_exam_time. Mismo patron
+    /// que GetMyEnrollmentAsync: POST con body { p_evaluation_id }, exige
+    /// IsSuccessStatusCode, deserializa el arreglo de filas y toma [0].
+    ///
+    /// Devuelve null (=> sin countdown) en CUALQUIER caso degradado: id null,
+    /// status no-exitoso (RPC no desplegada / sin permiso), arreglo vacio, o error
+    /// de red/parseo. NUNCA lanza. El parseo de los timestamps a DateTimeOffset lo
+    /// hace el caller (el DTO se queda como string?). El consumidor debe degradar:
+    /// si esto da null, NO se re-ancla el ExamTimerService (el Stopwatch monotonico
+    /// sigue contando con el ultimo ancla bueno).
+    /// </summary>
+    public async Task<ExamTime?> GetExamTimeAsync(long? evaluationId)
+    {
+        if (evaluationId is not { } evalId) return null;
+        try
+        {
+            var payload = JsonSerializer.Serialize(new { p_evaluation_id = evalId }, JsonOpts);
+            var content = new StringContent(payload, Encoding.UTF8, "application/json");
+            var resp = await _http.PostAsync(Rest("rpc/get_exam_time"), content);
+
+            // Status no-exitoso (RPC ausente/sin permiso): degradar => sin countdown.
+            if (!resp.IsSuccessStatusCode) return null;
+
+            var json = await resp.Content.ReadAsStringAsync();
+            var rows = JsonSerializer.Deserialize<List<ExamTime>>(json, JsonOpts);
+            if (rows is not { Count: > 0 }) return null;
+            return rows[0];
+        }
+        catch { return null; }
+    }
+
     // ===== Heartbeat (RPC SECURITY DEFINER) =====
     // section_id se sincroniza via trigger trg_sync_section_online desde
     // section TEXT; la RPC heartbeat no acepta p_section_id (forward-compat).

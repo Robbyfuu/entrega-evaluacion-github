@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Text.RegularExpressions;
 using System.Windows;
@@ -40,6 +41,13 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier, IRedScreenHos
     private readonly BlocklistRefresher _blocklistRefresher;
     private readonly NetworkProbeReporter _networkProbe;
     private readonly RemoteUpdateWatcher _remoteUpdate;
+
+    // Servicio del countdown anti-tamper (ENT-31 slice 3). Mantiene el ancla
+    // server-authoritative (hora del servidor + fin del examen) y tickea con un
+    // Stopwatch MONOTONICO, nunca con el reloj de pared. Se re-ancla en el tick
+    // admin (SyncExamTimeAsync) cuando hay evaluacion en curso; la slice 4 leera
+    // ExamTimer.Remaining para pintar el widget. No depende de _sb.
+    private readonly ExamTimerService _examTimer;
 
     // Guard del cierre de la ventana (ENT-8 slice O): bloquea el cierre durante
     // la evaluacion y solo lo permite con la clave del profesor. Es duenio del
@@ -136,6 +144,10 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier, IRedScreenHos
         _blocklistRefresher = new BlocklistRefresher(_sb);
         _networkProbe = new NetworkProbeReporter(_sb, this);
         _remoteUpdate = new RemoteUpdateWatcher(_sb, this, () => _gh.Token);
+
+        // Timer del examen: sin dependencias (el ancla se siembra en el tick admin
+        // via SyncExamTimeAsync). Se construye aca junto al resto de colaboradores.
+        _examTimer = new ExamTimerService();
 
         // Guard del cierre: la decision pura vive en ExitDecision; el throttle del
         // reporte reusa ProbeThrottle. Los callbacks reproducen EXACTO los efectos
@@ -1568,12 +1580,50 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier, IRedScreenHos
         // llamadas de este tick ya viajen con un token vigente.
         await _sb.EnsureIdentityFreshAsync();
         await CheckAdminConfigAsync();
+        await SyncExamTimeAsync();
         await RefreshBlocklistAsync();
         await UpdateAssignmentsBanner();
         await SendHeartbeatAsync();
         await _lockdown.CheckTargetedAsync();
         await CheckUpdateRequestAsync();
         await CheckNetworkProbeAsync();
+    }
+
+    /// <summary>
+    /// Servicio del countdown anti-tamper, expuesto para que el widget de tiempo
+    /// (ENT-31 slice 4) lea <c>ExamTimer.Remaining</c>. Esta slice solo siembra el
+    /// ancla; no agrega UI.
+    /// </summary>
+    internal ExamTimerService ExamTimer => _examTimer;
+
+    /// <summary>
+    /// Re-ancla el countdown del examen con la hora autoritativa del servidor.
+    /// Gate inExam: solo sincroniza cuando hay una evaluacion en curso
+    /// (EvaluationId > 0). Si la RPC degrada (null: no desplegada / sin evaluacion
+    /// / error), NO se re-ancla: el ExamTimerService conserva el ultimo ancla bueno
+    /// y su Stopwatch monotonico sigue contando (un blip NUNCA congela ni reinicia
+    /// el countdown). El sync captura el timestamp monotonico internamente, asi que
+    /// se llama apenas vuelve el await. Solo se parsean los timestamps absolutos a
+    /// DateTimeOffset (no es el reloj de pared del transcurrido: eso lo mide el
+    /// Stopwatch dentro del servicio). NUNCA lanza dentro del tick.
+    /// </summary>
+    private async Task SyncExamTimeAsync()
+    {
+        if (_selection.EvaluationId is not { } evalId || evalId <= 0) return;
+
+        var t = await _sb.GetExamTimeAsync(evalId);
+        if (t == null) return; // degradar: conservar el ancla anterior.
+
+        const DateTimeStyles styles = DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal;
+        if (!DateTimeOffset.TryParse(t.ServerNow, CultureInfo.InvariantCulture, styles, out var serverNow))
+            return; // sin hora de servidor valida no hay ancla utilizable.
+
+        DateTimeOffset? endsAt =
+            DateTimeOffset.TryParse(t.EndsAt, CultureInfo.InvariantCulture, styles, out var ends)
+                ? ends
+                : null;
+
+        _examTimer.Sync(serverNow, endsAt);
     }
 
     // Sonda de red (deteccion de contacto a Copilot): delegada al

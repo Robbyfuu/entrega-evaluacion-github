@@ -193,6 +193,17 @@ public sealed class MyEnrollmentRow
     [JsonPropertyName("found")] public bool Found { get; set; }
 }
 
+// Fila devuelta por la RPC get_exam_time(p_evaluation_id): hora autoritativa del
+// servidor (server_now) y fin del examen (ends_at), ambos timestamptz ISO8601.
+// Se mantienen como string? (igual que el resto de timestamps de estos DTOs); el
+// parseo a DateTimeOffset lo hace el caller. Alimenta el ancla anti-tamper de
+// ExamTimerService: el cliente NUNCA usa su reloj de pared para el transcurrido.
+public class ExamTime
+{
+    [JsonPropertyName("server_now")] public string? ServerNow { get; set; }
+    [JsonPropertyName("ends_at")] public string? EndsAt { get; set; }
+}
+
 public class TargetedLockdown
 {
     [JsonPropertyName("id")] public long Id { get; set; }
