@@ -70,6 +70,9 @@ export function EvaluationsSection() {
   const [examMode, setExamMode] = useState<string>("Off");
   // datetime-local en hora LOCAL de pared ("YYYY-MM-DDTHH:mm"). "" => sin término.
   const [endsAt, setEndsAt] = useState("");
+  // Numero de la evaluacion (handle estable por seccion). El panel lo asigna
+  // explicitamente; NUNCA se infiere del titulo (UNIQUE(section_id, number)).
+  const [num, setNum] = useState("");
   const [editingId, setEditingId] = useState<number | null>(null);
   const [detailEval, setDetailEval] = useState<EvaluationRow | null>(null);
   const pdfInputRef = useRef<HTMLInputElement>(null);
@@ -95,6 +98,7 @@ export function EvaluationsSection() {
     setSectionId("");
     setExamMode("Off");
     setEndsAt("");
+    setNum("");
   }
 
   function startEdit(e: EvaluationRow) {
@@ -106,6 +110,7 @@ export function EvaluationsSection() {
     setExamMode(e.exam_mode ?? "Off");
     // UTC (DB) -> hora LOCAL para el input; null/"" => campo vacío.
     setEndsAt(e.ends_at ? toDatetimeLocalValue(e.ends_at) : "");
+    setNum(e.number != null ? String(e.number) : "");
   }
 
   // Mantiene sincronizada la `assignment` (lo que lee el cliente) con la
@@ -162,12 +167,19 @@ export function EvaluationsSection() {
     // Hora LOCAL del input -> UTC absoluto para la DB. new Date("YYYY-MM-DDTHH:mm")
     // parsea como hora LOCAL y .toISOString() emite UTC. "" => null (sin término).
     const endsAtIso = endsAt ? new Date(endsAt).toISOString() : null;
+    // Numero de la evaluacion: "" => null; debe ser entero positivo. El UNIQUE
+    // (section_id, number) en la DB rechaza duplicados dentro de la seccion.
+    const numVal = num.trim() === "" ? null : Number(num);
+    if (numVal !== null && (!Number.isInteger(numVal) || numVal < 1)) {
+      toast.error("El número de evaluación debe ser un entero positivo.");
+      return;
+    }
 
     if (editingId != null) {
       // EDITAR evaluación existente (incluye añadir/cambiar el link de Classroom).
       const { data, error: err } = await supabase
         .from("evaluations")
-        .update({ section_id: sid, title: t, classroom_url: classroomUrl || null, org: orgValue || null, exam_mode: examMode, ends_at: endsAtIso })
+        .update({ section_id: sid, title: t, classroom_url: classroomUrl || null, org: orgValue || null, exam_mode: examMode, ends_at: endsAtIso, number: numVal })
         .eq("id", editingId)
         .select();
       if (err) { toast.error("Error: " + err.message); return; }
@@ -183,7 +195,7 @@ export function EvaluationsSection() {
     // CREAR (inactiva). Se activa con el botón Activar.
     const { data, error: err } = await supabase
       .from("evaluations")
-      .insert({ section_id: sid, title: t, classroom_url: classroomUrl || null, org: orgValue || null, exam_mode: examMode, ends_at: endsAtIso, active: false })
+      .insert({ section_id: sid, title: t, classroom_url: classroomUrl || null, org: orgValue || null, exam_mode: examMode, ends_at: endsAtIso, number: numVal, active: false })
       .select();
     if (err) { toast.error("Error: " + err.message); return; }
     if (!data || data.length === 0) { toast.error("No se pudo agregar (¿sesión expirada?)."); return; }
@@ -307,6 +319,17 @@ export function EvaluationsSection() {
               placeholder="Fundamentos-de-la-Programacion"
               value={org}
               onChange={(e) => setOrg(e.target.value)}
+            />
+          </div>
+          <div className="grid w-[110px] gap-1.5">
+            <Label htmlFor="evalNum">N° evaluación</Label>
+            <Input
+              type="number"
+              id="evalNum"
+              min={1}
+              placeholder="ej. 4"
+              value={num}
+              onChange={(e) => setNum(e.target.value)}
             />
           </div>
           <div className="grid w-[180px] gap-1.5">
