@@ -17,7 +17,7 @@ namespace EntregaEvaluacion.Windows;
 /// Classroom, y polling admin (config, heartbeat, lockdown dirigido/remoto).
 /// Solo cambia la capa UI (WPF + WPF-UI, layout fluido en lugar de coords).
 /// </summary>
-public partial class MainWindow : Window, ILogSink, IUserNotifier
+public partial class MainWindow : Window, ILogSink, IUserNotifier, IRedScreenHost
 {
     private readonly IGitHubService _gh;
     private readonly ISupabaseClient _sb;
@@ -41,6 +41,35 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier
     private readonly NetworkProbeReporter _networkProbe;
     private readonly RemoteUpdateWatcher _remoteUpdate;
 
+    // Guard del cierre de la ventana (ENT-8 slice O): bloquea el cierre durante
+    // la evaluacion y solo lo permite con la clave del profesor. Es duenio del
+    // estado que antes vivia aca (_allowExit + _lastCloseReport). Se construye en
+    // el constructor porque depende de _sb/_selection (ya inyectados), de este
+    // MainWindow como IUserNotifier y de callbacks que cierran sobre estado de la
+    // vista (UpdateService.IsApplying, el modal de clave, el cierre autorizado y
+    // la identidad _user).
+    private readonly ExitGuard _exitGuard;
+
+    // Coordinador de la ruta de ENTREGA (ENT-8 slice B): saca de este code-behind
+    // la orquestacion del push (mensaje de commit + GitService via factory +
+    // Task.Run) y el registro best-effort de entregas/aceptaciones contra las
+    // tareas de Classroom. Se construye en el constructor porque depende de _gh/
+    // _sb/_selection (ya inyectados) y de este MainWindow como ILogSink/
+    // IUserNotifier; la UI (validacion XAML, MessageBox, portapapeles, prompts)
+    // se queda aca. Es duenio de GetSectionAssignmentsAsync/FilterBySection (antes
+    // aqui), que solo leen _selection + _sb.
+    private readonly SubmissionCoordinator _submission;
+
+    // Coordinador del LOCKDOWN / pantalla roja (ENT-8 slice K): saca de este
+    // code-behind la orquestacion del bloqueo de internet/Copilot, la pantalla
+    // roja (remota, dirigida y trampa local), la suscripcion del watcher de
+    // Copilot y los 4 flags de lockdown (ahora son SUYOS, no de MainWindow). Se
+    // construye en el constructor porque depende de _sb/_selection (ya inyectados),
+    // de este MainWindow como ILogSink/IUserNotifier/IRedScreenHost, del heartbeat
+    // (SendHeartbeatAsync) y de la identidad (_user). El dedup + MessageBox del
+    // mensaje del profesor (concern aparte) se queda aca.
+    private readonly LockdownCoordinator _lockdown;
+
     // Colaborador de I/O del PDF de enunciado (ENT-7 extraction #4). No tiene
     // dependencias (envuelve llamadas estaticas a ExamPdfService), asi que se
     // inicializa inline en vez de construirse en el constructor como los de arriba.
@@ -48,10 +77,9 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier
 
     // Estado
     private GitHubUser? _user;
-    private bool _internetBlocked;
-    private bool _copilotBlocked;
-    private bool _remoteLockdownActive;
-    private bool _targetedLockdownActive;
+    // Dedup del mensaje del profesor (concern SEPARADO del lockdown). Los 4 flags
+    // de lockdown se movieron a LockdownCoordinator (ENT-8 slice K); este dedup se
+    // queda porque la lectura del mensaje + MessageBox sigue en la vista.
     private string _lastAdminMessage = "";
 
     // Blocklist efectivo (global union seccion) cacheado desde la tabla
@@ -109,6 +137,41 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier
         _networkProbe = new NetworkProbeReporter(_sb, this);
         _remoteUpdate = new RemoteUpdateWatcher(_sb, this, () => _gh.Token);
 
+        // Guard del cierre: la decision pura vive en ExitDecision; el throttle del
+        // reporte reusa ProbeThrottle. Los callbacks reproducen EXACTO los efectos
+        // que antes vivian inline en OnClosing: isUpdating => UpdateService.IsApplying;
+        // passwordPrompt => modal de clave del profesor (Owner=this); onAuthorizedExit
+        // => Unregister + DeleteAllDownloaded + Shutdown (cada uno best-effort);
+        // currentUser => la identidad del alumno (_user), leida de forma diferida.
+        _exitGuard = new ExitGuard(
+            _sb, _selection, this,
+            () => UpdateService.IsApplying,
+            () => new PasswordPromptWindow { Owner = this }.ShowDialog() == true,
+            () =>
+            {
+                try { DaemonService.Unregister(); } catch { }
+                try { ExamPdfService.DeleteAllDownloaded(); } catch { }
+                Application.Current.Shutdown();
+            },
+            () => _user);
+
+        // Coordinador de entrega: _gh/_sb/_selection ya asignados y este MainWindow
+        // ya es un ILogSink/IUserNotifier valido. La factory construye el GitService
+        // con (token, nombre, email) igual que el codigo inline previo; el push lee
+        // el token vigente de _gh dentro de PushAsync.
+        _submission = new SubmissionCoordinator(
+            _gh, _sb, _selection, this, this,
+            (token, name, email) => new GitService(token, name, email));
+
+        // Coordinador de lockdown: _sb/_selection ya asignados y este MainWindow ya
+        // es un ILogSink/IUserNotifier/IRedScreenHost valido. El heartbeat se pasa
+        // como delegado (SendHeartbeatAsync, que ahora lee _lockdown.IsLockdownActive)
+        // y la identidad se lee de forma diferida (() => _user). El host de la
+        // pantalla roja es este MainWindow (construye el CheatWindow en el UI thread).
+        _lockdown = new LockdownCoordinator(
+            _sb, _selection, this, this,
+            SendHeartbeatAsync, this, () => _user);
+
         InitializeComponent();
 
         // Los combos se poblan asincronicamente en InitAsync (fetch BD + fallback
@@ -119,50 +182,13 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier
 
     // El programa NO se cierra durante la evaluacion: el alumno no puede salir
     // del control (y el daemon lo relanzaria igual). Solo se cierra con la clave
-    // del profesor. _allowExit pasa a true cuando la clave es correcta.
-    private bool _allowExit;
-    private DateTime _lastCloseReport = DateTime.MinValue;
-
+    // del profesor. La logica (gate, toast, reporte con throttle, escape por clave
+    // y cierre autorizado) vive en _exitGuard; aqui queda solo el shim que honra
+    // primero base.OnClosing y traduce la decision a e.Cancel.
     protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
     {
         base.OnClosing(e);
-        // Permitir el cierre si: ya se autorizo con clave, otro handler lo cancelo,
-        // o se esta aplicando un update (Velopack reinicia la app).
-        if (_allowExit || e.Cancel || UpdateService.IsApplying) return;
-
-        // Bloquear el cierre + avisar + registrar el intento.
-        e.Cancel = true;
-        ShowToast("No puedes cerrar el programa durante la evaluacion. Intento registrado.", ToastKind.Error);
-        _ = ReportCloseAttemptAsync();
-
-        // Escape del profesor: clave correcta => cerrar de verdad (y sacar el
-        // daemon para que no lo relance).
-        var dlg = new PasswordPromptWindow { Owner = this };
-        if (dlg.ShowDialog() == true)
-        {
-            _allowExit = true;
-            try { DaemonService.Unregister(); } catch { }
-            try { ExamPdfService.DeleteAllDownloaded(); } catch { }
-            Application.Current.Shutdown();
-        }
-    }
-
-    /// <summary>
-    /// Reporta el intento de cierre al panel (queda en Actividad). Throttle de
-    /// 30s para no spamear si el alumno aprieta la X varias veces.
-    /// </summary>
-    private async Task ReportCloseAttemptAsync()
-    {
-        if (_user == null) return;
-        if ((DateTime.UtcNow - _lastCloseReport).TotalSeconds < 30) return;
-        _lastCloseReport = DateTime.UtcNow;
-        try
-        {
-            await _sb.ReportStudentActivityAsync(
-                "close_attempt", _user.Login, _user.Email, Environment.MachineName,
-                _selection.SectionText, "", null, _selection.SectionId);
-        }
-        catch { }
+        if (_exitGuard.HandleClosing(e.Cancel)) e.Cancel = true;
     }
 
     // ===================== Init =====================
@@ -202,10 +228,10 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier
         var savedCode = _selection.SectionText;
         var savedSectionId = _selection.SectionId;
         var savedEvalId = _selection.EvaluationId;
-        var savedRow = savedSectionId.HasValue
-            ? _sections.FirstOrDefault(s => s.Id == savedSectionId.Value)
-            : null;
-        savedRow ??= _sections.FirstOrDefault(s => s.Code == savedCode);
+        // Decision pura (SectionId-first, Code-fallback) en el core; la vista solo
+        // consume la fila resuelta para seleccionar curso/seccion abajo.
+        var savedRow = SelectionCascadeResolver.ResolveSavedSection(
+            savedCode, savedSectionId, _sections, s => s.Id, s => s.Code);
 
         if (savedRow != null)
         {
@@ -272,13 +298,11 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier
     private void PopulateSectionCombo(long? courseId)
     {
         SectionCombo.Items.Clear();
-        if (_sections.Count == 0)
-        {
-            foreach (var s in Config.Sections) SectionCombo.Items.Add(s);
-            return;
-        }
-        var filtered = courseId is { } cid ? _sections.Where(s => s.CourseId == cid) : _sections;
-        foreach (var s in filtered) SectionCombo.Items.Add(s.Code);
+        // El core decide los codigos (filtra por curso, o cae a Config.Sections
+        // cuando no hay secciones fetcheadas); la vista solo los agrega al combo.
+        var codes = SelectionCascadeResolver.ResolveSectionCodes(
+            courseId, _sections, Config.Sections, s => s.CourseId, s => s.Code);
+        foreach (var code in codes) SectionCombo.Items.Add(code);
     }
 
     /// <summary>
@@ -298,18 +322,14 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier
         EvaluationCombo.DisplayMemberPath = "Title";
         _currentEvaluations = sectionId is { } sid ? await _sb.GetEvaluationsAsync(sid) : new();
 
-        if (_currentEvaluations.Count > 0)
-        {
-            foreach (var ev in _currentEvaluations) EvaluationCombo.Items.Add(ev);
-        }
-        else if (sectionId == null)
-        {
-            // Modo legacy: no hay section_id real, cae a Config.EvaluationTypes.
-            foreach (var t in Config.EvaluationTypes)
-                EvaluationCombo.Items.Add(new Evaluation { Id = 0, Title = t, Active = true });
-        }
-        // Si sectionId != null pero _currentEvaluations esta vacio, el combo
-        // queda vacio (el profe no activo evaluaciones para esta seccion).
+        // El core decide QUE mostrar (fetcheadas tal cual; sintesis Id=0 SOLO con
+        // sectionId==null; vacio cuando la BD viva no trae ninguna). La vista
+        // construye los items de fallback (asi Core no referencia Evaluation) y los
+        // agrega. _currentEvaluations queda con lo FETCHEADO, no con lo sintetizado.
+        var toShow = SelectionCascadeResolver.ResolveEvaluationsToShow(
+            sectionId, _currentEvaluations, Config.EvaluationTypes,
+            t => new Evaluation { Id = 0, Title = t, Active = true });
+        foreach (var ev in toShow) EvaluationCombo.Items.Add(ev);
     }
 
     /// <summary>Restaura la evaluacion guardada (por Id) y espeja su titulo en TipoCombo.</summary>
@@ -446,11 +466,13 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier
     /// </summary>
     private void ApplyEvaluationLock(List<AssignmentStatus> statuses)
     {
-        var locked = statuses.FirstOrDefault(s =>
-            s.Accepted && !s.Submitted
-            && s.Assignment.EvaluationId is { } id && id > 0);
+        // El core resuelve CUAL evaluacion bloquear (Accepted && !Submitted &&
+        // EvaluationId>0); la vista aplica el lock (SelectedIndex con el guard
+        // != i, deshabilitar combos, tooltip) o lo libera.
+        var lockedEvalId = SelectionCascadeResolver.ResolveLockedEvaluationId(
+            statuses, s => s.Accepted, s => s.Submitted, s => s.Assignment.EvaluationId);
 
-        if (locked?.Assignment.EvaluationId is { } evalId)
+        if (lockedEvalId is { } evalId)
         {
             if (_selection.EvaluationId != evalId)
                 _selection.SetEvaluationId(evalId);
@@ -911,7 +933,7 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier
 
         if (count == 0)
         {
-            var asg = await GetSectionAssignmentsAsync();
+            var asg = await _submission.GetSectionAssignmentsAsync();
             if (asg.Count > 0)
                 Log($"Tienes {asg.Count} tarea(s) Classroom. Usa el banner para aceptarlas.");
             else
@@ -927,7 +949,7 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier
 
         // Tareas activas de la seccion para mapear invitacion -> assignment por
         // prefijo de slug y registrar la aceptacion en BD.
-        var asg = await GetSectionAssignmentsAsync();
+        var asg = await _submission.GetSectionAssignmentsAsync();
         var me = _user?.Login;
         var evalOrg = CurrentEvaluationOrg();
 
@@ -1036,7 +1058,7 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier
                 Log($"TRAMPA: {clean.FilesCount} archivo(s) no permitidos.");
                 try { Directory.Delete(target, true); } catch { }
                 CarpetaBox.Text = "";
-                await ShowLocalTrapLockAsync(repo, clean.FilesCount, clean.FilesNames);
+                await _lockdown.ShowLocalTrapAsync(repo, clean.FilesCount, clean.FilesNames);
                 UpdateButtonStates();
                 return;
             }
@@ -1046,7 +1068,7 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier
         CarpetaBox.Text = target;
         OpenPythonIdle(target);
         await _sb.ReportStudentActivityAsync("clone", _user!.Login, _user.Email, Environment.MachineName, _selection.SectionText, repo, $"https://github.com/{owner}/{name}", _selection.SectionId);
-        await RecordAcceptanceIfClassroomRepoAsync(name, $"https://github.com/{owner}/{name}");
+        await _submission.RecordAcceptanceIfClassroomRepoAsync(_user!.Login, name, $"https://github.com/{owner}/{name}");
         MessageBox.Show($"Repo clonado en:\n{target}\n\nSe abrio IDLE de Python.\n\nEdita, guarda (Ctrl+S), y luego 'Subir Archivos'.", "Listo", MessageBoxButton.OK, MessageBoxImage.Information);
         Status("Edita en IDLE y luego Subir Archivos.");
         UpdateButtonStates();
@@ -1068,20 +1090,19 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier
         var nombre = NombreBox.Text.Trim();
         if (string.IsNullOrEmpty(nombre)) nombre = _user!.Name ?? _user.Login;
         var tipo = (TipoCombo.SelectedItem as string ?? "").Trim();
-        var msg = string.IsNullOrEmpty(tipo) ? $"Entrega de evaluacion - {nombre}" : $"Entrega de evaluacion - {nombre} ({tipo})";
 
-        Status($"Subiendo a {repo}...");
-        Log($"-> Subiendo {folder} a {owner}/{name}");
-        var git = new GitService(_gh.Token!, nombre, _user!.Email ?? "");
-        var res = await Task.Run(() => git.CommitAndPush(folder, owner, name, msg));
-        if (!res.Ok) { Log($"Fallo push: {res.Error}"); Status("Error en push."); return; }
+        // Push en hilo de fondo (Task.Run dentro del coordinador). El armado del
+        // mensaje de commit, la construccion del GitService y el diagnostico
+        // (Status/Log) viven ahora en PushAsync; aca solo se decide segun el
+        // resultado. El resultado + URL llegan ANTES de cualquier limpieza.
+        var res = await _submission.PushAsync(folder, owner, name, repo, nombre, _user!.Email ?? "", tipo);
+        if (!res.Ok) return;
 
-        Log($"OK Subida completada: {res.Url}");
-        try { Clipboard.SetText(res.Url!); } catch { }
-        await _sb.ReportStudentActivityAsync("upload", _user!.Login, _user.Email, Environment.MachineName, _selection.SectionText, repo, res.Url, _selection.SectionId);
+        try { Clipboard.SetText(res.RepoUrl!); } catch { }
+        await _sb.ReportStudentActivityAsync("upload", _user!.Login, _user.Email, Environment.MachineName, _selection.SectionText, repo, res.RepoUrl, _selection.SectionId);
         // Captura el enlace como ENTREGA formal en el panel (el alumno no tiene
         // que apretar "Entregar repo" aparte). Best-effort, no bloquea.
-        await RecordSubmissionIfClassroomRepoAsync(name, res.Url!);
+        await _submission.RecordSubmissionIfClassroomRepoAsync(_user!.Login, name, res.RepoUrl!);
 
         // Termino la evaluacion: borrar el enunciado descargado (no debe quedar
         // registro local que se pueda divulgar).
@@ -1091,7 +1112,7 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier
         // (Config.EvaluationTypes en fallback). Ya no mapeamos via switch: el
         // titulo es la etiqueta real que el alumno ve en el AVA.
         var tipoLabel = !string.IsNullOrEmpty(tipo) ? tipo : "la evaluacion correspondiente";
-        MessageBox.Show($"Entrega subida correctamente.\n\nURL (copiada al portapapeles):\n{res.Url}\n\nProximo paso:\n1. Abre el AVA\n2. Ve a {tipoLabel}\n3. Pega el enlace (Ctrl+V)\n4. Envia", "Listo - Entrega en el AVA", MessageBoxButton.OK, MessageBoxImage.Information);
+        MessageBox.Show($"Entrega subida correctamente.\n\nURL (copiada al portapapeles):\n{res.RepoUrl}\n\nProximo paso:\n1. Abre el AVA\n2. Ve a {tipoLabel}\n3. Pega el enlace (Ctrl+V)\n4. Envia", "Listo - Entrega en el AVA", MessageBoxButton.OK, MessageBoxImage.Information);
 
         var del = MessageBox.Show(
             "Ya terminaste la evaluacion?\n\nSi presionas SI:\n" +
@@ -1116,17 +1137,10 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier
     /// </summary>
     private async Task FinishExamCleanupAsync()
     {
-        try { InternetBlockService.Unblock(); _internetBlocked = false; } catch { }
-        try
-        {
-            if (_copilotBlocked)
-            {
-                CopilotBlockService.OnCheatDetected -= OnCopilotCheatDetected;
-                CopilotBlockService.Unblock();
-                _copilotBlocked = false;
-            }
-        }
-        catch { }
+        // Slice internet/Copilot del cierre delegado al coordinador (duenio de los
+        // flags y del watcher de Copilot). El resto (logout/identidad/selectores/
+        // panel) se queda aca.
+        _lockdown.ReleaseForExamEnd();
         try { _gh.Logout(); } catch { }
         try { _sb.SetIdentityToken(null); } catch { } // volver a anon para el siguiente alumno
         ClearSelectors();
@@ -1172,37 +1186,6 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier
         return _enrollment is { Confirmed: true, Found: true }
             && sectionId is { } sid
             && _enrollment.SectionId == sid;
-    }
-
-    private List<Assignment> FilterBySection(List<Assignment> all)
-    {
-        var sec = _selection.SectionText.Trim().ToUpperInvariant();
-        return all.Where(a =>
-        {
-            var s = (a.Section ?? "").Trim().ToUpperInvariant();
-            return string.IsNullOrEmpty(s) || (!string.IsNullOrEmpty(sec) && s == sec);
-        }).ToList();
-    }
-
-    /// <summary>
-    /// Tareas activas que el alumno DEBE ver. ROBUSTO al evaluation_id: trae
-    /// todas las activas, filtra por SECCION, y si la evaluacion seleccionada
-    /// tiene tareas las prioriza; si NO (link huerfano porque se recreo la
-    /// evaluacion), cae a las de la seccion. Antes el filtro exigia
-    /// evaluation_id exacto en el servidor: al recrear una evaluacion, la tarea
-    /// quedaba huerfana y "desaparecia" (o quedaba pegada la vieja). Ahora la
-    /// evaluacion es una preferencia, no un gate.
-    /// </summary>
-    private async Task<List<Assignment>> GetSectionAssignmentsAsync()
-    {
-        var all = FilterBySection(await _sb.GetActiveAssignmentsAsync(null));
-        var evalId = _selection.EvaluationId;
-        if (evalId is { } id)
-        {
-            var matched = all.Where(a => a.EvaluationId == id).ToList();
-            if (matched.Count > 0) return matched;
-        }
-        return all;
     }
 
     /// <summary>
@@ -1336,7 +1319,7 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier
         // consulta via RosterMatchConfirmed). Es aditivo y nunca bloquea.
         await RefreshEnrollmentAsync();
 
-        var asg = await GetSectionAssignmentsAsync();
+        var asg = await _submission.GetSectionAssignmentsAsync();
 
         // Las invitaciones son verdad VIVA y se consultan SIEMPRE (no detras del
         // gate de "0 repos"): un alumno que ya posee >=1 repo igual puede tener
@@ -1451,7 +1434,7 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier
 
     private async Task ShowAssignmentsDialog()
     {
-        var asg = await GetSectionAssignmentsAsync();
+        var asg = await _submission.GetSectionAssignmentsAsync();
         if (asg.Count == 0) { MessageBox.Show("No hay tareas activas.", "Sin tareas", MessageBoxButton.OK, MessageBoxImage.Information); return; }
 
         // Consultar invitaciones para mostrar el estado "Invitacion pendiente"
@@ -1463,57 +1446,6 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier
         dlg.ShowDialog();
         // Al cerrar, refrescar el banner por si el alumno acepto o entrego algo.
         await UpdateAssignmentsBanner();
-    }
-
-    /// <summary>
-    /// Si el repo clonado corresponde a una tarea activa de Classroom de la
-    /// seccion del alumno ({slug}-{username}), registra la aceptacion en BD.
-    /// Asi queda registro aunque el alumno clone directo sin pasar por el banner.
-    /// </summary>
-    private async Task RecordAcceptanceIfClassroomRepoAsync(string repoName, string repoUrl)
-    {
-        var me = _user?.Login;
-        if (string.IsNullOrEmpty(me)) return;
-        var asg = await GetSectionAssignmentsAsync();
-        foreach (var a in asg)
-        {
-            if (string.Equals(ClassroomRepoNaming.ExpectedClassroomRepo(a.Title, me), repoName, StringComparison.OrdinalIgnoreCase))
-            {
-                await _sb.RecordAcceptanceAsync(me, a.Id, a.Title, _selection.SectionText, repoName, repoUrl, _selection.EvaluationId);
-                break;
-            }
-        }
-    }
-
-    /// <summary>
-    /// Tras subir al repo, registra la ENTREGA (assignment_submissions) capturando
-    /// el enlace, para que el profe la vea en el panel ("entrego" + URL) sin que el
-    /// alumno tenga que apretar "Entregar repo" aparte. Mapea el repo a la tarea por
-    /// nombre esperado; si no hay match exacto pero hay UNA sola tarea activa para la
-    /// evaluacion, usa esa (los slugs de Classroom no siempre coinciden con
-    /// Sanitize(titulo)). No bloquea la subida: cualquier fallo se ignora.
-    /// </summary>
-    private async Task RecordSubmissionIfClassroomRepoAsync(string repoName, string repoUrl)
-    {
-        var me = _user?.Login;
-        if (string.IsNullOrEmpty(me)) return;
-        try
-        {
-            var asg = await GetSectionAssignmentsAsync();
-            if (asg.Count == 0) return;
-            foreach (var a in asg)
-            {
-                if (string.Equals(ClassroomRepoNaming.ExpectedClassroomRepo(a.Title, me), repoName, StringComparison.OrdinalIgnoreCase))
-                {
-                    await _sb.RecordSubmissionAsync(a.Id, me, repoUrl);
-                    return;
-                }
-            }
-            // Fallback: una sola tarea activa => atribuir la entrega a esa.
-            if (asg.Count == 1)
-                await _sb.RecordSubmissionAsync(asg[0].Id, me, repoUrl);
-        }
-        catch { }
     }
 
     /// <summary>
@@ -1561,7 +1493,7 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier
         var input = SimpleInputDialog("URL del repositorio a entregar:", "Entregar repositorio", prefill);
         if (string.IsNullOrWhiteSpace(input)) return;
 
-        await _sb.RecordSubmissionAsync(status.Assignment.Id, me, input.Trim());
+        await _submission.RecordSubmissionAsync(status.Assignment.Id, me, input.Trim());
         Log($"Entrega registrada: {status.Title} -> {input.Trim()}");
         MessageBox.Show("Entrega registrada correctamente.", "Entregado", MessageBoxButton.OK, MessageBoxImage.Information);
     }
@@ -1639,7 +1571,7 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier
         await RefreshBlocklistAsync();
         await UpdateAssignmentsBanner();
         await SendHeartbeatAsync();
-        await CheckTargetedLockdownAsync();
+        await _lockdown.CheckTargetedAsync();
         await CheckUpdateRequestAsync();
         await CheckNetworkProbeAsync();
     }
@@ -1685,192 +1617,46 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier
             _selection.SectionText, _selection.SectionId);
     }
 
-    // Override de pantalla por PC, en sincrono (para los checkStillLocked de las
-    // CheatWindow). true => el profe desbloqueo la pantalla de ESTE PC -> liberar.
-    private bool ScreenUnblockedSync()
-        => Task.Run(() => _sb.IsPcScreenUnblockedAsync(Environment.MachineName).GetAwaiter().GetResult())
-            .GetAwaiter().GetResult();
-
-    // Predicados de "sigue bloqueada la pantalla" para los checkStillLocked de las
-    // CheatWindow. Fail-safe: solo libera si el profe desbloqueo ESTE PC por
-    // nombre (ScreenUnblockedSync) Y el backend ya no reporta el lock. Antes
-    // estaban como 3 lambdas casi identicas inline; consolidadas aca.
-
-    // Lockdown REMOTO (force-only).
-    private bool StillLockedByForce()
-        => !ScreenUnblockedSync()
-            && Task.Run(() => _sb.IsForceLockdownAsync(_selection.EvaluationId)).GetAwaiter().GetResult();
-
-    // Lockdown DIRIGIDO (pc+usuario) o force. pc varia: Environment.MachineName
-    // en el dirigido remoto, el pc real en la trampa local.
-    private bool StillLockedByTargetOrForce(string pc, string me)
-        => !ScreenUnblockedSync()
-            && Task.Run(() =>
-                _sb.IsTargetedLockedAsync(pc, me).GetAwaiter().GetResult()
-                || _sb.IsForceLockdownAsync(_selection.EvaluationId).GetAwaiter().GetResult()).GetAwaiter().GetResult();
-
+    /// <summary>
+    /// Polling del control admin: delega al LockdownCoordinator la aplicacion del
+    /// control efectivo (internet/Copilot + pantalla roja remota) y conserva aca
+    /// SOLO el concern del mensaje del profesor (dedup + MessageBox), que NO es
+    /// lockdown. Degrade-closed: si el coordinador reporta que el control no se
+    /// pudo resolver, return temprano sin tocar _lastAdminMessage (paridad exacta
+    /// con el `if (cfg == null) return;` original).
+    /// </summary>
     private async Task CheckAdminConfigAsync()
     {
-        // Control EFECTIVO de la evaluacion actual: override por evaluacion ??
-        // global id=1 (no el global pelado). Si no se puede resolver (red/null)
-        // degradamos CERRADO: no tocamos el estado actual (return) en vez de
-        // soltar un bloqueo activo. La APERTURA (aca) y la LIBERACION
-        // (IsForceLockdownAsync en checkStillLocked) leen EXACTAMENTE la misma
-        // resolucion y comparten el cache _lastKnownLock: esta llamada de
-        // apertura ya SIEMBRA el cache (lo hace GetEffectiveControlAsync), asi el
-        // primer poll de liberacion -aunque su fetch falle- retiene el lock
-        // recien aplicado en vez de soltarlo.
-        var cfg = await _sb.GetEffectiveControlAsync(_selection.EvaluationId);
-        if (cfg == null) return;
+        var result = await _lockdown.ApplyControlAsync();
+        if (!result.ControlPresent) return;
 
-        // Override por PC (desbloqueo por nombre de equipo, sin depender del
-        // usuario). unblock_internet anula el bloqueo de internet/Copilot de ESTE
-        // PC; unblock_screen libera la pantalla roja. Fail-safe: si el fetch falla
-        // ovr es null -> no se libera nada.
-        var ovr = await _sb.GetPcOverrideAsync(Environment.MachineName);
-        bool effInternet = cfg.InternetBlock && !(ovr?.UnblockInternet ?? false);
-        bool screenUnblocked = ovr?.UnblockScreen ?? false;
-
-        if (effInternet && !_internetBlocked) { Log("[ADMIN] Bloqueo de internet activado."); InternetBlockService.Block(); _internetBlocked = true; }
-        else if (!effInternet && _internetBlocked) { Log("[ADMIN] Bloqueo de internet desactivado."); InternetBlockService.Unblock(); _internetBlocked = false; }
-
-        // Copilot: amarrado al mismo toggle que internet. Sabotea el settings.json
-        // de VS Code y monta un watcher que detecta si el alumno reactiva Copilot.
-        if (effInternet && !_copilotBlocked)
+        var msg = result.Message;
+        if (!string.IsNullOrEmpty(msg) && msg != _lastAdminMessage)
         {
-            CopilotBlockService.OnCheatDetected += OnCopilotCheatDetected;
-            CopilotBlockService.Block();
-            _copilotBlocked = true;
-            Log("[ADMIN] Bloqueo de Copilot activado.");
+            _lastAdminMessage = msg;
+            MessageBox.Show(msg, "Mensaje del profesor", MessageBoxButton.OK, MessageBoxImage.Information);
         }
-        else if (!effInternet && _copilotBlocked)
-        {
-            CopilotBlockService.OnCheatDetected -= OnCopilotCheatDetected;
-            CopilotBlockService.Unblock();
-            _copilotBlocked = false;
-            Log("[ADMIN] Bloqueo de Copilot desactivado.");
-        }
-
-        // La pantalla roja remota SOLO debe saltar en modo evaluacion: el control
-        // global force_lockdown no debe bloquear a un alumno que no esta rindiendo.
-        // Sin evaluation_id activo (no acepto/selecciono evaluacion) NO se bloquea.
-        bool inExam = _selection.EvaluationId is { } examEvalId && examEvalId > 0;
-        if (cfg.ForceLockdown && inExam && !screenUnblocked && !_remoteLockdownActive)
-        {
-            _remoteLockdownActive = true;
-            Log("[ADMIN] Lockdown remoto activado.");
-            // Heartbeat inmediato (fire-and-forget) para que el panel vea a ESTE PC
-            // como bloqueado al instante; el AdminTick queda detenido tras ShowDialog.
-            _ = SendHeartbeatAsync();
-            var alert = new CheatWindow("(remoto)", 0, new[] { "Lockdown remoto del profesor" }, remoteSource: true,
-                checkStillLocked: StillLockedByForce,
-                onHeartbeat: () => _ = SendHeartbeatAsync());
-            alert.ShowDialog();
-            _remoteLockdownActive = false;
-        }
-
-        if (!string.IsNullOrEmpty(cfg.Message) && cfg.Message != _lastAdminMessage)
-        {
-            _lastAdminMessage = cfg.Message;
-            MessageBox.Show(cfg.Message, "Mensaje del profesor", MessageBoxButton.OK, MessageBoxImage.Information);
-        }
-        if (string.IsNullOrEmpty(cfg.Message)) _lastAdminMessage = "";
+        if (string.IsNullOrEmpty(msg)) _lastAdminMessage = "";
     }
 
     /// <summary>
-    /// Handler que se dispara cuando el FileSystemWatcher de CopilotBlockService
-    /// detecta que el alumno edito el settings.json para reactivar Copilot.
-    /// Reporta el cheat al panel (visible para el profesor) y aplica lockdown
-    /// inmediato en la maquina del alumno. Se invoca desde un thread del watcher;
-    /// Log/Status/ShowToast ya dispatchean al UI thread internamente.
+    /// Implementacion del seam <see cref="IRedScreenHost"/>: construye el
+    /// CheatWindow en el hilo de UI y lo muestra modal (ShowDialog), bloqueando
+    /// hasta que se cierra. Es la UNICA frontera WPF de la pantalla roja; el
+    /// coordinador decide CUANDO y CON QUE. SetOwner respeta la diferencia por-ruta
+    /// del original (la trampa local fijaba Owner=this; la remota y la dirigida no).
+    /// El retorno de ShowDialog no se consume (igual que el original).
     /// </summary>
-    private async void OnCopilotCheatDetected()
+    bool IRedScreenHost.ShowBlocking(RedScreenRequest req)
     {
-        Log("[CHEAT] Intento de reactivacion de Copilot detectado.");
-
-        // Reportar al panel via el mismo canal de alertas de procesos sospechosos.
-        try
-        {
-            var user = _user?.Login ?? "(unknown)";
-            await _sb.ReportProcessAlertAsync(
-                user,
-                Environment.MachineName,
-                _selection.SectionText,
-                "copilot-reactivation",
-                "Intento de reactivar Copilot editando settings.json");
-        }
-        catch (Exception ex) { Log($"[CHEAT] Reporte de Copilot fallo: {ex.Message}"); }
-
-        // Lockdown inmediato en la maquina del alumno (marker + auto-start + TaskMgr off).
-        try
-        {
-            LockdownService.Trigger("(copilot)", 0, new[] { "Reactivacion de Copilot en settings.json" });
-            Log("[CHEAT] Lockdown aplicado por reactivacion de Copilot.");
-        }
-        catch (Exception ex) { Log($"[CHEAT] Lockdown por Copilot fallo: {ex.Message}"); }
-
-        // Avisar al alumno
-        ShowToast("Se detecto intento de reactivar Copilot. Prueba bloqueada.", ToastKind.Error);
-    }
-
-    private async Task CheckTargetedLockdownAsync()
-    {
-        if (_targetedLockdownActive || _user == null) return;
-        var locked = await _sb.IsTargetedLockedAsync(Environment.MachineName, _user.Login);
-        if (locked)
-        {
-            _targetedLockdownActive = true;
-            var reason = await _sb.GetTargetedReasonAsync(Environment.MachineName, _user.Login) ?? "El profesor te bloqueo";
-            Log("[ADMIN] Lockdown DIRIGIDO a tu PC.");
-            var me = _user.Login;
-            _ = SendHeartbeatAsync();
-            var alert = new CheatWindow("(dirigido)", 0, new[] { reason }, remoteSource: true,
-                checkStillLocked: () => StillLockedByTargetOrForce(Environment.MachineName, me),
-                onHeartbeat: () => _ = SendHeartbeatAsync());
-            alert.ShowDialog();
-            _targetedLockdownActive = false;
-        }
-    }
-
-    /// <summary>
-    /// Pantalla roja por TRAMPA LOCAL (repo sucio, navegacion prohibida), ahora
-    /// VISIBLE en el panel y LIBERABLE remoto. Reporta el auto-lock a
-    /// targeted_lockdowns (via RPC) para que el profe lo vea y lo desbloquee; si
-    /// el reporte se confirma, la pantalla re-chequea cada 10s y se libera cuando
-    /// el profe apaga el lock (que ademas limpia el marker persistente). Si el
-    /// reporte FALLA (offline), cae a password-only: fail-safe, nunca auto-libera.
-    /// Reusa _targetedLockdownActive => visible como "active" en el heartbeat y
-    /// evita que CheckTargetedLockdownAsync abra una segunda pantalla.
-    /// </summary>
-    private async Task ShowLocalTrapLockAsync(string reasonOrRepo, int filesCount, string[] filesNames)
-    {
-        if (_targetedLockdownActive) return; // ya hay pantalla roja activa
-        _targetedLockdownActive = true;
-
-        LockdownService.Trigger(reasonOrRepo, filesCount, filesNames);
-
-        var me = _user?.Login ?? "";
-        var pc = Environment.MachineName;
-        try
-        {
-            await _sb.ReportCheatEventAsync(
-                me.Length > 0 ? me : "(sin sesion)", pc, reasonOrRepo, filesCount, filesNames);
-        }
-        catch { }
-
-        bool reported = await _sb.ReportSelfLockAsync(
-            pc, me, _selection.SectionText, filesNames.FirstOrDefault() ?? reasonOrRepo);
-
-        _ = SendHeartbeatAsync();
-        CheatWindow alert = reported
-            ? new CheatWindow(reasonOrRepo, filesCount, filesNames, remoteSource: true,
-                checkStillLocked: () => StillLockedByTargetOrForce(pc, me),
-                onHeartbeat: () => _ = SendHeartbeatAsync())
-            : new CheatWindow(reasonOrRepo, filesCount, filesNames);
-        alert.Owner = this;
-        alert.ShowDialog();
-
-        _targetedLockdownActive = false;
+        var alert = new CheatWindow(
+            req.RepoName, req.FilesCount, req.FilesNames,
+            isPersistent: req.IsPersistent,
+            remoteSource: req.RemoteSource,
+            checkStillLocked: req.CheckStillLocked,
+            onHeartbeat: req.OnHeartbeat);
+        if (req.SetOwner) alert.Owner = this;
+        return alert.ShowDialog() == true;
     }
 
     private async Task SendHeartbeatAsync()
@@ -1880,11 +1666,11 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier
         // sus global usings, asi que apuntamos al DTO propio sin ambiguedad.
         List<EntregaEvaluacion.Models.ProcessInfo> procs = ProcessMonitor.GetOpenWindows();
 
-        // Estados derivados de los flags privados de lockdown de ESTE MainWindow
-        // (decision D1: los flags NO se mueven). Se pasan ya resueltos como strings
-        // al HeartbeatReporter, que nunca lee los flags.
+        // Estados derivados: internet desde el servicio; lockdown desde el
+        // coordinador, que ahora es el duenio de los flags (remoto/dirigido). Se
+        // pasan ya resueltos como strings al HeartbeatReporter, que nunca los lee.
         var internetState = InternetBlockService.IsBlocked() ? "blocked" : "free";
-        var lockdownState = (_remoteLockdownActive || _targetedLockdownActive) ? "active" : "none";
+        var lockdownState = _lockdown.IsLockdownActive ? "active" : "none";
 
         // El HeartbeatReporter detecta procesos nuevos sospechosos (set-diff puro),
         // alerta cada uno UNA vez y envia el heartbeat. Atribuye la presencia a la
@@ -2022,7 +1808,7 @@ public partial class MainWindow : Window, ILogSink, IUserNotifier
         var reason = $"Navegacion prohibida: {host}";
         Log($"TRAMPA: {reason}");
 
-        await ShowLocalTrapLockAsync(reason, 0, new[] { reason });
+        await _lockdown.ShowLocalTrapAsync(reason, 0, new[] { reason });
         UpdateButtonStates();
     }
 
