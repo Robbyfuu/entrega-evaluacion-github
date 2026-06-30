@@ -36,6 +36,9 @@ export interface EvaluationRow {
   // Path del PDF de enunciado en Storage (bucket privado 'exam-pdfs'; ej
   // 'eval-49.pdf'). NULL => la evaluacion no tiene PDF asociado.
   exam_pdf_path: string | null;
+  // Hora absoluta de termino del examen (TIMESTAMPTZ en Postgres, ISO UTC).
+  // NULL => sin cuenta regresiva. Propiedad fija por evaluacion.
+  ends_at: string | null;
   created_at: string | null;
 }
 
